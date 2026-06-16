@@ -1,0 +1,4 @@
+src/data/db.json
+src/data/uploads/
+*.log
+.env

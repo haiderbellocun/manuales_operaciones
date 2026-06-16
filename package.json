@@ -1,0 +1,29 @@
+{
+  "name": "acervo-operaciones",
+  "private": true,
+  "version": "1.0.0",
+  "type": "module",
+  "description": "Plataforma institucional de gestión documental — Área de Operaciones",
+  "scripts": {
+    "dev": "vite",
+    "dev:server": "npm run dev --prefix server",
+    "dev:all": "concurrently -n web,api -c green,blue \"npm run dev\" \"npm run dev:server\"",
+    "build": "vite build",
+    "preview": "vite preview",
+    "server:start": "npm run start --prefix server",
+    "server:seed": "npm run seed --prefix server",
+    "db:up": "docker compose up -d postgres",
+    "db:down": "docker compose down",
+    "db:seed": "npm run seed:force --prefix server"
+  },
+  "dependencies": {
+    "mammoth": "^1.12.0",
+    "react": "^18.3.1",
+    "react-dom": "^18.3.1"
+  },
+  "devDependencies": {
+    "@vitejs/plugin-react": "^4.3.4",
+    "concurrently": "^9.1.2",
+    "vite": "^6.0.3"
+  }
+}

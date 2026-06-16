@@ -1,0 +1,21 @@
+{
+  "name": "acervo-server",
+  "version": "1.0.0",
+  "private": true,
+  "type": "module",
+  "description": "API REST — Acervo Operaciones",
+  "scripts": {
+    "dev": "node --watch src/index.js",
+    "start": "node src/index.js",
+    "seed": "node src/scripts/seed.js",
+    "seed:force": "node src/scripts/seed.js --force",
+    "db:migrate": "node -e \"import('./src/db/migrate.js').then(m=>m.migrate()).then(()=>console.log('OK')).catch(e=>{console.error(e);process.exit(1)})\""
+  },
+  "dependencies": {
+    "cors": "^2.8.5",
+    "express": "^4.21.2",
+    "jsonwebtoken": "^9.0.2",
+    "multer": "^1.4.5-lts.1",
+    "pg": "^8.21.0"
+  }
+}
