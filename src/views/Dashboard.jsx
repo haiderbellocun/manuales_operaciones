@@ -1,8 +1,15 @@
-import { useMemo } from 'react';
+import { useMemo, useState, useEffect } from 'react';
 import { DATA } from '../data';
+import { api } from '../services/api';
 import { Icon, StateBadge, AreaTag, KpiCard } from '../components';
 
 export function Dashboard({ nav, docs, userName = 'Usuario' }) {
+  const [activity, setActivity] = useState([]);
+
+  useEffect(() => {
+    api.getActivity().then(setActivity).catch(() => {});
+  }, []);
+
   const stats = useMemo(() => {
     const total = docs.length;
     const vigentes = docs.filter(d => ['publicado', 'aprobado'].includes(d.state)).length;
@@ -125,20 +132,26 @@ export function Dashboard({ nav, docs, userName = 'Usuario' }) {
           <div className="card" style={{ padding: '20px 22px' }}>
             <h3 className="section-title">Actividad reciente</h3>
             <div className="timeline">
-              {DATA.ACTIVITY.map((a, i) => {
-                const p = DATA.personById(a.who);
-                const d = DATA.docById(a.docId);
-                return (
-                  <div key={i} className="tl-item">
-                    <span className={'tl-dot' + (i > 1 ? ' muted' : '')}></span>
-                    <div style={{ fontSize: 13 }}>
-                      <strong>{p.name.split(' ')[0]} {p.name.split(' ')[1]}</strong> {a.action}{' '}
-                      <span className="link" onClick={() => nav('detail', { id: a.docId })}>{d ? d.name : ''}</span>
-                    </div>
-                    <div className="text-xs muted" style={{ marginTop: 2 }}>{a.when}</div>
+              {activity.length === 0 ? (
+                <p className="text-xs muted" style={{ margin: 0 }}>Sin actividad registrada aún.</p>
+              ) : activity.map((a, i) => (
+                <div key={a.id ?? i} className="tl-item">
+                  <span className={'tl-dot' + (i > 1 ? ' muted' : '')}></span>
+                  <div style={{ fontSize: 13 }}>
+                    <strong>{a.whoName}</strong> {a.action}
+                    {a.doc && (
+                      <span
+                        className="link"
+                        style={{ marginLeft: 4 }}
+                        onClick={() => nav('detail', { id: a.doc })}
+                      >
+                        ver documento
+                      </span>
+                    )}
                   </div>
-                );
-              })}
+                  <div className="text-xs muted" style={{ marginTop: 2 }}>{a.when}</div>
+                </div>
+              ))}
             </div>
           </div>
         </div>

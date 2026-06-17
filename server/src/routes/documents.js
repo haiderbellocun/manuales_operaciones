@@ -36,7 +36,8 @@ const upload = multer({
 
 router.get('/', async (req, res, next) => {
   try {
-    res.json(await listDocuments(req.user.sub));
+    const { area, type, state, search, page, limit } = req.query;
+    res.json(await listDocuments(req.user.sub, { area, type, state, search, page, limit }));
   } catch (err) {
     next(err);
   }

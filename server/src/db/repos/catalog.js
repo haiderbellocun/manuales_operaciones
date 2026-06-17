@@ -31,14 +31,32 @@ export async function listRoles() {
   }));
 }
 
-export async function listActivity() {
-  const { rows } = await query('SELECT * FROM activity_log ORDER BY id');
+export async function listActivity(limit = 30) {
+  const { rows } = await query(`
+    SELECT al.*, u.name AS who_name
+    FROM activity_log al
+    LEFT JOIN users u ON al.who_person_id = u.id
+    ORDER BY al.id DESC
+    LIMIT $1
+  `, [limit]);
   return rows.map(r => ({
+    id: r.id,
     who: r.who_person_id,
+    whoName: r.who_name || r.who_person_id || 'Sistema',
     action: r.action,
     doc: r.doc_id,
     when: r.when_text,
   }));
+}
+
+export async function logActivity(who, action, docId) {
+  const when = new Date().toLocaleDateString('es-CO', {
+    day: '2-digit', month: '2-digit', year: 'numeric',
+  });
+  await query(
+    'INSERT INTO activity_log (who_person_id, action, doc_id, when_text) VALUES ($1, $2, $3, $4)',
+    [who || null, action, docId || null, when],
+  );
 }
 
 export async function getStats() {

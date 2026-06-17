@@ -1,5 +1,6 @@
 import { query } from '../pool.js';
 import { mapDocument, mapFile, today } from '../mapper.js';
+import { logActivity } from './catalog.js';
 
 async function getHistory(docId) {
   const { rows } = await query(
@@ -17,14 +18,58 @@ async function getFavSet(userId) {
   return new Set(rows.map(r => r.doc_id));
 }
 
-export async function listDocuments(userId) {
+export async function listDocuments(userId, filters = {}) {
+  const { area, type, state, search } = filters;
+  const pageNum = Math.max(1, parseInt(filters.page, 10) || 1);
+  const limitNum = Math.min(100, Math.max(1, parseInt(filters.limit, 10) || 50));
+
+  const conditions = [];
+  const params = [];
+
+  if (area)   { params.push(area);           conditions.push(`area_id = $${params.length}`); }
+  if (type)   { params.push(type);           conditions.push(`type_id = $${params.length}`); }
+  if (state)  { params.push(state);          conditions.push(`state = $${params.length}`); }
+  if (search) {
+    params.push(`%${search}%`);
+    const n = params.length;
+    conditions.push(`(name ILIKE $${n} OR code ILIKE $${n})`);
+  }
+
+  const where = conditions.length ? `WHERE ${conditions.join(' AND ')}` : '';
+
+  const { rows: countRows } = await query(
+    `SELECT COUNT(*)::int AS total FROM documents ${where}`,
+    params,
+  );
+  const total = countRows[0].total;
+
+  const offset = (pageNum - 1) * limitNum;
+  const dataParams = [...params, limitNum, offset];
+  const { rows } = await query(
+    `SELECT * FROM documents ${where} ORDER BY created DESC, id
+     LIMIT $${dataParams.length - 1} OFFSET $${dataParams.length}`,
+    dataParams,
+  );
+
+  if (rows.length === 0) {
+    return { data: [], total, page: pageNum, limit: limitNum, pages: Math.ceil(total / limitNum) || 0 };
+  }
+
+  const docIds = rows.map(r => r.id);
+  const { rows: histRows } = await query(
+    'SELECT * FROM document_history WHERE doc_id = ANY($1) ORDER BY id',
+    [docIds],
+  );
+  const histByDoc = {};
+  for (const h of histRows) {
+    if (!histByDoc[h.doc_id]) histByDoc[h.doc_id] = [];
+    histByDoc[h.doc_id].push(h);
+  }
+
   const favs = await getFavSet(userId);
-  const { rows } = await query('SELECT * FROM documents ORDER BY created DESC, id');
-  const docs = await Promise.all(rows.map(async (row) => {
-    const history = await getHistory(row.id);
-    return mapDocument(row, history, favs.has(row.id));
-  }));
-  return docs;
+  const data = rows.map(row => mapDocument(row, histByDoc[row.id] || [], favs.has(row.id)));
+
+  return { data, total, page: pageNum, limit: limitNum, pages: Math.ceil(total / limitNum) };
 }
 
 export async function getDocument(id, userId) {
@@ -88,6 +133,7 @@ export async function createDocument(payload, areaObj, typeObj) {
     payload.versionNote || 'Versión inicial',
   ]);
 
+  await logActivity(payload.userId, `Creó el documento "${payload.name}"`, id);
   return getDocument(id, payload.userId);
 }
 
@@ -118,6 +164,7 @@ export async function createUpdateRequest(docId, userId, reason, detail) {
     INSERT INTO update_requests (id, doc_id, user_id, reason, detail)
     VALUES ($1, $2, $3, $4, $5)
   `, [id, docId, userId, reason, detail]);
+  await logActivity(userId, `Solicitó actualización del documento`, docId);
   return {
     ok: true,
     id,
@@ -153,6 +200,7 @@ export async function upsertFile(docId, file, uploadedBy) {
     file.size,
     uploadedBy,
   ]);
+  await logActivity(uploadedBy, `Adjuntó archivo al documento`, docId);
   return getFileMeta(docId);
 }
 

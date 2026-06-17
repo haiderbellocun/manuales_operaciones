@@ -78,12 +78,16 @@ export const api = {
     return request('/auth/session');
   },
 
-  async getDocuments() {
+  async getDocuments(params = {}) {
     if (USE_MOCK) {
       await delay();
       return applyFavorites(mockDocs.map(d => ({ ...d })));
     }
-    return request('/documents');
+    const qs = new URLSearchParams(
+      Object.fromEntries(Object.entries(params).filter(([, v]) => v !== undefined && v !== '')),
+    ).toString();
+    const result = await request(`/documents${qs ? '?' + qs : ''}`);
+    return result.data ?? result;
   },
 
   async getDocument(id) {
@@ -199,6 +203,21 @@ export const api = {
   async getUsers() {
     if (USE_MOCK) { await delay(100); return DATA.USERS; }
     return request('/users');
+  },
+
+  async getActivity() {
+    if (USE_MOCK) {
+      await delay(100);
+      return DATA.ACTIVITY.map((a, i) => ({
+        id: i,
+        who: a.who,
+        whoName: DATA.personById(a.who)?.name || a.who,
+        action: a.action,
+        doc: a.docId,
+        when: a.when,
+      }));
+    }
+    return request('/activity');
   },
 
   async getStats() {
