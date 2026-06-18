@@ -2,7 +2,6 @@ import { useState, useMemo, useEffect, useRef } from 'react';
 import { DATA } from '../data';
 import { api } from '../services/api';
 import { storage } from '../utils/storage';
-import { saveFile } from '../services/fileStore';
 import { useAuth } from '../context/AuthContext';
 import { useDocs } from '../context/DocsContext';
 import { Icon, StateBadge, AreaTag, KpiCard, Avatar, FilterToggleButton } from '../components';
@@ -31,7 +30,7 @@ export function SearchView({ nav, docs, initial }) {
     return docs.filter(d => {
       if (areaF.length && !areaF.includes(d.area)) return false;
       if (typeF.length && !typeF.includes(d.type)) return false;
-      const hay = (d.name + ' ' + d.code + ' ' + (d.tags || []).join(' ') + ' ' + d.desc).toLowerCase();
+      const hay = (d.name + ' ' + d.documentNumber + ' ' + (d.tags || []).join(' ') + ' ' + d.desc).toLowerCase();
       return hay.includes(ql);
     });
   }, [q, docs, areaF, typeF]);
@@ -98,7 +97,7 @@ export function SearchView({ nav, docs, initial }) {
           <aside className={'filter-rail ' + (filtersOpen ? 'open' : '')}>
             <div className="filter-group">
               <h4>Refinar por área</h4>
-              {DATA.AREAS.map(a => <label key={a.id} className="filter-opt"><input type="checkbox" checked={areaF.includes(a.id)} onChange={() => toggle(areaF, setAreaF, a.id)} /><span className="area-dot" style={{ background: a.color }}></span><span className="grow text-sm">{a.code}</span></label>)}
+              {DATA.AREAS.map(a => <label key={a.id} className="filter-opt"><input type="checkbox" checked={areaF.includes(a.id)} onChange={() => toggle(areaF, setAreaF, a.id)} /><span className="area-dot" style={{ background: a.color }}></span><span className="grow text-sm">{a.abbreviation}</span></label>)}
             </div>
             <div className="filter-group">
               <h4>Tipo documental</h4>
@@ -124,7 +123,7 @@ export function SearchView({ nav, docs, initial }) {
                         <div className="grow" style={{ minWidth: 0 }}>
                           <div className="row gap-8 wrap" style={{ marginBottom: 4 }}><span className="search-result-title">{highlight(d.name)}</span><AreaTag areaId={d.area} /><StateBadge state={d.state} /></div>
                           <p className="search-result-desc">{highlight(d.desc.slice(0, 130))}…</p>
-                          <div className="row gap-8 wrap text-xs muted mono"><span>{d.code} · v{d.version}</span>{(d.tags || []).slice(0, 3).map(tg => <span key={tg} className="tag" style={{ padding: '0 7px' }}>{tg}</span>)}</div>
+                          <div className="row gap-8 wrap text-xs muted mono"><span>{d.documentNumber} · v{d.version}</span>{(d.tags || []).slice(0, 3).map(tg => <span key={tg} className="tag" style={{ padding: '0 7px' }}>{tg}</span>)}</div>
                         </div>
                         <Icon name="arrowRight" size={16} style={{ color: 'var(--ink-300)', flexShrink: 0, marginTop: 8 }} />
                       </div>
@@ -145,24 +144,46 @@ export function UploadFlow({ nav, showToast, onUploaded }) {
   const [step, setStep] = useState(0);
   const [file, setFile] = useState(null);
   const [submitting, setSubmitting] = useState(false);
+  const [catalogs, setCatalogs] = useState({ areas: [], types: [], people: [], users: [] });
+  const [catalogLoading, setCatalogLoading] = useState(true);
+  const [catalogErrors, setCatalogErrors] = useState([]);
   const [f, setF] = useState({ type: '', area: '', name: '', desc: '', owner: '', vigencia: '', tags: '', version: '1.0', revisor: '', aprobador: '', versionNote: '' });
   const set = (k, v) => setF(prev => ({ ...prev, [k]: v }));
   const steps = ['Tipo y datos', 'Archivo y versión', 'Flujo de aprobación'];
-  const typeCode = DATA.typeById(f.type);
-  const areaCode = DATA.areaById(f.area);
-  const autoCode = (areaCode && typeCode) ? `${areaCode.code}-${typeCode.short}-XXX` : '— — —';
+  const typeCode = catalogs.types.find(t => String(t.id) === String(f.type));
+  const areaCode = catalogs.areas.find(a => String(a.id) === String(f.area));
+  const autoCode = (areaCode && typeCode) ? `${areaCode.abbreviation}-${typeCode.abbreviation}-XXX` : '— — —';
   const canNext = step === 0 ? (f.type && f.area && f.name) : step === 1 ? !!file : true;
+
+  useEffect(() => {
+    setCatalogLoading(true);
+    Promise.allSettled([api.getAreas(), api.getTypes(), api.getPeople(), api.getAssignableUsers()])
+      .then(([areas, types, people, users]) => {
+        setCatalogs({
+          areas: areas.status === 'fulfilled' ? areas.value : [],
+          types: types.status === 'fulfilled' ? types.value : [],
+          people: people.status === 'fulfilled' ? people.value : [],
+          users: users.status === 'fulfilled' ? users.value : [],
+        });
+        setCatalogErrors([
+          areas.status === 'rejected' ? 'áreas' : null,
+          types.status === 'rejected' ? 'tipos documentales' : null,
+          people.status === 'rejected' ? 'responsables' : null,
+          users.status === 'rejected' ? 'usuarios de flujo' : null,
+        ].filter(Boolean));
+      })
+      .finally(() => setCatalogLoading(false));
+  }, []);
 
   const handleSubmit = async () => {
     setSubmitting(true);
     try {
       const newDoc = await addDocument({ ...f, file });
-      if (file && api.config.useMock) await saveFile(newDoc.id, file);
       showToast('Documento cargado y enviado al flujo de revisión');
       onUploaded?.();
       nav('detail', { id: newDoc.id });
-    } catch {
-      showToast('Error al cargar el documento. Intenta de nuevo.');
+    } catch (err) {
+      showToast(err.message || 'Error al cargar el documento. Intenta de nuevo.');
     } finally {
       setSubmitting(false);
     }
@@ -186,18 +207,24 @@ export function UploadFlow({ nav, showToast, onUploaded }) {
       <div className="card" style={{ padding: '26px 28px' }}>
         {step === 0 && (
           <div>
+            {catalogErrors.length > 0 && (
+              <div className="login-error" style={{ marginBottom: 18 }}>
+                <Icon name="alert" size={16} />
+                No se pudieron cargar: {catalogErrors.join(', ')}. Reinicia el backend y recarga la página.
+              </div>
+            )}
             <div className="form-grid">
-              <div className="form-row"><label>Tipo documental *</label><select className="input" value={f.type} onChange={e => set('type', e.target.value)}><option value="">Seleccionar…</option>{DATA.TYPES.map(t => <option key={t.id} value={t.id}>{t.name}</option>)}</select></div>
-              <div className="form-row"><label>Área responsable *</label><select className="input" value={f.area} onChange={e => set('area', e.target.value)}><option value="">Seleccionar…</option>{DATA.AREAS.map(a => <option key={a.id} value={a.id}>{a.name}</option>)}</select></div>
+              <div className="form-row"><label>Tipo documental *</label><select className="input" value={f.type} disabled={catalogLoading || catalogs.types.length === 0} onChange={e => set('type', e.target.value)}><option value="">{catalogLoading ? 'Cargando...' : 'Seleccionar…'}</option>{catalogs.types.map(t => <option key={t.id} value={t.id}>{t.name}</option>)}</select></div>
+              <div className="form-row"><label>Área responsable *</label><select className="input" value={f.area} disabled={catalogLoading || catalogs.areas.length === 0} onChange={e => set('area', e.target.value)}><option value="">{catalogLoading ? 'Cargando...' : 'Seleccionar…'}</option>{catalogs.areas.map(a => <option key={a.id} value={a.id}>{a.name}</option>)}</select></div>
             </div>
             <div className="form-row"><label>Nombre del documento *</label><input className="input" value={f.name} onChange={e => set('name', e.target.value)} placeholder="Ej. Procedimiento de matrícula de pregrado" /></div>
             <div className="form-row"><label>Descripción corta</label><textarea className="input" value={f.desc} onChange={e => set('desc', e.target.value)} placeholder="Resumen del propósito y alcance del documento…"></textarea></div>
             <div className="form-grid">
-              <div className="form-row"><label>Responsable</label><select className="input" value={f.owner} onChange={e => set('owner', e.target.value)}><option value="">Seleccionar…</option>{Object.keys(DATA.PEOPLE).map(k => <option key={k} value={k}>{DATA.PEOPLE[k].name}</option>)}</select></div>
+              <div className="form-row"><label>Responsable</label><select className="input" value={f.owner} disabled={catalogLoading || catalogs.people.length === 0} onChange={e => set('owner', e.target.value)}><option value="">{catalogLoading ? 'Cargando...' : 'Seleccionar…'}</option>{catalogs.people.map(p => <option key={p.id} value={p.id}>{p.name}</option>)}</select></div>
               <div className="form-row"><label>Vigencia hasta</label><input className="input" type="date" value={f.vigencia} onChange={e => set('vigencia', e.target.value)} /></div>
             </div>
             <div className="form-row"><label>Palabras clave <span className="hint">— separadas por coma</span></label><input className="input" value={f.tags} onChange={e => set('tags', e.target.value)} placeholder="matrícula, pregrado, procedimiento" /></div>
-            <div className="code-preview"><Icon name="sparkles" size={16} style={{ color: 'var(--brand-700)' }} />Código asignado automáticamente: <strong className="mono" style={{ color: 'var(--brand-700)' }}>{autoCode}</strong></div>
+            <div className="number-preview"><Icon name="sparkles" size={16} style={{ color: 'var(--brand-700)' }} />Número documental asignado automáticamente: <strong className="mono" style={{ color: 'var(--brand-700)' }}>{autoCode}</strong></div>
           </div>
         )}
         {step === 1 && (
@@ -214,10 +241,16 @@ export function UploadFlow({ nav, showToast, onUploaded }) {
         )}
         {step === 2 && (
           <div>
+            {catalogErrors.includes('usuarios de flujo') && (
+              <div className="login-error" style={{ marginBottom: 18 }}>
+                <Icon name="alert" size={16} />
+                No se pudieron cargar los usuarios del flujo. Reinicia el backend y recarga la página.
+              </div>
+            )}
             <p className="page-sub mb-24" style={{ marginTop: 0 }}>Define quién revisa y aprueba el documento antes de su publicación.</p>
             <div className="form-grid">
-              <div className="form-row"><label>Revisor</label><select className="input" value={f.revisor} onChange={e => set('revisor', e.target.value)}><option value="">Seleccionar…</option>{DATA.USERS.filter(u => ['revisor', 'lider', 'editor'].includes(u.role)).map(u => <option key={u.id} value={u.id}>{u.name}</option>)}</select></div>
-              <div className="form-row"><label>Aprobador</label><select className="input" value={f.aprobador} onChange={e => set('aprobador', e.target.value)}><option value="">Seleccionar…</option>{DATA.USERS.filter(u => ['aprobador', 'lider', 'admin'].includes(u.role)).map(u => <option key={u.id} value={u.id}>{u.name}</option>)}</select></div>
+              <div className="form-row"><label>Revisor</label><select className="input" value={f.revisor} disabled={catalogLoading || catalogs.users.length === 0} onChange={e => set('revisor', e.target.value)}><option value="">{catalogLoading ? 'Cargando...' : 'Seleccionar…'}</option>{catalogs.users.filter(u => [4, 2, 3].includes(Number(u.role))).map(u => <option key={u.id} value={u.id}>{u.name}</option>)}</select></div>
+              <div className="form-row"><label>Aprobador</label><select className="input" value={f.aprobador} disabled={catalogLoading || catalogs.users.length === 0} onChange={e => set('aprobador', e.target.value)}><option value="">{catalogLoading ? 'Cargando...' : 'Seleccionar…'}</option>{catalogs.users.filter(u => [5, 2, 1].includes(Number(u.role))).map(u => <option key={u.id} value={u.id}>{u.name}</option>)}</select></div>
             </div>
             <div className="card summary-card">
               <h4 style={{ margin: '0 0 14px', fontSize: 13 }}>Resumen del documento</h4>
@@ -225,7 +258,7 @@ export function UploadFlow({ nav, showToast, onUploaded }) {
                 <div className="spec-row"><span className="k">Nombre</span><span className="v">{f.name || '—'}</span></div>
                 <div className="spec-row"><span className="k">Tipo</span><span className="v">{typeCode ? typeCode.name : '—'}</span></div>
                 <div className="spec-row"><span className="k">Área</span><span className="v">{areaCode ? areaCode.name : '—'}</span></div>
-                <div className="spec-row"><span className="k">Código</span><span className="v mono">{autoCode}</span></div>
+                <div className="spec-row"><span className="k">Número documental</span><span className="v mono">{autoCode}</span></div>
                 <div className="spec-row"><span className="k">Versión</span><span className="v">v{f.version}</span></div>
               </div>
             </div>
@@ -245,6 +278,16 @@ export function UploadFlow({ nav, showToast, onUploaded }) {
 }
 
 export function WorkflowView({ nav }) {
+  const [items, setItems] = useState([]);
+  const [loading, setLoading] = useState(true);
+
+  useEffect(() => {
+    api.getWorkflow()
+      .then(setItems)
+      .catch(() => setItems([]))
+      .finally(() => setLoading(false));
+  }, []);
+
   const flowSteps = [
     { k: 'creacion', label: 'Creación / Carga', icon: 'upload', desc: 'El editor crea o carga el documento' },
     { k: 'revision', label: 'Revisión', icon: 'eye', desc: 'El responsable del área revisa' },
@@ -257,7 +300,6 @@ export function WorkflowView({ nav }) {
     { k: 'revision', label: 'En revisión', tone: 'revision' },
     { k: 'aprobacion', label: 'En aprobación', tone: 'publicado' },
   ];
-  const items = DATA.WORKFLOW.map(w => ({ ...w, doc: DATA.docById(w.docId) }));
   const prioColor = { alta: 'var(--st-vencido-fg)', media: 'var(--st-revision-fg)', baja: 'var(--ink-400)' };
 
   return (
@@ -292,11 +334,11 @@ export function WorkflowView({ nav }) {
                 <span className="text-xs muted mono">{col.length}</span>
               </div>
               <div className="kanban-col">
-                {col.length === 0 ? <div className="text-xs muted kanban-empty">Sin documentos</div> : col.map(it => (
+                {col.length === 0 ? <div className="text-xs muted kanban-empty">Sin documentos</div> : col.filter(it => it.doc).map(it => (
                   <div key={it.id} className="card kanban-card" onClick={() => nav('detail', { id: it.doc.id })} role="button" tabIndex={0}>
                     <div className="row between mb-12"><AreaTag areaId={it.doc.area} /><span className="priority-label" style={{ color: prioColor[it.priority] }}>{it.priority}</span></div>
                     <div className="text-sm" style={{ fontWeight: 600, lineHeight: 1.3 }}>{it.doc.name}</div>
-                    <div className="mono text-xs muted" style={{ marginTop: 5 }}>{it.doc.code} · v{it.doc.version}</div>
+                    <div className="mono text-xs muted" style={{ marginTop: 5 }}>{it.doc.documentNumber} · v{it.doc.version}</div>
                     <div className="row gap-8 kanban-assignee">
                       <Avatar name={it.assignee} size={24} /><span className="text-xs muted grow assignee-name">{it.assignee}</span><span className="text-xs muted">{DATA.fmtDate(it.since)}</span>
                     </div>
@@ -319,14 +361,30 @@ export function WorkflowView({ nav }) {
 
 export function UsersView({ nav }) {
   const [tab, setTab] = useState('users');
-  const permLabels = { crear: 'Crear', editar: 'Editar', aprobar: 'Aprobar', publicar: 'Publicar', archivar: 'Archivar', consultar: 'Consultar', descargar: 'Descargar' };
+  const [users, setUsers] = useState([]);
+  const [roles, setRoles] = useState([]);
+  const [loading, setLoading] = useState(true);
+  const permLabels = { crear: 'Crear', editar: 'Editar', aprobar: 'Aprobar', publicar: 'Publicar', archivar: 'Archivar', consultar: 'Consultar', descargar: 'Descargar', administrar: 'Administrar' };
   const permKeys = Object.keys(permLabels);
+
+  useEffect(() => {
+    Promise.all([api.getUsers(), api.getRoles()])
+      .then(([nextUsers, nextRoles]) => {
+        setUsers(nextUsers);
+        setRoles(nextRoles);
+      })
+      .catch(() => {
+        setUsers([]);
+        setRoles([]);
+      })
+      .finally(() => setLoading(false));
+  }, []);
 
   return (
     <div className="page fade-in">
       <div className="page-head">
         <div className="breadcrumb"><a onClick={() => nav('dashboard')}>Inicio</a><span className="sep">/</span><span>Gestión</span><span className="sep">/</span><span style={{ color: 'var(--ink-700)' }}>Usuarios y roles</span></div>
-        <div className="row between wrap gap-12"><div><h1 className="page-title">Administración de usuarios y roles</h1><p className="page-sub">{DATA.USERS.length} usuarios · {DATA.ROLES.length} roles definidos</p></div><button className="btn btn-primary"><Icon name="plus" size={16} />Invitar usuario</button></div>
+        <div className="row between wrap gap-12"><div><h1 className="page-title">Administración de usuarios y roles</h1><p className="page-sub">{loading ? 'Cargando usuarios y roles...' : `${users.length} usuarios · ${roles.length} roles definidos`}</p></div><button className="btn btn-primary"><Icon name="plus" size={16} />Invitar usuario</button></div>
       </div>
       <div className="seg mb-24">
         <button type="button" className={tab === 'users' ? 'active' : ''} onClick={() => setTab('users')}><Icon name="users" size={15} />Usuarios</button>
@@ -337,14 +395,14 @@ export function UsersView({ nav }) {
           <table className="tbl">
             <thead><tr><th>Usuario</th><th>Correo</th><th>Rol</th><th>Área</th><th>Último acceso</th><th>Estado</th><th></th></tr></thead>
             <tbody>
-              {DATA.USERS.map(u => {
-                const role = DATA.roleById(u.role);
+              {users.map(u => {
+                const role = roles.find(r => r.id === u.role);
                 const ar = u.area ? DATA.areaById(u.area) : null;
                 return (
                   <tr key={u.id}>
                     <td><div className="row gap-10"><Avatar name={u.name} size={32} /><span style={{ fontWeight: 600 }}>{u.name}</span></div></td>
                     <td className="text-sm muted">{u.email}</td>
-                    <td><span className="tag tag-type">{role.name}</span></td>
+                    <td><span className="tag tag-type">{role?.name || u.roleName || u.role}</span></td>
                     <td>{ar ? <AreaTag areaId={u.area} /> : <span className="text-xs muted">Transversal</span>}</td>
                     <td className="text-sm muted">{DATA.fmtDate(u.last)}</td>
                     <td><span className={'badge badge-' + (u.status === 'Activo' ? 'aprobado' : 'archivado')}><span className="b-dot"></span>{u.status}</span></td>
@@ -358,7 +416,7 @@ export function UsersView({ nav }) {
       ) : (
         <div>
           <div className="roles-grid">
-            {DATA.ROLES.map(r => (
+            {roles.map(r => (
               <div key={r.id} className="card" style={{ padding: 18 }}>
                 <div className="row gap-10 mb-12"><span className="kpi-ico" style={{ width: 38, height: 38, borderRadius: 10, background: 'var(--brand-50)', color: 'var(--brand-700)' }}><Icon name="shield" size={18} /></span><span style={{ fontSize: 14.5, fontWeight: 700 }}>{r.name}</span></div>
                 <p style={{ fontSize: 12.5, color: 'var(--ink-600)', margin: 0, lineHeight: 1.5 }}>{r.desc}</p>
@@ -371,7 +429,7 @@ export function UsersView({ nav }) {
             <table className="tbl">
               <thead><tr><th>Rol</th>{permKeys.map(k => <th key={k} style={{ textAlign: 'center' }}>{permLabels[k]}</th>)}</tr></thead>
               <tbody>
-                {DATA.ROLES.map(r => (
+                {roles.map(r => (
                   <tr key={r.id} style={{ cursor: 'default' }}>
                     <td style={{ fontWeight: 600 }}>{r.name}</td>
                     {permKeys.map(k => <td key={k} style={{ textAlign: 'center' }}>{r.perms[k] ? <Icon name="check" size={17} style={{ color: 'var(--brand-600)' }} /> : <span style={{ color: 'var(--ink-300)' }}>—</span>}</td>)}
@@ -401,7 +459,7 @@ function BarChart({ data, color }) {
 }
 
 export function ReportsView({ nav, docs }) {
-  const byArea = DATA.AREAS.map(a => ({ label: a.code, value: docs.filter(d => d.area === a.id).length, color: a.color }));
+  const byArea = DATA.AREAS.map(a => ({ label: a.abbreviation, value: docs.filter(d => d.area === a.id).length, color: a.color }));
   const byState = Object.keys(DATA.STATES).map(s => ({ label: DATA.STATES[s].label, value: docs.filter(d => d.state === s).length, color: `var(--st-${DATA.STATES[s].cls}-fg)` }));
   const byType = DATA.TYPES.map(t => ({ label: t.name, value: docs.filter(d => d.type === t.id).length })).filter(x => x.value).sort((a, b) => b.value - a.value);
   const topViews = [...docs].sort((a, b) => b.views - a.views).slice(0, 6);
@@ -527,7 +585,7 @@ export function LoginView() {
           <button className="btn btn-primary login-submit" type="submit" disabled={loading}>{loading ? 'Ingresando…' : 'Ingresar'}<Icon name="arrowRight" size={17} /></button>
           <div className="row gap-10 mt-24 login-divider"><div className="login-divider-line"></div><span className="text-xs muted">o</span><div className="login-divider-line"></div></div>
           <button className="btn btn-ghost mt-16 login-ms" type="button" disabled={msLoading} onClick={handleMicrosoft}><Icon name="building" size={17} />{msLoading ? 'Conectando con Microsoft 365…' : 'Continuar con Microsoft 365'}</button>
-          <p className="text-xs muted mt-20" style={{ textAlign: 'center', lineHeight: 1.5 }}>Demo: usa cualquier correo de {DATA.USERS.length} usuarios registrados con contraseña de 4+ caracteres.</p>
+          <p className="text-xs muted mt-20" style={{ textAlign: 'center', lineHeight: 1.5 }}>Ingresa con un usuario registrado en la base de datos.</p>
         </form>
       </div>
     </div>

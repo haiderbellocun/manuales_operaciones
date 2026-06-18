@@ -14,7 +14,7 @@ function MockDocumentPreview({ doc, height = 420 }) {
         <div className="mock-doc-logo"><Icon name="building" size={20} /></div>
         <div>
           <div className="mock-doc-org">Área de Operaciones — Documento institucional</div>
-          <div className="mock-doc-code">{doc.code} · v{doc.version}</div>
+          <div className="mock-doc-number">{doc.documentNumber} · v{doc.version}</div>
         </div>
       </div>
       <div className="mock-doc-body">

@@ -30,7 +30,7 @@ router.post('/login', async (req, res, next) => {
 
 router.post('/microsoft', async (req, res, next) => {
   try {
-    const user = await findById('u1');
+    const user = await findByEmail('mlopez@institucion.edu.co');
     if (!user) return res.status(500).json({ message: 'Usuario demo no configurado.' });
     const token = signToken(userForToken(user));
     res.json({ token, user: await sanitizeUser(user), provider: 'microsoft' });

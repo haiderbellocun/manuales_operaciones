@@ -3,24 +3,24 @@
    ============================================================ */
 
 const AREAS = [
-    { id: 'fco', name: 'Fábrica de Contenidos', code: 'FCO', color: 'var(--area-fco)', lead: 'Laura Restrepo Mejía' },
-    { id: 'pra', name: 'Prácticas', code: 'PRA', color: 'var(--area-pra)', lead: 'Mauricio Salazar Ríos' },
-    { id: 'hom', name: 'Homologaciones', code: 'HOM', color: 'var(--area-hom)', lead: 'Diana Marcela Ruiz' },
-    { id: 'oap', name: 'Operación Académica de Pregrado', code: 'OAP', color: 'var(--area-oap)', lead: 'Carlos Andrés Gómez' },
-    { id: 'opg', name: 'Operación Académica de Posgrado', code: 'OPG', color: 'var(--area-opg)', lead: 'Andrea Forero Castro' },
-    { id: 'psb', name: 'Pruebas Saber', code: 'PSB', color: 'var(--area-psb)', lead: 'Julián Ospina Vélez' },
+    { id: 'fco', name: 'Fábrica de Contenidos', abbreviation: 'FCO', color: 'var(--area-fco)', lead: 'Laura Restrepo Mejía' },
+    { id: 'pra', name: 'Prácticas', abbreviation: 'PRA', color: 'var(--area-pra)', lead: 'Mauricio Salazar Ríos' },
+    { id: 'hom', name: 'Homologaciones', abbreviation: 'HOM', color: 'var(--area-hom)', lead: 'Diana Marcela Ruiz' },
+    { id: 'oap', name: 'Operación Académica de Pregrado', abbreviation: 'OAP', color: 'var(--area-oap)', lead: 'Carlos Andrés Gómez' },
+    { id: 'opg', name: 'Operación Académica de Posgrado', abbreviation: 'OPG', color: 'var(--area-opg)', lead: 'Andrea Forero Castro' },
+    { id: 'psb', name: 'Pruebas Saber', abbreviation: 'PSB', color: 'var(--area-psb)', lead: 'Julián Ospina Vélez' },
   ];
 
   const TYPES = [
-    { id: 'procedimiento', name: 'Procedimiento', short: 'PR', icon: 'flow' },
-    { id: 'manual_funciones', name: 'Manual de funciones', short: 'MF', icon: 'briefcase' },
-    { id: 'descriptor', name: 'Descriptor de cargo', short: 'DC', icon: 'idcard' },
-    { id: 'manual_app', name: 'Manual de aplicación', short: 'MA', icon: 'app' },
-    { id: 'ans', name: 'ANS', short: 'ANS', icon: 'handshake' },
-    { id: 'formato', name: 'Formato', short: 'FT', icon: 'form' },
-    { id: 'instructivo', name: 'Instructivo', short: 'IN', icon: 'list' },
-    { id: 'guia', name: 'Guía', short: 'GU', icon: 'compass' },
-    { id: 'politica', name: 'Política', short: 'PO', icon: 'shield' },
+    { id: 'procedimiento', name: 'Procedimiento', abbreviation: 'PR', icon: 'flow' },
+    { id: 'manual_funciones', name: 'Manual de funciones', abbreviation: 'MF', icon: 'briefcase' },
+    { id: 'descriptor', name: 'Descriptor de cargo', abbreviation: 'DC', icon: 'idcard' },
+    { id: 'manual_app', name: 'Manual de aplicación', abbreviation: 'MA', icon: 'app' },
+    { id: 'ans', name: 'ANS', abbreviation: 'ANS', icon: 'handshake' },
+    { id: 'formato', name: 'Formato', abbreviation: 'FT', icon: 'form' },
+    { id: 'instructivo', name: 'Instructivo', abbreviation: 'IN', icon: 'list' },
+    { id: 'guia', name: 'Guía', abbreviation: 'GU', icon: 'compass' },
+    { id: 'politica', name: 'Política', abbreviation: 'PO', icon: 'shield' },
   ];
 
   const STATES = {
@@ -50,137 +50,137 @@ const AREAS = [
   // Documentos
   const DOCS = [
     // ---- Fábrica de Contenidos
-    { id: 'd01', area: 'fco', type: 'procedimiento', code: 'FCO-PR-001', name: 'Producción de objetos virtuales de aprendizaje (OVA)',
+    { id: 'd01', area: 'fco', type: 'procedimiento', documentNumber: 'FCO-PR-001', name: 'Producción de objetos virtuales de aprendizaje (OVA)',
       version: '3.2', state: 'publicado', created: '2023-02-14', updated: '2025-11-03', owner: 'laura', vigencia: '2026-11-03', fav: true, views: 482,
       desc: 'Define las etapas para diseñar, producir y publicar OVA: guion, storyboard, producción multimedia y control de calidad.',
       tags: ['ova','producción','multimedia','calidad'],
       history: [ ver('3.2','2025-11-03','paula','Actualización de checklist de accesibilidad WCAG'), ver('3.1','2025-05-20','laura','Se incorpora etapa de revisión pedagógica'), ver('3.0','2024-09-10','laura','Rediseño completo del flujo'), ver('2.0','2023-08-01','paula','Versión 2'), ver('1.0','2023-02-14','laura','Creación') ],
       related: ['d02','d03','d05'] },
-    { id: 'd02', area: 'fco', type: 'manual_funciones', code: 'FCO-MF-004', name: 'Manual de funciones — Diseñador instruccional',
+    { id: 'd02', area: 'fco', type: 'manual_funciones', documentNumber: 'FCO-MF-004', name: 'Manual de funciones — Diseñador instruccional',
       version: '2.0', state: 'publicado', created: '2023-04-02', updated: '2025-07-18', owner: 'laura', vigencia: '2026-07-18', fav: false, views: 318,
       desc: 'Funciones, responsabilidades y competencias del rol de diseñador instruccional dentro de la Fábrica de Contenidos.',
       tags: ['cargo','diseño instruccional','competencias'], cargo: 'c01',
       history: [ ver('2.0','2025-07-18','laura','Ajuste de competencias técnicas'), ver('1.0','2023-04-02','laura','Creación') ],
       related: ['d03','d01'] },
-    { id: 'd03', area: 'fco', type: 'descriptor', code: 'FCO-DC-003', name: 'Descriptor de cargo — Productor multimedia',
+    { id: 'd03', area: 'fco', type: 'descriptor', documentNumber: 'FCO-DC-003', name: 'Descriptor de cargo — Productor multimedia',
       version: '1.4', state: 'aprobado', created: '2023-06-12', updated: '2025-09-22', owner: 'paula', vigencia: '2026-09-22', fav: false, views: 201,
       desc: 'Perfil, propósito y relaciones del cargo de productor multimedia.', tags: ['cargo','multimedia','perfil'], cargo: 'c02',
       history: [ ver('1.4','2025-09-22','paula','Actualización de herramientas'), ver('1.0','2023-06-12','paula','Creación') ], related: ['d02'] },
-    { id: 'd04', area: 'fco', type: 'guia', code: 'FCO-GU-002', name: 'Guía de estilo audiovisual institucional',
+    { id: 'd04', area: 'fco', type: 'guia', documentNumber: 'FCO-GU-002', name: 'Guía de estilo audiovisual institucional',
       version: '2.1', state: 'revision', created: '2024-01-20', updated: '2026-01-15', owner: 'felipe', vigencia: '2027-01-15', fav: true, views: 356,
       desc: 'Lineamientos de identidad visual, tipografía, color y narrativa para piezas audiovisuales.', tags: ['estilo','audiovisual','marca'],
       history: [ ver('2.1','2026-01-15','felipe','En revisión por comité de marca'), ver('2.0','2025-02-01','felipe','Versión 2'), ver('1.0','2024-01-20','felipe','Creación') ], related: ['d01'] },
-    { id: 'd05', area: 'fco', type: 'formato', code: 'FCO-FT-007', name: 'Formato de solicitud de contenido',
+    { id: 'd05', area: 'fco', type: 'formato', documentNumber: 'FCO-FT-007', name: 'Formato de solicitud de contenido',
       version: '1.2', state: 'publicado', created: '2023-09-05', updated: '2025-03-11', owner: 'paula', vigencia: '2026-09-05', fav: false, views: 540,
       desc: 'Plantilla para que las áreas soliciten producción de nuevo contenido.', tags: ['formato','solicitud'],
       history: [ ver('1.2','2025-03-11','paula','Campos adicionales'), ver('1.0','2023-09-05','paula','Creación') ], related: ['d01'] },
 
     // ---- Prácticas
-    { id: 'd06', area: 'pra', type: 'procedimiento', code: 'PRA-PR-002', name: 'Legalización de prácticas profesionales',
+    { id: 'd06', area: 'pra', type: 'procedimiento', documentNumber: 'PRA-PR-002', name: 'Legalización de prácticas profesionales',
       version: '4.0', state: 'publicado', created: '2022-08-10', updated: '2025-10-28', owner: 'mauricio', vigencia: '2026-10-28', fav: true, views: 612,
       desc: 'Proceso completo de legalización: convenio, afiliación ARL, asignación de tutor y seguimiento.', tags: ['prácticas','convenio','arl','legalización'],
       history: [ ver('4.0','2025-10-28','mauricio','Integración con afiliación digital ARL'), ver('3.0','2024-06-15','mauricio','Versión 3'), ver('1.0','2022-08-10','mauricio','Creación') ], related: ['d07','d08','d10'] },
-    { id: 'd07', area: 'pra', type: 'ans', code: 'PRA-ANS-001', name: 'ANS — Convenios de práctica con empresas aliadas',
+    { id: 'd07', area: 'pra', type: 'ans', documentNumber: 'PRA-ANS-001', name: 'ANS — Convenios de práctica con empresas aliadas',
       version: '2.0', state: 'publicado', created: '2023-03-01', updated: '2025-08-14', owner: 'mauricio', vigencia: '2026-08-14', fav: false, views: 274, ans: 'a01',
       desc: 'Acuerdo de nivel de servicio para la gestión y respuesta de convenios de práctica.', tags: ['ans','convenios','empresas'],
       history: [ ver('2.0','2025-08-14','mauricio','Ajuste de tiempos de respuesta'), ver('1.0','2023-03-01','mauricio','Creación') ], related: ['d06'] },
-    { id: 'd08', area: 'pra', type: 'manual_funciones', code: 'PRA-MF-002', name: 'Manual de funciones — Coordinador de prácticas',
+    { id: 'd08', area: 'pra', type: 'manual_funciones', documentNumber: 'PRA-MF-002', name: 'Manual de funciones — Coordinador de prácticas',
       version: '1.3', state: 'vencido', created: '2022-11-04', updated: '2024-02-09', owner: 'mauricio', vigencia: '2025-02-09', fav: false, views: 189, cargo: 'c03',
       desc: 'Funciones del coordinador de prácticas. Requiere actualización por cambio de estructura.', tags: ['cargo','coordinador'],
       history: [ ver('1.3','2024-02-09','mauricio','Versión 1.3'), ver('1.0','2022-11-04','mauricio','Creación') ], related: ['d06'] },
-    { id: 'd09', area: 'pra', type: 'instructivo', code: 'PRA-IN-005', name: 'Instructivo de registro de horas de práctica',
+    { id: 'd09', area: 'pra', type: 'instructivo', documentNumber: 'PRA-IN-005', name: 'Instructivo de registro de horas de práctica',
       version: '1.1', state: 'publicado', created: '2024-04-18', updated: '2025-06-30', owner: 'mauricio', vigencia: '2026-06-30', fav: false, views: 421,
       desc: 'Cómo registrar y validar las horas de práctica en el sistema.', tags: ['horas','registro','instructivo'],
       history: [ ver('1.1','2025-06-30','mauricio','Corrección de pantallazos'), ver('1.0','2024-04-18','mauricio','Creación') ], related: ['d06'] },
-    { id: 'd10', area: 'pra', type: 'formato', code: 'PRA-FT-011', name: 'Formato de evaluación del practicante',
+    { id: 'd10', area: 'pra', type: 'formato', documentNumber: 'PRA-FT-011', name: 'Formato de evaluación del practicante',
       version: '2.2', state: 'aprobado', created: '2023-01-25', updated: '2025-12-01', owner: 'mauricio', vigencia: '2026-12-01', fav: false, views: 298,
       desc: 'Rúbrica de evaluación del desempeño del practicante por parte del tutor empresarial.', tags: ['evaluación','rúbrica'],
       history: [ ver('2.2','2025-12-01','mauricio','Nueva rúbrica por competencias'), ver('1.0','2023-01-25','mauricio','Creación') ], related: ['d06'] },
 
     // ---- Homologaciones
-    { id: 'd11', area: 'hom', type: 'procedimiento', code: 'HOM-PR-001', name: 'Homologación de asignaturas',
+    { id: 'd11', area: 'hom', type: 'procedimiento', documentNumber: 'HOM-PR-001', name: 'Homologación de asignaturas',
       version: '5.1', state: 'publicado', created: '2021-07-02', updated: '2026-02-10', owner: 'diana', vigencia: '2027-02-10', fav: true, views: 731,
       desc: 'Procedimiento para evaluar y aprobar la equivalencia de asignaturas de estudiantes provenientes de otras instituciones.', tags: ['homologación','equivalencias','asignaturas'],
       history: [ ver('5.1','2026-02-10','diana','Reducción de tiempos por automatización'), ver('5.0','2025-01-12','diana','Versión 5'), ver('4.0','2023-03-20','sebastian','Versión 4'), ver('1.0','2021-07-02','diana','Creación') ], related: ['d12','d13','d14','d15'] },
-    { id: 'd12', area: 'hom', type: 'ans', code: 'HOM-ANS-002', name: 'ANS — Respuesta a solicitudes de homologación',
+    { id: 'd12', area: 'hom', type: 'ans', documentNumber: 'HOM-ANS-002', name: 'ANS — Respuesta a solicitudes de homologación',
       version: '3.0', state: 'aprobado', created: '2022-05-09', updated: '2025-11-20', owner: 'diana', vigencia: '2026-11-20', fav: true, views: 408, ans: 'a02',
       desc: 'Tiempos y compromisos de respuesta para las solicitudes de homologación de los estudiantes.', tags: ['ans','homologación','tiempos'],
       history: [ ver('3.0','2025-11-20','diana','Nuevos tiempos de resolución'), ver('2.0','2024-01-15','diana','Versión 2'), ver('1.0','2022-05-09','diana','Creación') ], related: ['d11','d14'] },
-    { id: 'd13', area: 'hom', type: 'descriptor', code: 'HOM-DC-001', name: 'Descriptor de cargo — Analista de homologaciones',
+    { id: 'd13', area: 'hom', type: 'descriptor', documentNumber: 'HOM-DC-001', name: 'Descriptor de cargo — Analista de homologaciones',
       version: '2.0', state: 'publicado', created: '2022-09-14', updated: '2025-10-05', owner: 'sebastian', vigencia: '2026-10-05', fav: false, views: 167, cargo: 'c04',
       desc: 'Perfil y propósito del analista de homologaciones.', tags: ['cargo','analista'],
       history: [ ver('2.0','2025-10-05','sebastian','Versión 2'), ver('1.0','2022-09-14','sebastian','Creación') ], related: ['d11'] },
-    { id: 'd14', area: 'hom', type: 'manual_app', code: 'HOM-MA-001', name: 'Manual de aplicación — Sistema de Homologaciones (SIHO)',
+    { id: 'd14', area: 'hom', type: 'manual_app', documentNumber: 'HOM-MA-001', name: 'Manual de aplicación — Sistema de Homologaciones (SIHO)',
       version: '2.3', state: 'publicado', created: '2023-10-01', updated: '2026-01-28', owner: 'felipe', vigencia: '2027-01-28', fav: true, views: 389, app: 'ap01',
       desc: 'Manual de usuario y técnico del Sistema Interno de Homologaciones (SIHO).', tags: ['siho','aplicación','manual'],
       history: [ ver('2.3','2026-01-28','felipe','Documentación del módulo de reportes'), ver('2.0','2025-04-10','felipe','Versión 2'), ver('1.0','2023-10-01','felipe','Creación') ], related: ['d11','d12'] },
-    { id: 'd15', area: 'hom', type: 'politica', code: 'HOM-PO-001', name: 'Política de equivalencias académicas',
+    { id: 'd15', area: 'hom', type: 'politica', documentNumber: 'HOM-PO-001', name: 'Política de equivalencias académicas',
       version: '1.0', state: 'revision', created: '2026-01-10', updated: '2026-02-22', owner: 'diana', vigencia: '2028-02-22', fav: false, views: 92,
       desc: 'Marco institucional para definir criterios de equivalencia entre programas y asignaturas.', tags: ['política','equivalencias','criterios'],
       history: [ ver('1.0','2026-02-22','diana','Borrador en revisión por Vicerrectoría'), ], related: ['d11'] },
-    { id: 'd16', area: 'hom', type: 'guia', code: 'HOM-GU-003', name: 'Guía rápida para el solicitante de homologación',
+    { id: 'd16', area: 'hom', type: 'guia', documentNumber: 'HOM-GU-003', name: 'Guía rápida para el solicitante de homologación',
       version: '0.9', state: 'borrador', created: '2026-02-18', updated: '2026-02-18', owner: 'sebastian', vigencia: '—', fav: false, views: 14,
       desc: 'Guía orientada al estudiante para radicar correctamente su solicitud.', tags: ['guía','estudiante','radicación'],
       history: [ ver('0.9','2026-02-18','sebastian','Primer borrador') ], related: ['d11'] },
 
     // ---- Op. Pregrado
-    { id: 'd17', area: 'oap', type: 'procedimiento', code: 'OAP-PR-004', name: 'Programación académica de pregrado',
+    { id: 'd17', area: 'oap', type: 'procedimiento', documentNumber: 'OAP-PR-004', name: 'Programación académica de pregrado',
       version: '3.0', state: 'publicado', created: '2022-04-11', updated: '2025-12-15', owner: 'carlos', vigencia: '2026-12-15', fav: true, views: 553,
       desc: 'Planeación de oferta, asignación docente, horarios y apertura de grupos por periodo.', tags: ['programación','horarios','oferta'],
       history: [ ver('3.0','2025-12-15','carlos','Integración con portal de programación'), ver('2.0','2024-03-01','carlos','Versión 2'), ver('1.0','2022-04-11','carlos','Creación') ], related: ['d18','d19','d20','d21'] },
-    { id: 'd18', area: 'oap', type: 'manual_funciones', code: 'OAP-MF-001', name: 'Manual de funciones — Coordinador académico de pregrado',
+    { id: 'd18', area: 'oap', type: 'manual_funciones', documentNumber: 'OAP-MF-001', name: 'Manual de funciones — Coordinador académico de pregrado',
       version: '2.1', state: 'aprobado', created: '2022-06-20', updated: '2025-09-08', owner: 'carlos', vigencia: '2026-09-08', fav: false, views: 244, cargo: 'c05',
       desc: 'Funciones del coordinador académico de pregrado.', tags: ['cargo','coordinador','pregrado'],
       history: [ ver('2.1','2025-09-08','carlos','Ajuste de KPIs'), ver('1.0','2022-06-20','carlos','Creación') ], related: ['d17'] },
-    { id: 'd19', area: 'oap', type: 'ans', code: 'OAP-ANS-003', name: 'ANS — Atención a novedades de matrícula',
+    { id: 'd19', area: 'oap', type: 'ans', documentNumber: 'OAP-ANS-003', name: 'ANS — Atención a novedades de matrícula',
       version: '2.0', state: 'publicado', created: '2023-07-19', updated: '2025-07-30', owner: 'carlos', vigencia: '2026-07-30', fav: false, views: 367, ans: 'a03',
       desc: 'Tiempos de atención y resolución de novedades de matrícula reportadas por estudiantes.', tags: ['ans','matrícula','novedades'],
       history: [ ver('2.0','2025-07-30','carlos','Versión 2'), ver('1.0','2023-07-19','carlos','Creación') ], related: ['d17'] },
-    { id: 'd20', area: 'oap', type: 'manual_app', code: 'OAP-MA-002', name: 'Manual de aplicación — Portal de Programación Académica',
+    { id: 'd20', area: 'oap', type: 'manual_app', documentNumber: 'OAP-MA-002', name: 'Manual de aplicación — Portal de Programación Académica',
       version: '1.5', state: 'revision', created: '2024-08-22', updated: '2026-02-05', owner: 'valentina', vigencia: '2027-02-05', fav: false, views: 178, app: 'ap02',
       desc: 'Manual de usuario del portal de programación académica.', tags: ['portal','programación','manual'],
       history: [ ver('1.5','2026-02-05','valentina','Revisión módulo de horarios'), ver('1.0','2024-08-22','valentina','Creación') ], related: ['d17'] },
-    { id: 'd21', area: 'oap', type: 'instructivo', code: 'OAP-IN-008', name: 'Instructivo de apertura de grupos',
+    { id: 'd21', area: 'oap', type: 'instructivo', documentNumber: 'OAP-IN-008', name: 'Instructivo de apertura de grupos',
       version: '1.2', state: 'vencido', created: '2023-02-28', updated: '2024-08-30', owner: 'valentina', vigencia: '2025-08-30', fav: false, views: 156,
       desc: 'Criterios y pasos para la apertura y cierre de grupos por periodo.', tags: ['grupos','apertura','periodo'],
       history: [ ver('1.2','2024-08-30','valentina','Versión 1.2'), ver('1.0','2023-02-28','valentina','Creación') ], related: ['d17'] },
 
     // ---- Op. Posgrado
-    { id: 'd22', area: 'opg', type: 'procedimiento', code: 'OPG-PR-002', name: 'Matrícula de posgrado',
+    { id: 'd22', area: 'opg', type: 'procedimiento', documentNumber: 'OPG-PR-002', name: 'Matrícula de posgrado',
       version: '2.4', state: 'publicado', created: '2022-10-03', updated: '2025-11-12', owner: 'andrea', vigencia: '2026-11-12', fav: true, views: 312,
       desc: 'Proceso de matrícula para programas de especialización y maestría por cohortes.', tags: ['matrícula','posgrado','cohortes'],
       history: [ ver('2.4','2025-11-12','andrea','Ajuste por nuevas cohortes'), ver('2.0','2024-05-09','andrea','Versión 2'), ver('1.0','2022-10-03','andrea','Creación') ], related: ['d23','d24','d25'] },
-    { id: 'd23', area: 'opg', type: 'manual_funciones', code: 'OPG-MF-001', name: 'Manual de funciones — Coordinador de posgrado',
+    { id: 'd23', area: 'opg', type: 'manual_funciones', documentNumber: 'OPG-MF-001', name: 'Manual de funciones — Coordinador de posgrado',
       version: '1.2', state: 'aprobado', created: '2023-05-16', updated: '2025-08-21', owner: 'andrea', vigencia: '2026-08-21', fav: false, views: 158, cargo: 'c06',
       desc: 'Funciones del coordinador de programas de posgrado.', tags: ['cargo','coordinador','posgrado'],
       history: [ ver('1.2','2025-08-21','andrea','Versión 1.2'), ver('1.0','2023-05-16','andrea','Creación') ], related: ['d22'] },
-    { id: 'd24', area: 'opg', type: 'ans', code: 'OPG-ANS-001', name: 'ANS — Gestión de cohortes de posgrado',
+    { id: 'd24', area: 'opg', type: 'ans', documentNumber: 'OPG-ANS-001', name: 'ANS — Gestión de cohortes de posgrado',
       version: '0.8', state: 'borrador', created: '2026-02-01', updated: '2026-02-20', owner: 'andrea', vigencia: '—', fav: false, views: 23, ans: 'a04',
       desc: 'Borrador del acuerdo de nivel de servicio para apertura y gestión de cohortes.', tags: ['ans','cohortes','borrador'],
       history: [ ver('0.8','2026-02-20','andrea','Primer borrador') ], related: ['d22'] },
-    { id: 'd25', area: 'opg', type: 'descriptor', code: 'OPG-DC-002', name: 'Descriptor de cargo — Asesor de posgrado',
+    { id: 'd25', area: 'opg', type: 'descriptor', documentNumber: 'OPG-DC-002', name: 'Descriptor de cargo — Asesor de posgrado',
       version: '1.0', state: 'publicado', created: '2023-11-08', updated: '2025-04-14', owner: 'andrea', vigencia: '2026-04-14', fav: false, views: 134, cargo: 'c07',
       desc: 'Perfil del asesor comercial y académico de posgrado.', tags: ['cargo','asesor'],
       history: [ ver('1.0','2025-04-14','andrea','Versión 1'), ], related: ['d22'] },
 
     // ---- Pruebas Saber
-    { id: 'd26', area: 'psb', type: 'procedimiento', code: 'PSB-PR-001', name: 'Inscripción a Pruebas Saber Pro',
+    { id: 'd26', area: 'psb', type: 'procedimiento', documentNumber: 'PSB-PR-001', name: 'Inscripción a Pruebas Saber Pro',
       version: '3.1', state: 'publicado', created: '2022-03-30', updated: '2025-10-09', owner: 'julian', vigencia: '2026-10-09', fav: true, views: 489,
       desc: 'Proceso de inscripción institucional de estudiantes a las Pruebas Saber Pro ante el ICFES.', tags: ['saber','inscripción','icfes'],
       history: [ ver('3.1','2025-10-09','julian','Ajuste de fechas ICFES 2025'), ver('3.0','2024-08-01','julian','Versión 3'), ver('1.0','2022-03-30','julian','Creación') ], related: ['d27','d28','d29'] },
-    { id: 'd27', area: 'psb', type: 'ans', code: 'PSB-ANS-002', name: 'ANS — Reporte de resultados Saber',
+    { id: 'd27', area: 'psb', type: 'ans', documentNumber: 'PSB-ANS-002', name: 'ANS — Reporte de resultados Saber',
       version: '1.1', state: 'aprobado', created: '2024-02-12', updated: '2025-09-19', owner: 'julian', vigencia: '2026-09-19', fav: false, views: 201, ans: 'a05',
       desc: 'Compromisos de entrega y publicación de resultados de las Pruebas Saber a programas y estudiantes.', tags: ['ans','resultados','reporte'],
       history: [ ver('1.1','2025-09-19','julian','Versión 1.1'), ver('1.0','2024-02-12','julian','Creación') ], related: ['d26'] },
-    { id: 'd28', area: 'psb', type: 'manual_app', code: 'PSB-MA-003', name: 'Manual de aplicación — Plataforma de Simulacros Saber',
+    { id: 'd28', area: 'psb', type: 'manual_app', documentNumber: 'PSB-MA-003', name: 'Manual de aplicación — Plataforma de Simulacros Saber',
       version: '2.0', state: 'publicado', created: '2023-08-15', updated: '2025-12-20', owner: 'felipe', vigencia: '2026-12-20', fav: false, views: 276, app: 'ap03',
       desc: 'Manual de la plataforma de simulacros para preparación de Pruebas Saber.', tags: ['simulacros','plataforma','manual'],
       history: [ ver('2.0','2025-12-20','felipe','Versión 2'), ver('1.0','2023-08-15','felipe','Creación') ], related: ['d26'] },
-    { id: 'd29', area: 'psb', type: 'guia', code: 'PSB-GU-001', name: 'Guía de preparación institucional Saber',
+    { id: 'd29', area: 'psb', type: 'guia', documentNumber: 'PSB-GU-001', name: 'Guía de preparación institucional Saber',
       version: '1.3', state: 'revision', created: '2024-05-20', updated: '2026-02-12', owner: 'julian', vigencia: '2027-02-12', fav: false, views: 203,
       desc: 'Lineamientos para acompañar la preparación de los estudiantes a las Pruebas Saber.', tags: ['guía','preparación'],
       history: [ ver('1.3','2026-02-12','julian','Revisión de contenidos 2026'), ver('1.0','2024-05-20','julian','Creación') ], related: ['d26'] },
-    { id: 'd30', area: 'psb', type: 'formato', code: 'PSB-FT-004', name: 'Formato de novedades de inscripción',
+    { id: 'd30', area: 'psb', type: 'formato', documentNumber: 'PSB-FT-004', name: 'Formato de novedades de inscripción',
       version: '1.0', state: 'vencido', created: '2023-04-04', updated: '2024-04-04', owner: 'julian', vigencia: '2025-04-04', fav: false, views: 88,
       desc: 'Formato para reportar novedades en el proceso de inscripción Saber.', tags: ['formato','novedades'],
       history: [ ver('1.0','2024-04-04','julian','Versión 1') ], related: ['d26'] },
@@ -355,13 +355,13 @@ const AREAS = [
 
   // Usuarios y roles
   const ROLES = [
-    { id: 'admin', name: 'Administrador general', desc: 'Control total de la plataforma, configuración y usuarios.', perms: { crear:true, editar:true, aprobar:true, publicar:true, archivar:true, consultar:true, descargar:true } },
-    { id: 'lider', name: 'Líder de área', desc: 'Gestiona y aprueba los documentos de su área.', perms: { crear:true, editar:true, aprobar:true, publicar:true, archivar:true, consultar:true, descargar:true } },
-    { id: 'editor', name: 'Editor documental', desc: 'Crea y edita documentos; los envía a revisión.', perms: { crear:true, editar:true, aprobar:false, publicar:false, archivar:false, consultar:true, descargar:true } },
-    { id: 'revisor', name: 'Revisor', desc: 'Revisa documentos y devuelve observaciones.', perms: { crear:false, editar:false, aprobar:false, publicar:false, archivar:false, consultar:true, descargar:true } },
-    { id: 'aprobador', name: 'Aprobador', desc: 'Aprueba documentos revisados para su publicación.', perms: { crear:false, editar:false, aprobar:true, publicar:true, archivar:false, consultar:true, descargar:true } },
-    { id: 'consultor', name: 'Usuario consultor', desc: 'Consulta y descarga documentos publicados.', perms: { crear:false, editar:false, aprobar:false, publicar:false, archivar:false, consultar:true, descargar:true } },
-    { id: 'auditor', name: 'Auditor / lector institucional', desc: 'Lectura y trazabilidad sin descarga.', perms: { crear:false, editar:false, aprobar:false, publicar:false, archivar:false, consultar:true, descargar:false } },
+    { id: 'admin', name: 'Administrador general', desc: 'Control total de la plataforma, configuración y usuarios.', perms: { crear:true, editar:true, aprobar:true, publicar:true, archivar:true, consultar:true, descargar:true, administrar:true } },
+    { id: 'lider', name: 'Líder de área', desc: 'Gestiona y aprueba los documentos de su área.', perms: { crear:true, editar:true, aprobar:true, publicar:true, archivar:true, consultar:true, descargar:true, administrar:false } },
+    { id: 'editor', name: 'Editor documental', desc: 'Crea y edita documentos; los envía a revisión.', perms: { crear:true, editar:true, aprobar:false, publicar:false, archivar:false, consultar:true, descargar:true, administrar:false } },
+    { id: 'revisor', name: 'Revisor', desc: 'Revisa documentos y devuelve observaciones.', perms: { crear:false, editar:false, aprobar:false, publicar:false, archivar:false, consultar:true, descargar:true, administrar:false } },
+    { id: 'aprobador', name: 'Aprobador', desc: 'Aprueba documentos revisados para su publicación.', perms: { crear:false, editar:false, aprobar:true, publicar:true, archivar:false, consultar:true, descargar:true, administrar:false } },
+    { id: 'consultor', name: 'Usuario consultor', desc: 'Consulta y descarga documentos publicados.', perms: { crear:false, editar:false, aprobar:false, publicar:false, archivar:false, consultar:true, descargar:true, administrar:false } },
+    { id: 'auditor', name: 'Auditor / lector institucional', desc: 'Lectura y trazabilidad sin descarga.', perms: { crear:false, editar:false, aprobar:false, publicar:false, archivar:false, consultar:true, descargar:false, administrar:false } },
   ];
 
   const USERS = [
@@ -401,13 +401,87 @@ const AREAS = [
     { who: 'carlos', action: 'aprobó v2.1 de', docId: 'd18', when: 'Hace 5 días' },
   ];
 
+const AREA_IDS = { fco: 1, pra: 2, hom: 3, oap: 4, opg: 5, psb: 6 };
+const TYPE_IDS = {
+  procedimiento: 1,
+  manual_funciones: 2,
+  descriptor: 3,
+  manual_app: 4,
+  ans: 5,
+  formato: 6,
+  instructivo: 7,
+  guia: 8,
+  politica: 9,
+};
+const ROLE_IDS = { admin: 1, lider: 2, editor: 3, revisor: 4, aprobador: 5, consultor: 6, auditor: 7 };
+const PERSON_SLUGS = ['laura', 'mauricio', 'diana', 'carlos', 'andrea', 'julian', 'paula', 'sebastian', 'valentina', 'felipe'];
+const PERSON_IDS = Object.fromEntries(PERSON_SLUGS.map((slug, i) => [slug, i + 1]));
+
+function numericDocId(id) {
+  if (typeof id === 'number') return id;
+  const n = Number(String(id || '').replace(/\D/g, ''));
+  return Number.isFinite(n) && n > 0 ? n : id;
+}
+
+const AREAS_VIEW = AREAS.map(a => ({
+  id: AREA_IDS[a.id],
+  name: a.name,
+  abbreviation: a.abbreviation,
+  color: a.color,
+  lead: a.lead,
+}));
+const TYPES_VIEW = TYPES.map(t => ({
+  id: TYPE_IDS[t.id],
+  name: t.name,
+  abbreviation: t.abbreviation,
+  icon: t.icon,
+}));
+const ROLES_VIEW = ROLES.map(r => ({
+  id: ROLE_IDS[r.id],
+  name: r.name,
+  desc: r.desc,
+  perms: r.perms,
+}));
+const DOCS_VIEW = DOCS.map(d => ({
+  ...d,
+  id: numericDocId(d.id),
+  area: AREA_IDS[d.area],
+  type: TYPE_IDS[d.type],
+  owner: PERSON_IDS[d.owner],
+  documentNumber: d.documentNumber,
+  related: (d.related || []).map(numericDocId),
+  history: (d.history || []).map(h => ({ ...h, by: PERSON_IDS[h.by] || h.by })),
+}));
+
+function areaById(id) {
+  const numeric = AREA_IDS[id] || Number(id);
+  return AREAS_VIEW.find(a => a.id === numeric);
+}
+
+function typeById(id) {
+  const numeric = TYPE_IDS[id] || Number(id);
+  return TYPES_VIEW.find(t => t.id === numeric);
+}
+
+function personById(id) {
+  const numeric = PERSON_IDS[id] || Number(id);
+  const slug = PERSON_SLUGS[numeric - 1];
+  const person = PEOPLE[slug];
+  return person ? { ...person, id: PERSON_IDS[slug], area: AREA_IDS[person.area] } : undefined;
+}
+
+function roleById(id) {
+  const numeric = ROLE_IDS[id] || Number(id);
+  return ROLES_VIEW.find(r => r.id === numeric);
+}
+
 export const DATA = {
-  AREAS, TYPES, STATES, PEOPLE, DOCS, ANS, CARGOS, APPS, ROLES, USERS, WORKFLOW, ACTIVITY,
-  areaById: (id) => AREAS.find(a => a.id === id),
-  typeById: (id) => TYPES.find(t => t.id === id),
-  docById: (id) => DOCS.find(d => d.id === id),
-  personById: (id) => PEOPLE[id],
-  roleById: (id) => ROLES.find(r => r.id === id),
+  AREAS: AREAS_VIEW, TYPES: TYPES_VIEW, STATES, PEOPLE, DOCS: DOCS_VIEW, ANS, CARGOS, APPS, ROLES: ROLES_VIEW, USERS, WORKFLOW, ACTIVITY,
+  areaById,
+  typeById,
+  docById: (id) => DOCS_VIEW.find(d => d.id === numericDocId(id)),
+  personById,
+  roleById,
   fmtDate: (s) => {
     if (!s || s === '—') return '—';
     const [y, m, d] = s.split('-');

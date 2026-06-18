@@ -26,13 +26,21 @@ export async function listDocuments(userId, filters = {}) {
   const conditions = [];
   const params = [];
 
-  if (area)   { params.push(area);           conditions.push(`area_id = $${params.length}`); }
-  if (type)   { params.push(type);           conditions.push(`type_id = $${params.length}`); }
-  if (state)  { params.push(state);          conditions.push(`state = $${params.length}`); }
+  if (area) {
+    const n = Number(area);
+    params.push(n);
+    conditions.push(`area_id = $${params.length}`);
+  }
+  if (type) {
+    const n = Number(type);
+    params.push(n);
+    conditions.push(`type_id = $${params.length}`);
+  }
+  if (state) { params.push(state); conditions.push(`state = $${params.length}`); }
   if (search) {
     params.push(`%${search}%`);
     const n = params.length;
-    conditions.push(`(name ILIKE $${n} OR code ILIKE $${n})`);
+    conditions.push(`(name ILIKE $${n} OR document_number ILIKE $${n})`);
   }
 
   const where = conditions.length ? `WHERE ${conditions.join(' AND ')}` : '';
@@ -57,7 +65,7 @@ export async function listDocuments(userId, filters = {}) {
 
   const docIds = rows.map(r => r.id);
   const { rows: histRows } = await query(
-    'SELECT * FROM document_history WHERE doc_id = ANY($1) ORDER BY id',
+    'SELECT * FROM document_history WHERE doc_id = ANY($1::int[]) ORDER BY id',
     [docIds],
   );
   const histByDoc = {};
@@ -73,47 +81,39 @@ export async function listDocuments(userId, filters = {}) {
 }
 
 export async function getDocument(id, userId) {
-  const { rows } = await query('SELECT * FROM documents WHERE id = $1', [id]);
+  const { rows } = await query('SELECT * FROM documents WHERE id = $1', [Number(id)]);
   if (!rows[0]) return null;
-  const history = await getHistory(id);
+  const history = await getHistory(rows[0].id);
   const { rows: favRows } = await query(
     'SELECT 1 FROM favorites WHERE user_id = $1 AND doc_id = $2',
-    [userId, id],
+    [userId, rows[0].id],
   );
   return mapDocument(rows[0], history, favRows.length > 0);
-}
-
-export async function nextDocId() {
-  const { rows } = await query(`
-    SELECT COALESCE(MAX(CAST(SUBSTRING(id FROM 2) AS INT)), 0) + 1 AS n FROM documents
-  `);
-  return `d${String(rows[0].n).padStart(2, '0')}`;
 }
 
 export async function createDocument(payload, areaObj, typeObj) {
   const { rows: countRows } = await query(
     'SELECT COUNT(*)::int AS n FROM documents WHERE area_id = $1',
-    [payload.area],
+    [Number(payload.area)],
   );
   const seq = String(countRows[0].n + 1).padStart(3, '0');
-  const id = await nextDocId();
   const now = today();
 
-  await query(`
+  const { rows } = await query(`
     INSERT INTO documents (
-      id, area_id, type_id, code, name, version, state, owner_id,
+      area_id, type_id, document_number, name, version, state, owner_id,
       vigencia, views, description, tags, related, created, updated
-    ) VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,0,$10,$11,$12,$13,$13)
+    ) VALUES ($1,$2,$3,$4,$5,$6,$7,$8,0,$9,$10,$11,$12,$12)
+    RETURNING id
   `, [
-    id,
-    payload.area,
-    payload.type,
-    `${areaObj.code}-${typeObj.short}-${seq}`,
+    Number(payload.area),
+    Number(payload.type),
+    `${areaObj.abbreviation}-${typeObj.abbreviation}-${seq}`,
     payload.name,
     payload.version || '1.0',
     'revision',
-    payload.owner || 'paula',
-    payload.vigencia || '—',
+    Number(payload.owner),
+    payload.vigencia || '-',
     payload.desc || '',
     JSON.stringify(typeof payload.tags === 'string'
       ? payload.tags.split(',').map(t => t.trim()).filter(Boolean)
@@ -121,6 +121,7 @@ export async function createDocument(payload, areaObj, typeObj) {
     JSON.stringify([]),
     now,
   ]);
+  const id = rows[0].id;
 
   await query(`
     INSERT INTO document_history (doc_id, version, history_date, by_person_id, note)
@@ -129,59 +130,60 @@ export async function createDocument(payload, areaObj, typeObj) {
     id,
     payload.version || '1.0',
     now,
-    payload.owner || 'paula',
-    payload.versionNote || 'Versión inicial',
+    Number(payload.owner),
+    payload.versionNote || 'Version inicial',
   ]);
 
-  await logActivity(payload.userId, `Creó el documento "${payload.name}"`, id);
+  await logActivity(payload.userId, `Creo el documento "${payload.name}"`, id);
   return getDocument(id, payload.userId);
 }
 
 export async function toggleFavorite(userId, docId) {
+  const numericDocIdValue = Number(docId);
   const { rows } = await query(
     'SELECT 1 FROM favorites WHERE user_id = $1 AND doc_id = $2',
-    [userId, docId],
+    [userId, numericDocIdValue],
   );
   if (rows.length > 0) {
-    await query('DELETE FROM favorites WHERE user_id = $1 AND doc_id = $2', [userId, docId]);
+    await query('DELETE FROM favorites WHERE user_id = $1 AND doc_id = $2', [userId, numericDocIdValue]);
     return { fav: false };
   }
-  await query('INSERT INTO favorites (user_id, doc_id) VALUES ($1, $2)', [userId, docId]);
+  await query('INSERT INTO favorites (user_id, doc_id) VALUES ($1, $2)', [userId, numericDocIdValue]);
   return { fav: true };
 }
 
 export async function incrementViews(docId) {
   const { rows } = await query(
     'UPDATE documents SET views = views + 1 WHERE id = $1 RETURNING views',
-    [docId],
+    [Number(docId)],
   );
   return rows[0]?.views ?? 0;
 }
 
 export async function createUpdateRequest(docId, userId, reason, detail) {
-  const id = `ur${Date.now()}`;
-  await query(`
-    INSERT INTO update_requests (id, doc_id, user_id, reason, detail)
-    VALUES ($1, $2, $3, $4, $5)
-  `, [id, docId, userId, reason, detail]);
-  await logActivity(userId, `Solicitó actualización del documento`, docId);
+  const { rows } = await query(`
+    INSERT INTO update_requests (doc_id, user_id, reason, detail)
+    VALUES ($1, $2, $3, $4)
+    RETURNING id, created_at
+  `, [Number(docId), userId, reason, detail]);
+  await logActivity(userId, 'Solicito actualizacion del documento', Number(docId));
   return {
     ok: true,
-    id,
-    docId,
+    id: rows[0].id,
+    docId: Number(docId),
     userId,
     reason,
     detail,
-    createdAt: new Date().toISOString(),
+    createdAt: rows[0].created_at,
   };
 }
 
 export async function getFileMeta(docId) {
-  const { rows } = await query('SELECT * FROM document_files WHERE doc_id = $1', [docId]);
+  const { rows } = await query('SELECT * FROM document_files WHERE doc_id = $1', [Number(docId)]);
   return mapFile(rows[0]);
 }
 
-export async function upsertFile(docId, file, uploadedBy) {
+export async function upsertFile(docId, file, uploadedBy, storedName) {
   await query(`
     INSERT INTO document_files (doc_id, original_name, stored_name, mime_type, file_size, uploaded_by)
     VALUES ($1, $2, $3, $4, $5, $6)
@@ -193,28 +195,27 @@ export async function upsertFile(docId, file, uploadedBy) {
       uploaded_at = NOW(),
       uploaded_by = EXCLUDED.uploaded_by
   `, [
-    docId,
+    Number(docId),
     file.originalname,
-    file.filename,
+    storedName,
     file.mimetype,
     file.size,
     uploadedBy,
   ]);
-  await logActivity(uploadedBy, `Adjuntó archivo al documento`, docId);
+  await logActivity(uploadedBy, 'Adjunto archivo al documento', Number(docId));
   return getFileMeta(docId);
 }
 
 export async function addWorkflowItem(docId, assignee) {
-  const id = `w${Date.now()}`;
   await query(`
-    INSERT INTO workflow_items (id, doc_id, stage, assignee, since_date, priority)
-    VALUES ($1, $2, 'revision', $3, $4, 'media')
-  `, [id, docId, assignee, today()]);
+    INSERT INTO workflow_items (doc_id, stage, assignee, since_date, priority)
+    VALUES ($1, 'revision', $2, $3, 'media')
+  `, [Number(docId), assignee, today()]);
 }
 
 export async function resolveRevisorName(revisorId) {
-  const { rows: userRows } = await query('SELECT name FROM users WHERE id = $1', [revisorId]);
+  const { rows: userRows } = await query('SELECT name FROM users WHERE id = $1', [Number(revisorId)]);
   if (userRows[0]) return userRows[0].name;
-  const { rows: personRows } = await query('SELECT name FROM people WHERE id = $1', [revisorId]);
+  const { rows: personRows } = await query('SELECT name FROM people WHERE id = $1', [Number(revisorId)]);
   return personRows[0]?.name || 'Revisor asignado';
 }

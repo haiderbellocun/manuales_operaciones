@@ -32,15 +32,15 @@ export function DocsProvider({ children }) {
   useEffect(() => { refresh(); }, [refresh]);
 
   const toggleFav = useCallback(async (id) => {
-    const doc = docs.find(d => d.id === id);
-    const wasFav = doc?.fav ?? storage.isFavorite(id);
-    setDocs(prev => prev.map(d => d.id === id ? { ...d, fav: !wasFav } : d));
+    const numericId = Number(id);
+    const doc = docs.find(d => Number(d.id) === numericId);
+    const wasFav = doc?.fav ?? storage.isFavorite(numericId);
+    setDocs(prev => prev.map(d => Number(d.id) === numericId ? { ...d, fav: !wasFav } : d));
     try {
-      const isFav = await api.toggleFavorite(id);
-      if (api.config.useMock) return;
-      setDocs(prev => prev.map(d => d.id === id ? { ...d, fav: isFav } : d));
+      const isFav = await api.toggleFavorite(numericId);
+      setDocs(prev => prev.map(d => Number(d.id) === numericId ? { ...d, fav: isFav } : d));
     } catch {
-      setDocs(prev => prev.map(d => d.id === id ? { ...d, fav: wasFav } : d));
+      setDocs(prev => prev.map(d => Number(d.id) === numericId ? { ...d, fav: wasFav } : d));
     }
   }, [docs]);
 

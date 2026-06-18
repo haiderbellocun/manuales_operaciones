@@ -20,12 +20,25 @@ function saveSession(session) {
 
 export function AuthProvider({ children }) {
   const [session, setSession] = useState(readSession);
-  const [loading, setLoading] = useState(false);
+  const [loading, setLoading] = useState(() => Boolean(readSession()?.token));
   const [error, setError] = useState(null);
 
   useEffect(() => {
-    if (!api.config.useMock && session?.token) {
-      api.getSession().catch(() => setSession(null));
+    if (session?.token) {
+      setLoading(true);
+      api.getSession()
+        .then(({ user }) => {
+          const next = { ...session, user };
+          saveSession(next);
+          setSession(next);
+        })
+        .catch(() => {
+          saveSession(null);
+          setSession(null);
+        })
+        .finally(() => setLoading(false));
+    } else {
+      setLoading(false);
     }
   }, []);
 
@@ -70,6 +83,9 @@ export function AuthProvider({ children }) {
   }, []);
 
   const user = session?.user ?? null;
+  const perms = user?.perms || {};
+  const hasPermission = useCallback((permission) => perms[permission] === true, [perms]);
+  const hasRole = useCallback((...roles) => roles.map(Number).includes(Number(user?.role)), [user?.role]);
   const initials = user
     ? user.name.split(' ').slice(0, 2).map(w => w[0]).join('').toUpperCase()
     : '?';
@@ -80,6 +96,9 @@ export function AuthProvider({ children }) {
       isAuthenticated: !!session,
       initials,
       roleName: user?.roleName || '',
+      perms,
+      hasPermission,
+      hasRole,
     }}>
       {children}
     </AuthContext.Provider>

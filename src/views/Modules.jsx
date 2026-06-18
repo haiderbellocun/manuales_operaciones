@@ -1,5 +1,6 @@
 import { useState } from 'react';
 import { DATA } from '../data';
+import { useAuth } from '../context/AuthContext';
 import { Icon, StateBadge, AreaTag, KpiCard, Avatar, ImgPlaceholder } from '../components';
 
 function FieldBlock({ label, children, icon }) {
@@ -12,6 +13,8 @@ function FieldBlock({ label, children, icon }) {
 }
 
 export function AnsModule({ nav }) {
+  const { hasPermission } = useAuth();
+  const canCreate = hasPermission('crear');
   const list = Object.keys(DATA.ANS).map(id => ({ id, ...DATA.ANS[id], doc: DATA.docById(DATA.ANS[id].docId) }));
   return (
     <div className="page fade-in">
@@ -19,7 +22,7 @@ export function AnsModule({ nav }) {
         <div className="breadcrumb"><a onClick={() => nav('dashboard')}>Inicio</a><span className="sep">/</span><span>Módulos</span><span className="sep">/</span><span style={{ color: 'var(--ink-700)' }}>ANS</span></div>
         <div className="row between wrap gap-12">
           <div><h1 className="page-title">Acuerdos de Nivel de Servicio</h1><p className="page-sub">{list.length} ANS registrados · compromisos de servicio entre áreas y clientes</p></div>
-          <button className="btn btn-primary" onClick={() => nav('upload')}><Icon name="plus" size={16} />Nuevo ANS</button>
+          {canCreate && <button className="btn btn-primary" onClick={() => nav('upload')}><Icon name="plus" size={16} />Nuevo ANS</button>}
         </div>
       </div>
       <div className="module-grid">
@@ -30,11 +33,11 @@ export function AnsModule({ nav }) {
               <div className="module-card-head">
                 <div className="row between mb-12"><span className="kpi-ico" style={{ width: 40, height: 40, borderRadius: 11, background: area.color, color: '#fff' }}><Icon name="handshake" size={20} /></span><StateBadge state={a.doc.state} /></div>
                 <div className="module-card-title">{a.name}</div>
-                <div className="mono text-xs muted" style={{ marginTop: 5 }}>{a.doc.code} · v{a.doc.version}</div>
+                <div className="mono text-xs muted" style={{ marginTop: 5 }}>{a.doc.documentNumber} · v{a.doc.version}</div>
               </div>
               <div className="module-card-meta">
                 <div><div className="eyebrow" style={{ fontSize: 10 }}>Cliente</div><div className="text-sm" style={{ fontWeight: 600, marginTop: 3 }}>{a.cliente.split('/')[0].split('—')[0].trim()}</div></div>
-                <div><div className="eyebrow" style={{ fontSize: 10 }}>Proveedor</div><div className="text-sm" style={{ fontWeight: 600, marginTop: 3 }}>{area.code}</div></div>
+                <div><div className="eyebrow" style={{ fontSize: 10 }}>Proveedor</div><div className="text-sm" style={{ fontWeight: 600, marginTop: 3 }}>{area.abbreviation}</div></div>
                 <div><div className="eyebrow" style={{ fontSize: 10 }}>T. respuesta</div><div className="row gap-6 text-sm" style={{ fontWeight: 600, marginTop: 3, color: 'var(--brand-700)' }}><Icon name="clock" size={14} />{a.tResp}</div></div>
                 <div><div className="eyebrow" style={{ fontSize: 10 }}>T. resolución</div><div className="row gap-6 text-sm" style={{ fontWeight: 600, marginTop: 3, color: 'var(--brand-700)' }}><Icon name="check" size={14} />{a.tResol.split('(')[0].trim()}</div></div>
               </div>
@@ -47,6 +50,8 @@ export function AnsModule({ nav }) {
 }
 
 export function AnsDetail({ nav, ansId }) {
+  const { hasPermission } = useAuth();
+  const canDownload = hasPermission('descargar');
   const a = DATA.ANS[ansId];
   if (!a) return <div className="page"><p>ANS no encontrado.</p></div>;
   const doc = DATA.docById(a.docId);
@@ -55,7 +60,7 @@ export function AnsDetail({ nav, ansId }) {
 
   return (
     <div className="page fade-in">
-      <div className="breadcrumb"><a onClick={() => nav('dashboard')}>Inicio</a><span className="sep">/</span><a onClick={() => nav('ans')}>ANS</a><span className="sep">/</span><span style={{ color: 'var(--ink-700)' }}>{doc.code}</span></div>
+      <div className="breadcrumb"><a onClick={() => nav('dashboard')}>Inicio</a><span className="sep">/</span><a onClick={() => nav('ans')}>ANS</a><span className="sep">/</span><span style={{ color: 'var(--ink-700)' }}>{doc.documentNumber}</span></div>
       <div className="card doc-header">
         <div className="doc-header-accent" style={{ background: area.color }}></div>
         <div className="doc-header-body">
@@ -65,12 +70,12 @@ export function AnsDetail({ nav, ansId }) {
               <div>
                 <div className="row gap-8 mb-12"><span className="tag tag-type">ANS</span><AreaTag areaId={doc.area} /><StateBadge state={doc.state} /></div>
                 <h1 className="doc-header-title">{a.name}</h1>
-                <div className="mono text-sm muted" style={{ marginTop: 8 }}>{doc.code} · Versión {doc.version} · Vigencia {DATA.fmtDate(doc.vigencia)}</div>
+                <div className="mono text-sm muted" style={{ marginTop: 8 }}>{doc.documentNumber} · Versión {doc.version} · Vigencia {DATA.fmtDate(doc.vigencia)}</div>
               </div>
             </div>
             <div className="row gap-8 doc-header-actions">
               <button className="btn btn-ghost" onClick={() => nav('detail', { id: doc.id })}><Icon name="doc" size={16} />Ver documento</button>
-              <button className="btn btn-primary"><Icon name="download" size={16} />Descargar</button>
+              {canDownload && <button className="btn btn-primary"><Icon name="download" size={16} />Descargar</button>}
             </div>
           </div>
         </div>
@@ -116,24 +121,28 @@ export function AnsDetail({ nav, ansId }) {
 }
 
 export function CargosModule({ nav }) {
+  const { hasPermission } = useAuth();
+  const canCreate = hasPermission('crear');
   const [area, setArea] = useState('all');
-  const list = Object.keys(DATA.CARGOS).map(id => ({ id, ...DATA.CARGOS[id] })).filter(c => area === 'all' || c.area === area);
+  const list = Object.keys(DATA.CARGOS)
+    .map(id => ({ id, ...DATA.CARGOS[id] }))
+    .filter(c => area === 'all' || DATA.areaById(c.area)?.id === area);
   return (
     <div className="page fade-in">
       <div className="page-head">
         <div className="breadcrumb"><a onClick={() => nav('dashboard')}>Inicio</a><span className="sep">/</span><span>Módulos</span><span className="sep">/</span><span style={{ color: 'var(--ink-700)' }}>Funciones y cargos</span></div>
-        <div className="row between wrap gap-12"><div><h1 className="page-title">Manuales de funciones y descriptores de cargo</h1><p className="page-sub">Consulta los cargos del área: funciones, competencias, perfil y relaciones</p></div><button className="btn btn-primary" onClick={() => nav('upload')}><Icon name="plus" size={16} />Nuevo cargo</button></div>
+        <div className="row between wrap gap-12"><div><h1 className="page-title">Manuales de funciones y descriptores de cargo</h1><p className="page-sub">Consulta los cargos del área: funciones, competencias, perfil y relaciones</p></div>{canCreate && <button className="btn btn-primary" onClick={() => nav('upload')}><Icon name="plus" size={16} />Nuevo cargo</button>}</div>
       </div>
       <div className="row gap-8 wrap mb-24">
         <span className={'chip' + (area === 'all' ? ' active' : '')} onClick={() => setArea('all')}>Todas las áreas</span>
-        {DATA.AREAS.map(a => <span key={a.id} className={'chip' + (area === a.id ? ' active' : '')} onClick={() => setArea(a.id)}><span className="area-dot" style={{ background: area === a.id ? '#fff' : a.color }}></span>{a.code}</span>)}
+        {DATA.AREAS.map(a => <span key={a.id} className={'chip' + (area === a.id ? ' active' : '')} onClick={() => setArea(a.id)}><span className="area-dot" style={{ background: area === a.id ? '#fff' : a.color }}></span>{a.abbreviation}</span>)}
       </div>
       <div className="cargo-grid">
         {list.map(c => {
           const ar = DATA.areaById(c.area);
           return (
             <div key={c.id} className="card cargo-card" onClick={() => nav('cargoDetail', { id: c.id })} role="button" tabIndex={0}>
-              <div className="row between mb-12"><span className="kpi-ico" style={{ width: 44, height: 44, borderRadius: 11, background: 'var(--brand-50)', color: 'var(--brand-700)' }}><Icon name="idcard" size={21} /></span><span className="tag" style={{ background: ar.color, color: '#fff', borderColor: 'transparent' }}>{ar.code}</span></div>
+              <div className="row between mb-12"><span className="kpi-ico" style={{ width: 44, height: 44, borderRadius: 11, background: 'var(--brand-50)', color: 'var(--brand-700)' }}><Icon name="idcard" size={21} /></span><span className="tag" style={{ background: ar.color, color: '#fff', borderColor: 'transparent' }}>{ar.abbreviation}</span></div>
               <div className="cargo-name">{c.name}</div>
               <div className="text-sm muted" style={{ marginTop: 4 }}>{c.nivel} · reporta a {c.jefe}</div>
               <p className="cargo-preview">{c.objetivo}</p>
@@ -168,7 +177,7 @@ export function CargoDetail({ nav, cargoId }) {
                 <div className="text-sm muted" style={{ marginTop: 8 }}>Reporta a: <strong style={{ color: 'var(--ink-700)' }}>{c.jefe}</strong> · {ar.name}</div>
               </div>
             </div>
-            {doc && <button className="btn btn-ghost" onClick={() => nav('detail', { id: doc.id })}><Icon name="doc" size={16} />Documento {doc.code}</button>}
+            {doc && <button className="btn btn-ghost" onClick={() => nav('detail', { id: doc.id })}><Icon name="doc" size={16} />Documento {doc.documentNumber}</button>}
           </div>
         </div>
       </div>
@@ -212,13 +221,15 @@ export function CargoDetail({ nav, cargoId }) {
 }
 
 export function AppsModule({ nav }) {
+  const { hasPermission } = useAuth();
+  const canCreate = hasPermission('crear');
   const list = Object.keys(DATA.APPS).map(id => ({ id, ...DATA.APPS[id] }));
   const estadoTone = (e) => e === 'Producción' ? 'aprobado' : e === 'En desarrollo' ? 'revision' : 'borrador';
   return (
     <div className="page fade-in">
       <div className="page-head">
         <div className="breadcrumb"><a onClick={() => nav('dashboard')}>Inicio</a><span className="sep">/</span><span>Módulos</span><span className="sep">/</span><span style={{ color: 'var(--ink-700)' }}>Aplicaciones</span></div>
-        <div className="row between wrap gap-12"><div><h1 className="page-title">Manuales de aplicaciones</h1><p className="page-sub">{list.length} aplicaciones desarrolladas por el área · manuales, roles, flujos y soporte</p></div><button className="btn btn-primary" onClick={() => nav('upload')}><Icon name="plus" size={16} />Nueva aplicación</button></div>
+        <div className="row between wrap gap-12"><div><h1 className="page-title">Manuales de aplicaciones</h1><p className="page-sub">{list.length} aplicaciones desarrolladas por el área · manuales, roles, flujos y soporte</p></div>{canCreate && <button className="btn btn-primary" onClick={() => nav('upload')}><Icon name="plus" size={16} />Nueva aplicación</button>}</div>
       </div>
       <div className="apps-grid">
         {list.map(ap => (

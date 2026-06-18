@@ -82,7 +82,7 @@ export function AreaTag({ areaId, dot = true }) {
   return (
     <span className="tag">
       {dot && <span className="area-dot" style={{ background: a.color }}></span>}
-      {a.code}
+      {a.abbreviation}
     </span>
   );
 }
@@ -166,7 +166,7 @@ export function DocCard({ doc, onOpen, onFav }) {
         </div>
         <div>
           <div className="doc-card-title">{doc.name}</div>
-          <div className="mono text-xs muted" style={{ marginTop: 5 }}>{doc.code} · v{doc.version}</div>
+          <div className="mono text-xs muted" style={{ marginTop: 5 }}>{doc.documentNumber} · v{doc.version}</div>
         </div>
         <div className="doc-card-meta">
           <span className="tag tag-type">{type.name}</span>
@@ -174,7 +174,7 @@ export function DocCard({ doc, onOpen, onFav }) {
         <div className="doc-card-foot">
           <span className="row gap-6" style={{ fontSize: 12.5 }}>
             <span className="area-dot" style={{ background: area.color }}></span>
-            <span className="muted">{area.code}</span>
+            <span className="muted">{area.abbreviation}</span>
           </span>
           <StateBadge state={doc.state} />
         </div>

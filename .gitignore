@@ -6,4 +6,10 @@ dist
 .env.local
 !.env.example
 server/src/data/db.json
-server/src/data/uploads/
+
+# Credenciales locales de Google Cloud / service accounts.
+secrets/
+sa.json
+*.service-account.json
+*service-account*.json
+google-credentials*.json

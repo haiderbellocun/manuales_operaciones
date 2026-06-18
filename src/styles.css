@@ -146,12 +146,13 @@ a { color: inherit; text-decoration: none; }
 .tbar-icon-btn svg { width: 19px; height: 19px; }
 .tbar-dot { position: absolute; top: 8px; right: 9px; width: 7px; height: 7px; border-radius: 50%; background: #ffb020; border: 2px solid var(--brand-700); }
 
-.user-chip { display: flex; align-items: center; gap: 9px; padding: 5px 7px 5px 5px; border-radius: 10px; transition: background .15s; }
+.user-chip { display: flex; align-items: center; gap: 10px; padding: 5px 9px 5px 5px; border-radius: 10px; transition: background .15s; min-width: 0; }
 .user-chip:hover { background: rgba(255,255,255,.1); }
 .avatar { width: 32px; height: 32px; border-radius: 8px; background: #cfe6d8; color: var(--brand-700); display: grid; place-items: center; font-weight: 700; font-size: 13px; flex-shrink: 0; }
-.user-meta { line-height: 1.2; }
-.user-name { font-size: 13px; font-weight: 600; }
-.user-role { font-size: 11px; color: rgba(255,255,255,.62); }
+.user-meta { display: flex; flex-direction: column; gap: 2px; min-width: 0; max-width: 168px; line-height: 1.15; text-align: left; }
+.user-name, .user-role { display: block; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.user-name { font-size: 13px; font-weight: 600; color: #fff; }
+.user-role { font-size: 11px; color: rgba(255,255,255,.66); }
 
 /* Mega dropdown */
 .dropdown {
@@ -269,7 +270,7 @@ table.tbl { width: 100%; border-collapse: collapse; }
 .tbl tbody tr:hover { background: var(--brand-50); }
 .tbl tbody tr:last-child td { border-bottom: none; }
 .tbl .col-name { font-weight: 600; color: var(--ink-900); }
-.tbl .col-code { font-family: var(--mono); font-size: 12px; color: var(--ink-500); }
+.tbl .col-number { font-family: var(--mono); font-size: 12px; color: var(--ink-500); }
 
 /* Doc card */
 .doc-card {
@@ -516,7 +517,7 @@ textarea.input { resize: vertical; min-height: 80px; }
 .stepper-line { flex: 1; height: 2px; background: var(--line); margin: 0 14px; transition: background .2s; }
 .stepper-line.done { background: var(--brand-500); }
 .form-grid { display: grid; grid-template-columns: 1fr 1fr; gap: 16px; }
-.code-preview { display: flex; align-items: center; gap: 10px; padding: 12px 16px; background: var(--brand-50); border-radius: 10px; font-size: 13.5; }
+.number-preview { display: flex; align-items: center; gap: 10px; padding: 12px 16px; background: var(--brand-50); border-radius: 10px; font-size: 13.5; }
 .upload-dropzone { height: 200px; cursor: pointer; flex-direction: column; gap: 10px; }
 .upload-dropzone-title { font-family: var(--font); font-size: 14px; font-weight: 600; color: var(--ink-700); }
 .summary-card { padding: 18px; background: var(--bg); margin-top: 8px; }
@@ -579,6 +580,9 @@ textarea.input { resize: vertical; min-height: 80px; }
 .notif-head { padding: 14px 16px; border-bottom: 1px solid var(--line); font-weight: 700; font-size: 14px; }
 .notif-list { max-height: 320px; overflow-y: auto; }
 .notif-item { border-radius: 0; }
+.notif-item.unread { background: var(--brand-50); }
+.notif-empty { padding: 18px 16px; color: var(--ink-500); font-size: 13px; }
+.notif-mail-error { color: var(--st-vencido-fg) !important; margin-top: 4px; }
 .user-dropdown { right: 0; left: auto; border-radius: 14px; border: 1px solid var(--line); min-width: 240px; }
 .user-dropdown-head { padding: 6px 12px 12px; border-bottom: 1px solid var(--line); margin-bottom: 6px; }
 .user-badge { margin-top: 8px; }
@@ -705,7 +709,7 @@ textarea.input { resize: vertical; min-height: 80px; }
 .mock-doc-header { display: flex; align-items: center; gap: 14px; padding: 20px 24px; border-top: 4px solid var(--brand-700); background: var(--bg); border-bottom: 1px solid var(--line); }
 .mock-doc-logo { width: 40px; height: 40px; border-radius: 10px; background: var(--brand-50); color: var(--brand-700); display: grid; place-items: center; }
 .mock-doc-org { font-size: 11px; font-weight: 700; letter-spacing: .06em; text-transform: uppercase; color: var(--ink-400); }
-.mock-doc-code { font-family: var(--mono); font-size: 12px; color: var(--ink-500); margin-top: 2px; }
+.mock-doc-number { font-family: var(--mono); font-size: 12px; color: var(--ink-500); margin-top: 2px; }
 .mock-doc-body { padding: 28px 32px; }
 .mock-doc-title { font-size: 20px; font-weight: 800; margin: 12px 0; letter-spacing: -.01em; }
 .mock-doc-desc { font-size: 14px; line-height: 1.65; color: var(--ink-600); }

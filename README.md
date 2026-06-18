@@ -145,7 +145,6 @@ La aplicación queda disponible en:
 
 ```env
 VITE_API_URL=/api
-VITE_USE_MOCK=false
 ```
 
 ### Backend — `server/.env`

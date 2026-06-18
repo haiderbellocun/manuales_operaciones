@@ -1,86 +1,17 @@
-/* Almacén local (IndexedDB) + servidor API para archivos */
-
 import { api } from './api';
 
-const memory = new Map();
-const DB_NAME = 'acervo_files';
-const STORE = 'documents';
-
-function openDb() {
-  return new Promise((resolve, reject) => {
-    const req = indexedDB.open(DB_NAME, 1);
-    req.onupgradeneeded = () => req.result.createObjectStore(STORE);
-    req.onsuccess = () => resolve(req.result);
-    req.onerror = () => reject(req.error);
-  });
-}
-
-export async function saveFile(docId, file) {
-  const record = {
-    docId,
-    name: file.name,
-    type: file.type,
-    size: file.size,
-    blob: file,
-    savedAt: Date.now(),
-    source: 'local',
-  };
-  memory.set(docId, record);
-
-  if (!api.config.useMock) {
-    try {
-      await api.uploadDocumentFile(docId, file);
-      record.source = 'server';
-    } catch (e) {
-      console.warn('No se pudo subir al servidor, guardado localmente:', e.message);
-    }
-  }
-
-  try {
-    const db = await openDb();
-    const tx = db.transaction(STORE, 'readwrite');
-    tx.objectStore(STORE).put(record, docId);
-  } catch { /* IndexedDB unavailable */ }
-
-  return record;
-}
-
 export async function getFile(docId) {
-  if (memory.has(docId)) return memory.get(docId);
-
-  if (!api.config.useMock) {
-    try {
-      const remote = await api.getDocumentFileUrl(docId);
-      if (remote?.blob) {
-        const meta = await api.getDocumentFileMeta(docId);
-        const record = {
-          docId,
-          name: meta?.originalName || remote.name || 'documento',
-          type: remote.blob.type || meta?.mimeType || 'application/octet-stream',
-          size: remote.blob.size || meta?.size || 0,
-          blob: remote.blob,
-          savedAt: Date.now(),
-          source: 'server',
-        };
-        memory.set(docId, record);
-        return record;
-      }
-    } catch { /* fallback to local */ }
-  }
-
-  try {
-    const db = await openDb();
-    return new Promise((resolve) => {
-      const req = db.transaction(STORE, 'readonly').objectStore(STORE).get(docId);
-      req.onsuccess = () => {
-        if (req.result) memory.set(docId, req.result);
-        resolve(req.result || null);
-      };
-      req.onerror = () => resolve(null);
-    });
-  } catch {
-    return null;
-  }
+  const remote = await api.getDocumentFileUrl(docId);
+  if (!remote?.blob) return null;
+  const meta = await api.getDocumentFileMeta(docId);
+  return {
+    docId,
+    name: meta?.originalName || remote.name || 'documento',
+    type: remote.blob.type || meta?.mimeType || 'application/octet-stream',
+    size: remote.blob.size || meta?.size || 0,
+    blob: remote.blob,
+    source: 'cloud-storage',
+  };
 }
 
 export function getFileUrl(record) {

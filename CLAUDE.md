@@ -68,7 +68,6 @@ Al arrancar, el servidor **auto-migra** el esquema (`migrate()`) y **auto-siembr
 | Variable | Valor dev | Descripción |
 |---|---|---|
 | `VITE_API_URL` | `/api` | Base URL del API (proxy Vite en dev) |
-| `VITE_USE_MOCK` | `false` | `true` = usa datos mock locales (sin backend) |
 
 ---
 
@@ -166,7 +165,7 @@ server/src/
 │   ├── workflow.js         # Rutas de workflow
 │   └── catalog.js          # Catálogos y estadísticas
 ├── store/
-│   └── database.js         # Rutas de sistema de archivos (uploads dir)
+│   └── files.js            # Almacenamiento de documentos en Cloud Storage
 ├── scripts/
 │   └── seed.js             # Script CLI para seed manual
 └── sql/
@@ -181,6 +180,4 @@ server/src/
 
 **Auto-migración** — El servidor corre `migrate()` cada vez que arranca. Si el esquema cambia, editar `server/sql/schema.sql` y reiniciar. Para limpiar y re-sembrar: `npm run db:seed`.
 
-**Modo mock** — Con `VITE_USE_MOCK=true` en `.env`, el frontend usa datos locales (`src/data.js`) y no necesita backend activo. Útil para desarrollo de UI.
-
-**Subida de archivos** — Los archivos se guardan en `server/src/data/uploads/`. Esta carpeta está en `.gitignore`. Formatos permitidos: PDF, DOCX, DOC, XLSX. Límite: 25 MB.
+**Subida de archivos** — Los archivos se guardan exclusivamente en Cloud Storage. `GCS_BUCKET` es obligatorio incluso corriendo local. Formatos permitidos: PDF, DOCX, DOC, XLSX. Límite: 25 MB.

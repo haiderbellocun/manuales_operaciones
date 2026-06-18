@@ -2,6 +2,7 @@ import { useState, useMemo, useEffect, useRef } from 'react';
 import { DATA } from '../data';
 import { api } from '../services/api';
 import { storage } from '../utils/storage';
+import { useAuth } from '../context/AuthContext';
 import { Icon, StateBadge, AreaTag, DocCard, Avatar, FilterToggleButton } from '../components';
 import { DocumentPreview } from '../components/DocumentPreview';
 
@@ -26,7 +27,7 @@ function FilterRail({ docs, filt, setFilt, className }) {
           <label key={a.id} className="filter-opt">
             <input type="checkbox" checked={filt.areas.includes(a.id)} onChange={() => toggle('areas', a.id)} />
             <span className="area-dot" style={{ background: a.color }}></span>
-            <span className="grow" style={{ fontSize: 12.5 }}>{a.code}</span>
+            <span className="grow" style={{ fontSize: 12.5 }}>{a.abbreviation}</span>
             <span className="cnt">{countBy('area', a.id)}</span>
           </label>
         ))}
@@ -80,7 +81,7 @@ function HybridRow({ doc, nav, toggleFav }) {
         <div className="hybrid-main">
           <div className="hybrid-title">{doc.name}</div>
           <div className="row gap-8 text-xs muted wrap hybrid-meta">
-            <span className="mono">{doc.code} · v{doc.version}</span>
+            <span className="mono">{doc.documentNumber} · v{doc.version}</span>
             <span style={{ color: 'var(--line)' }}>•</span>
             <span className="tag tag-type" style={{ padding: '1px 7px' }}>{type.name}</span>
             <span style={{ color: 'var(--line)' }}>•</span>
@@ -101,10 +102,11 @@ function HybridRow({ doc, nav, toggleFav }) {
 
 export function Library({ nav, docs, toggleFav, initParams }) {
   const savedPrefs = storage.getLibraryPrefs();
+  const toNumberList = (values = []) => values.map(v => Number(v)).filter(Number.isFinite);
   const [filt, setFilt] = useState({
     q: '',
-    areas: initParams?.area ? [initParams.area] : (savedPrefs.filt?.areas || []),
-    types: initParams?.type ? [initParams.type] : (savedPrefs.filt?.types || []),
+    areas: initParams?.area ? [Number(initParams.area)] : toNumberList(savedPrefs.filt?.areas || []),
+    types: initParams?.type ? [Number(initParams.type)] : toNumberList(savedPrefs.filt?.types || []),
     states: savedPrefs.filt?.states || [],
     fav: initParams?.fav ?? savedPrefs.filt?.fav ?? false,
     sort: savedPrefs.sort || 'updated',
@@ -114,7 +116,7 @@ export function Library({ nav, docs, toggleFav, initParams }) {
   const saveTimer = useRef(null);
 
   useEffect(() => {
-    if (initParams?.area) setFilt(f => ({ ...f, areas: [initParams.area] }));
+    if (initParams?.area) setFilt(f => ({ ...f, areas: [Number(initParams.area)] }));
     if (initParams?.fav) setFilt(f => ({ ...f, fav: true }));
   }, [initParams?.area, initParams?.fav]);
 
@@ -134,7 +136,7 @@ export function Library({ nav, docs, toggleFav, initParams }) {
       if (filt.fav && !d.fav) return false;
       if (filt.q) {
         const q = filt.q.toLowerCase();
-        const hay = (d.name + ' ' + d.code + ' ' + (d.tags || []).join(' ') + ' ' + d.desc).toLowerCase();
+        const hay = (d.name + ' ' + d.documentNumber + ' ' + (d.tags || []).join(' ') + ' ' + d.desc).toLowerCase();
         if (!hay.includes(q)) return false;
       }
       return true;
@@ -144,7 +146,7 @@ export function Library({ nav, docs, toggleFav, initParams }) {
       s === 'updated' ? b.updated.localeCompare(a.updated)
         : s === 'name' ? a.name.localeCompare(b.name)
           : s === 'views' ? b.views - a.views
-            : a.code.localeCompare(b.code));
+            : a.documentNumber.localeCompare(b.documentNumber));
     return r;
   }, [docs, filt]);
 
@@ -183,7 +185,7 @@ export function Library({ nav, docs, toggleFav, initParams }) {
               <select value={filt.sort} onChange={e => setFilt({ ...filt, sort: e.target.value })}>
                 <option value="updated">Actualización</option>
                 <option value="name">Nombre</option>
-                <option value="code">Código</option>
+                <option value="documentNumber">Número documental</option>
                 <option value="views">Más consultados</option>
               </select>
             </div>
@@ -196,7 +198,7 @@ export function Library({ nav, docs, toggleFav, initParams }) {
 
           {activeFilterCount > 0 && (
             <div className="row gap-8 wrap mb-16">
-              {filt.areas.map(a => <span key={a} className="chip active" onClick={() => setFilt({ ...filt, areas: filt.areas.filter(x => x !== a) })}>{DATA.areaById(a).code} <Icon name="x" size={12} /></span>)}
+              {filt.areas.map(a => <span key={a} className="chip active" onClick={() => setFilt({ ...filt, areas: filt.areas.filter(x => x !== a) })}>{DATA.areaById(a).abbreviation} <Icon name="x" size={12} /></span>)}
               {filt.types.map(t => <span key={t} className="chip active" onClick={() => setFilt({ ...filt, types: filt.types.filter(x => x !== t) })}>{DATA.typeById(t).name} <Icon name="x" size={12} /></span>)}
               {filt.states.map(s => <span key={s} className="chip active" onClick={() => setFilt({ ...filt, states: filt.states.filter(x => x !== s) })}>{DATA.STATES[s].label} <Icon name="x" size={12} /></span>)}
               {filt.fav && <span className="chip active" onClick={() => setFilt({ ...filt, fav: false })}>Favoritos <Icon name="x" size={12} /></span>}
@@ -220,7 +222,7 @@ export function Library({ nav, docs, toggleFav, initParams }) {
                   {filtered.map(d => (
                     <tr key={d.id} onClick={() => nav('detail', { id: d.id })}>
                       <td className="col-name">{d.name}</td>
-                      <td className="col-code">{d.code}</td>
+                      <td className="col-number">{d.documentNumber}</td>
                       <td>{DATA.typeById(d.type).name}</td>
                       <td><AreaTag areaId={d.area} /></td>
                       <td className="mono text-xs">v{d.version}</td>
@@ -244,9 +246,28 @@ export function Library({ nav, docs, toggleFav, initParams }) {
 }
 
 export function DocDetail({ nav, docId, docs, toggleFav, requestUpdate }) {
-  const doc = docs.find(d => d.id === docId) || DATA.docById(docId);
+  const { hasPermission } = useAuth();
+  const numericDocId = Number(docId);
+  const localDoc = docs.find(d => Number(d.id) === numericDocId) || DATA.docById(docId);
+  const [remoteDoc, setRemoteDoc] = useState(null);
+  const [loadingDoc, setLoadingDoc] = useState(() => !localDoc && Number.isFinite(numericDocId));
+  const doc = localDoc || remoteDoc;
   const [tab, setTab] = useState('preview');
   const viewed = useRef(false);
+  const canDownload = hasPermission('descargar');
+
+  const handleDownload = async () => {
+    const record = await api.getDocumentFileUrl(doc.id);
+    if (!record?.blob) return;
+    const url = URL.createObjectURL(record.blob);
+    const a = document.createElement('a');
+    a.href = url;
+    a.download = record.name || `${doc.documentNumber}.bin`;
+    document.body.appendChild(a);
+    a.click();
+    a.remove();
+    URL.revokeObjectURL(url);
+  };
 
   useEffect(() => {
     if (doc && !viewed.current) {
@@ -254,6 +275,30 @@ export function DocDetail({ nav, docId, docs, toggleFav, requestUpdate }) {
       api.incrementViews(doc.id);
     }
   }, [doc?.id]);
+
+  useEffect(() => {
+    if (localDoc) {
+      setLoadingDoc(false);
+      return;
+    }
+    if (!Number.isFinite(numericDocId)) return;
+    setLoadingDoc(true);
+    api.getDocument(numericDocId)
+      .then(setRemoteDoc)
+      .catch(() => setRemoteDoc(null))
+      .finally(() => setLoadingDoc(false));
+  }, [localDoc, numericDocId]);
+
+  if (loadingDoc) {
+    return (
+      <div className="page">
+        <div className="card empty-state">
+          <Icon name="clock" size={32} style={{ color: 'var(--brand-500)' }} />
+          <p className="muted mt-16">Cargando documento...</p>
+        </div>
+      </div>
+    );
+  }
 
   if (!doc) {
     return (
@@ -282,7 +327,7 @@ export function DocDetail({ nav, docId, docs, toggleFav, requestUpdate }) {
         <a onClick={() => nav('dashboard')}>Inicio</a><span className="sep">/</span>
         <a onClick={() => nav('library')}>Biblioteca</a><span className="sep">/</span>
         <a onClick={() => nav('library', { area: doc.area })}>{area.name}</a><span className="sep">/</span>
-        <span style={{ color: 'var(--ink-700)' }}>{doc.code}</span>
+        <span style={{ color: 'var(--ink-700)' }}>{doc.documentNumber}</span>
       </div>
 
       <div className="card doc-header">
@@ -299,7 +344,7 @@ export function DocDetail({ nav, docId, docs, toggleFav, requestUpdate }) {
                 </div>
                 <h1 className="doc-header-title">{doc.name}</h1>
                 <div className="row gap-12 mono text-sm muted doc-header-meta">
-                  <span>{doc.code}</span><span style={{ color: 'var(--line)' }}>•</span>
+                  <span>{doc.documentNumber}</span><span style={{ color: 'var(--line)' }}>•</span>
                   <span>Versión {doc.version}</span><span style={{ color: 'var(--line)' }}>•</span>
                   <span className="row gap-6"><Icon name="eye" size={14} />{doc.views} consultas</span>
                 </div>
@@ -308,7 +353,7 @@ export function DocDetail({ nav, docId, docs, toggleFav, requestUpdate }) {
             <div className="row gap-8 doc-header-actions">
               <button className="btn btn-ghost" onClick={() => toggleFav(doc.id)} style={doc.fav ? { color: '#c98a13', borderColor: '#ecd9a8' } : null}><Icon name="star" size={16} />{doc.fav ? 'Favorito' : 'Marcar'}</button>
               <button className="btn btn-ghost" onClick={() => requestUpdate(doc)}><Icon name="refresh" size={16} />Solicitar actualización</button>
-              <button className="btn btn-primary"><Icon name="download" size={16} />Descargar</button>
+              {canDownload && <button className="btn btn-primary" onClick={handleDownload}><Icon name="download" size={16} />Descargar</button>}
             </div>
           </div>
         </div>
@@ -351,7 +396,7 @@ export function DocDetail({ nav, docId, docs, toggleFav, requestUpdate }) {
                       <span className="kpi-ico related-icon"><Icon name={DATA.typeById(r.type).icon} size={16} /></span>
                       <div style={{ minWidth: 0 }}>
                         <div className="related-title">{r.name}</div>
-                        <div className="mono text-xs muted">{r.code}</div>
+                        <div className="mono text-xs muted">{r.documentNumber}</div>
                       </div>
                     </div>
                   </div>
@@ -365,7 +410,7 @@ export function DocDetail({ nav, docId, docs, toggleFav, requestUpdate }) {
           <div className="card" style={{ padding: '20px 22px' }}>
             <h3 className="section-title">Ficha técnica</h3>
             <div className="spec-list">
-              <div className="spec-row"><span className="k">Código</span><span className="v mono">{doc.code}</span></div>
+              <div className="spec-row"><span className="k">Número documental</span><span className="v mono">{doc.documentNumber}</span></div>
               <div className="spec-row"><span className="k">Tipo documental</span><span className="v">{type.name}</span></div>
               <div className="spec-row"><span className="k">Área responsable</span><span className="v">{area.name}</span></div>
               <div className="spec-row"><span className="k">Versión vigente</span><span className="v">v{doc.version}</span></div>

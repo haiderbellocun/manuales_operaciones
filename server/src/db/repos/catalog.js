@@ -5,7 +5,7 @@ export async function listAreas() {
   return rows.map(r => ({
     id: r.id,
     name: r.name,
-    code: r.code,
+    abbreviation: r.abbreviation,
     color: r.color,
     lead: r.lead_name,
   }));
@@ -16,7 +16,7 @@ export async function listTypes() {
   return rows.map(r => ({
     id: r.id,
     name: r.name,
-    short: r.short,
+    abbreviation: r.abbreviation,
     icon: r.icon,
   }));
 }
@@ -31,18 +31,29 @@ export async function listRoles() {
   }));
 }
 
+export async function listPeople() {
+  const { rows } = await query('SELECT * FROM people ORDER BY name');
+  return rows.map(r => ({
+    id: r.id,
+    name: r.name,
+    role: r.role_title,
+    area: r.area_id,
+  }));
+}
+
 export async function listActivity(limit = 30) {
   const { rows } = await query(`
-    SELECT al.*, u.name AS who_name
+    SELECT al.*, COALESCE(u.name, p.name) AS who_name
     FROM activity_log al
-    LEFT JOIN users u ON al.who_person_id = u.id
+    LEFT JOIN users u ON al.who_user_id = u.id
+    LEFT JOIN people p ON al.who_person_id = p.id
     ORDER BY al.id DESC
     LIMIT $1
   `, [limit]);
   return rows.map(r => ({
     id: r.id,
-    who: r.who_person_id,
-    whoName: r.who_name || r.who_person_id || 'Sistema',
+    who: r.who_user_id || r.who_person_id,
+    whoName: r.who_name || 'Sistema',
     action: r.action,
     doc: r.doc_id,
     when: r.when_text,
@@ -54,7 +65,7 @@ export async function logActivity(who, action, docId) {
     day: '2-digit', month: '2-digit', year: 'numeric',
   });
   await query(
-    'INSERT INTO activity_log (who_person_id, action, doc_id, when_text) VALUES ($1, $2, $3, $4)',
+    'INSERT INTO activity_log (who_user_id, action, doc_id, when_text) VALUES ($1, $2, $3, $4)',
     [who || null, action, docId || null, when],
   );
 }
@@ -73,17 +84,19 @@ export async function getStats() {
 }
 
 export async function getArea(id) {
-  const { rows } = await query('SELECT * FROM areas WHERE id = $1', [id]);
+  const n = Number(id);
+  const { rows } = await query('SELECT * FROM areas WHERE id = $1', [n]);
   const r = rows[0];
   if (!r) return null;
-  return { id: r.id, name: r.name, code: r.code, color: r.color, lead: r.lead_name };
+  return { id: r.id, name: r.name, abbreviation: r.abbreviation, color: r.color, lead: r.lead_name };
 }
 
 export async function getType(id) {
-  const { rows } = await query('SELECT * FROM document_types WHERE id = $1', [id]);
+  const n = Number(id);
+  const { rows } = await query('SELECT * FROM document_types WHERE id = $1', [n]);
   const r = rows[0];
   if (!r) return null;
-  return { id: r.id, name: r.name, short: r.short, icon: r.icon };
+  return { id: r.id, name: r.name, abbreviation: r.abbreviation, icon: r.icon };
 }
 
 export async function getPerson(id) {

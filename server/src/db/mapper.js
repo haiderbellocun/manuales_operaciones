@@ -9,7 +9,7 @@ export function mapDocument(row, history = [], fav = false) {
     id: row.id,
     area: row.area_id,
     type: row.type_id,
-    code: row.code,
+    documentNumber: row.document_number,
     name: row.name,
     version: row.version,
     state: row.state,
@@ -34,7 +34,7 @@ export function mapDocument(row, history = [], fav = false) {
   };
 }
 
-export function mapUser(row, roleName) {
+export function mapUser(row, roleName, perms = {}) {
   return {
     id: row.id,
     name: row.name,
@@ -44,6 +44,7 @@ export function mapUser(row, roleName) {
     status: row.status,
     last: fmtDate(row.last_access),
     roleName,
+    perms,
   };
 }
 

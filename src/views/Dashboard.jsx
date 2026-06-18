@@ -54,7 +54,7 @@ export function Dashboard({ nav, docs, userName = 'Usuario' }) {
                 </span>
                 <div className="grow" style={{ minWidth: 0 }}>
                   <div className="attention-name">{d.name}</div>
-                  <div className="mono text-xs muted">{d.code} · vence {DATA.fmtDate(d.vigencia)}</div>
+                  <div className="mono text-xs muted">{d.documentNumber} · vence {DATA.fmtDate(d.vigencia)}</div>
                 </div>
               </div>
             ))}
@@ -83,7 +83,7 @@ export function Dashboard({ nav, docs, userName = 'Usuario' }) {
             </div>
             <div className="area-name">{a.name}</div>
             <div className="row between mt-8">
-              <span className="mono text-xs muted">{a.code}</span>
+              <span className="mono text-xs muted">{a.abbreviation}</span>
               <span className="area-count">{a.count} documentos</span>
             </div>
           </div>
@@ -106,7 +106,7 @@ export function Dashboard({ nav, docs, userName = 'Usuario' }) {
                   <span className="doc-list-icon"><Icon name={type.icon} size={17} /></span>
                   <div className="grow" style={{ minWidth: 0 }}>
                     <div className="doc-list-title">{d.name}</div>
-                    <div className="row gap-8 text-xs muted mono">{d.code}<span style={{ color: 'var(--line)' }}>•</span>{DATA.fmtDate(d.updated)}</div>
+                    <div className="row gap-8 text-xs muted mono">{d.documentNumber}<span style={{ color: 'var(--line)' }}>•</span>{DATA.fmtDate(d.updated)}</div>
                   </div>
                   <AreaTag areaId={d.area} />
                   <StateBadge state={d.state} />
