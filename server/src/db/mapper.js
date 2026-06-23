@@ -4,7 +4,7 @@ function fmtDate(d) {
   return d.toISOString().slice(0, 10);
 }
 
-export function mapDocument(row, history = [], fav = false) {
+export function mapDocument(row, history = [], fav = false, versions = [], activity = []) {
   return {
     id: row.id,
     area: row.area_id,
@@ -30,6 +30,27 @@ export function mapDocument(row, history = [], fav = false) {
       date: fmtDate(h.history_date),
       by: h.by_person_id,
       note: h.note,
+    })),
+    versions: versions.map(v => ({
+      id: v.id,
+      version: v.version,
+      originalName: v.original_name,
+      storedName: v.stored_name,
+      mimeType: v.mime_type,
+      size: v.file_size ? Number(v.file_size) : null,
+      note: v.note,
+      createdAt: v.created_at,
+      createdBy: v.created_by,
+    })),
+    activity: activity.map(a => ({
+      id: a.id,
+      action: a.action,
+      eventType: a.event_type || 'general',
+      details: a.details || {},
+      who: a.who_user_id || a.who_person_id,
+      whoName: a.who_name || 'Sistema',
+      date: fmtDate(a.created_at),
+      createdAt: a.created_at,
     })),
   };
 }

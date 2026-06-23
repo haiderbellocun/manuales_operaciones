@@ -1,5 +1,6 @@
 import { useEffect } from 'react';
-import { DATA } from './data';
+import { useCatalogs } from './context/CatalogContext';
+import { STATES } from './utils/display';
 
 /* ---------- Íconos (line, 24x24, stroke) ---------- */
 const ICONS = {
@@ -71,13 +72,14 @@ export function Icon({ name, size = 18, stroke = 2, style, className }) {
 }
 
 export function StateBadge({ state }) {
-  const s = DATA.STATES[state];
+  const s = STATES[state];
   if (!s) return null;
   return <span className={'badge badge-' + s.cls}><span className="b-dot"></span>{s.label}</span>;
 }
 
 export function AreaTag({ areaId, dot = true }) {
-  const a = DATA.areaById(areaId);
+  const { areaById } = useCatalogs();
+  const a = areaById(areaId);
   if (!a) return null;
   return (
     <span className="tag">
@@ -88,7 +90,8 @@ export function AreaTag({ areaId, dot = true }) {
 }
 
 export function TypeIcon({ typeId, size = 20 }) {
-  const t = DATA.typeById(typeId);
+  const { typeById } = useCatalogs();
+  const t = typeById(typeId);
   return <Icon name={t ? t.icon : 'doc'} size={size} />;
 }
 
@@ -152,14 +155,17 @@ export function KpiCard({ icon, value, label, tone = 'brand', trend }) {
 }
 
 export function DocCard({ doc, onOpen, onFav }) {
-  const area = DATA.areaById(doc.area);
-  const type = DATA.typeById(doc.type);
+  const { areaById, typeById } = useCatalogs();
+  const area = areaById(doc.area);
+  const type = typeById(doc.type);
+  const areaColor = area?.color || 'var(--brand-700)';
+  const typeIcon = type?.icon || 'doc';
   return (
     <div className="doc-card" onClick={() => onOpen(doc.id)} role="button" tabIndex={0} onKeyDown={e => e.key === 'Enter' && onOpen(doc.id)}>
-      <div className="doc-card-top" style={{ background: area.color }}></div>
+      <div className="doc-card-top" style={{ background: areaColor }}></div>
       <div className="doc-card-body">
         <div className="doc-card-head">
-          <span className="doc-card-icon" style={{ background: 'var(--brand-50)', color: 'var(--brand-700)' }}><Icon name={type.icon} size={20} /></span>
+          <span className="doc-card-icon" style={{ background: 'var(--brand-50)', color: 'var(--brand-700)' }}><Icon name={typeIcon} size={20} /></span>
           <button className={'doc-fav' + (doc.fav ? ' on' : '')} onClick={(e) => { e.stopPropagation(); onFav && onFav(doc.id); }} title="Favorito" aria-label="Marcar favorito">
             <Icon name="star" size={18} />
           </button>
@@ -169,12 +175,12 @@ export function DocCard({ doc, onOpen, onFav }) {
           <div className="mono text-xs muted" style={{ marginTop: 5 }}>{doc.documentNumber} · v{doc.version}</div>
         </div>
         <div className="doc-card-meta">
-          <span className="tag tag-type">{type.name}</span>
+          <span className="tag tag-type">{type?.name || 'Tipo no disponible'}</span>
         </div>
         <div className="doc-card-foot">
           <span className="row gap-6" style={{ fontSize: 12.5 }}>
-            <span className="area-dot" style={{ background: area.color }}></span>
-            <span className="muted">{area.abbreviation}</span>
+            <span className="area-dot" style={{ background: areaColor }}></span>
+            <span className="muted">{area?.abbreviation || 'N/D'}</span>
           </span>
           <StateBadge state={doc.state} />
         </div>
@@ -200,3 +206,4 @@ export function FilterToggleButton({ open, count, onClick }) {
     </button>
   );
 }
+

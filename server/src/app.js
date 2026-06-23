@@ -7,8 +7,8 @@ import documentRoutes from './routes/documents.js';
 import workflowRoutes from './routes/workflow.js';
 import catalogRoutes from './routes/catalog.js';
 import notificationRoutes from './routes/notifications.js';
+import moduleRoutes from './routes/modules.js';
 import { migrate } from './db/migrate.js';
-import { seedIfEmpty } from './db/seedData.js';
 import { checkConnection } from './db/pool.js';
 
 const __dirname = path.dirname(fileURLToPath(import.meta.url));
@@ -16,10 +16,6 @@ const clientDist = path.resolve(__dirname, '..', '..', 'dist');
 
 export async function createApp() {
   await migrate();
-  const seedResult = await seedIfEmpty();
-  if (seedResult.seeded) {
-    console.log(`  PostgreSQL: seed aplicado (${seedResult.documents} documentos)`);
-  }
 
   const app = express();
   const corsOrigin = process.env.CORS_ORIGIN || 'http://localhost:5173';
@@ -51,6 +47,7 @@ export async function createApp() {
   app.use('/api/documents', documentRoutes);
   app.use('/api/workflow', workflowRoutes);
   app.use('/api/notifications', notificationRoutes);
+  app.use('/api', moduleRoutes);
   app.use('/api', catalogRoutes);
   app.use('/api', (_req, res) => {
     res.status(404).json({ message: 'Ruta API no encontrada.' });

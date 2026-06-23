@@ -1,15 +1,22 @@
 import { Router } from 'express';
 import { authRequired, requirePermission } from '../middleware/auth.js';
 import {
-  listAreas, listTypes, listRoles, listPeople, getStats, listActivity,
+  listAreas, listTypes, listRoles, updateRole, listPeople, getStats, getReportSummary, listActivity,
 } from '../db/repos/catalog.js';
-import { listAssignableUsers, listUsers } from '../db/repos/users.js';
+import { createUser, listAssignableUsers, listUsers, updateUser } from '../db/repos/users.js';
 
 const router = Router();
 
-router.get('/areas', authRequired, requirePermission('consultar'), async (_req, res, next) => {
+function scopedByArea(auth, items) {
+  const role = Number(auth.role);
+  if (auth.perms?.administrar === true || [5, 6, 7].includes(role)) return items;
+  if (!auth.area) return [];
+  return items.filter(item => Number(item.id ?? item.area) === Number(auth.area));
+}
+
+router.get('/areas', authRequired, requirePermission('consultar'), async (req, res, next) => {
   try {
-    res.json(await listAreas());
+    res.json(scopedByArea(req.auth, await listAreas()));
   } catch (err) {
     next(err);
   }
@@ -31,9 +38,17 @@ router.get('/roles', authRequired, requirePermission('administrar'), async (_req
   }
 });
 
-router.get('/people', authRequired, requirePermission('consultar'), async (_req, res, next) => {
+router.put('/roles/:id', authRequired, requirePermission('administrar'), async (req, res, next) => {
   try {
-    res.json(await listPeople());
+    res.json(await updateRole(req.params.id, req.body || {}));
+  } catch (err) {
+    next(err);
+  }
+});
+
+router.get('/people', authRequired, requirePermission('consultar'), async (req, res, next) => {
+  try {
+    res.json(scopedByArea(req.auth, await listPeople()));
   } catch (err) {
     next(err);
   }
@@ -47,6 +62,22 @@ router.get('/users', authRequired, requirePermission('administrar'), async (_req
   }
 });
 
+router.post('/users', authRequired, requirePermission('administrar'), async (req, res, next) => {
+  try {
+    res.status(201).json(await createUser(req.body || {}));
+  } catch (err) {
+    next(err);
+  }
+});
+
+router.put('/users/:id', authRequired, requirePermission('administrar'), async (req, res, next) => {
+  try {
+    res.json(await updateUser(req.params.id, req.body || {}));
+  } catch (err) {
+    next(err);
+  }
+});
+
 router.get('/assignees', authRequired, requirePermission('consultar'), async (_req, res, next) => {
   try {
     res.json(await listAssignableUsers());
@@ -55,17 +86,25 @@ router.get('/assignees', authRequired, requirePermission('consultar'), async (_r
   }
 });
 
-router.get('/stats', authRequired, requirePermission('consultar'), async (_req, res, next) => {
+router.get('/stats', authRequired, requirePermission('consultar'), async (req, res, next) => {
   try {
-    res.json(await getStats());
+    res.json(await getStats(req.auth));
   } catch (err) {
     next(err);
   }
 });
 
-router.get('/activity', authRequired, requirePermission('consultar'), async (_req, res, next) => {
+router.get('/reports/summary', authRequired, requirePermission('consultar'), async (req, res, next) => {
   try {
-    res.json(await listActivity());
+    res.json(await getReportSummary(req.auth));
+  } catch (err) {
+    next(err);
+  }
+});
+
+router.get('/activity', authRequired, requirePermission('consultar'), async (req, res, next) => {
+  try {
+    res.json(await listActivity(req.auth));
   } catch (err) {
     next(err);
   }

@@ -1,13 +1,15 @@
 import { useState, useMemo, useEffect, useRef } from 'react';
-import { DATA } from '../data';
 import { api } from '../services/api';
 import { storage } from '../utils/storage';
 import { useAuth } from '../context/AuthContext';
+import { useCatalogs } from '../context/CatalogContext';
+import { STATES, fmtDate } from '../utils/display';
 import { Icon, StateBadge, AreaTag, DocCard, Avatar, FilterToggleButton } from '../components';
-import { DocumentPreview } from '../components/DocumentPreview';
+import { DocumentPreview, FileDropzone } from '../components/DocumentPreview';
 
 function FilterRail({ docs, filt, setFilt, className }) {
-  const countBy = (key, val) => docs.filter(d => d[key] === val).length;
+  const { areas, types } = useCatalogs();
+  const countBy = (key, val) => docs.filter(d => Number(d[key]) === Number(val)).length;
   const toggle = (key, val) => {
     const arr = filt[key].includes(val) ? filt[key].filter(x => x !== val) : [...filt[key], val];
     setFilt({ ...filt, [key]: arr });
@@ -23,18 +25,22 @@ function FilterRail({ docs, filt, setFilt, className }) {
       </div>
       <div className="filter-group">
         <h4>Área</h4>
-        {DATA.AREAS.map(a => (
-          <label key={a.id} className="filter-opt">
-            <input type="checkbox" checked={filt.areas.includes(a.id)} onChange={() => toggle('areas', a.id)} />
-            <span className="area-dot" style={{ background: a.color }}></span>
-            <span className="grow" style={{ fontSize: 12.5 }}>{a.abbreviation}</span>
-            <span className="cnt">{countBy('area', a.id)}</span>
-          </label>
-        ))}
+        {areas.map(a => {
+          const c = countBy('area', a.id);
+          if (!c && !filt.areas.includes(a.id)) return null;
+          return (
+            <label key={a.id} className="filter-opt">
+              <input type="checkbox" checked={filt.areas.includes(a.id)} onChange={() => toggle('areas', a.id)} />
+              <span className="area-dot" style={{ background: a.color }}></span>
+              <span className="grow" style={{ fontSize: 12.5 }}>{a.abbreviation}</span>
+              <span className="cnt">{c}</span>
+            </label>
+          );
+        })}
       </div>
       <div className="filter-group">
         <h4>Tipo documental</h4>
-        {DATA.TYPES.map(t => {
+        {types.map(t => {
           const c = countBy('type', t.id);
           if (!c) return null;
           return (
@@ -48,13 +54,13 @@ function FilterRail({ docs, filt, setFilt, className }) {
       </div>
       <div className="filter-group">
         <h4>Estado</h4>
-        {Object.keys(DATA.STATES).map(s => {
+        {Object.keys(STATES).map(s => {
           const c = countBy('state', s);
           if (!c) return null;
           return (
             <label key={s} className="filter-opt">
               <input type="checkbox" checked={filt.states.includes(s)} onChange={() => toggle('states', s)} />
-              <span className="grow">{DATA.STATES[s].label}</span>
+              <span className="grow">{STATES[s].label}</span>
               <span className="cnt">{c}</span>
             </label>
           );
@@ -71,23 +77,26 @@ function FilterRail({ docs, filt, setFilt, className }) {
 }
 
 function HybridRow({ doc, nav, toggleFav }) {
-  const area = DATA.areaById(doc.area);
-  const type = DATA.typeById(doc.type);
+  const { areaById, typeById, personById } = useCatalogs();
+  const area = areaById(doc.area);
+  const type = typeById(doc.type);
+  const owner = personById(doc.owner);
+  const areaColor = area?.color || 'var(--brand-700)';
   return (
     <div className="card hybrid-row" onClick={() => nav('detail', { id: doc.id })} role="button" tabIndex={0}>
-      <div className="hybrid-accent" style={{ background: area.color }}></div>
+      <div className="hybrid-accent" style={{ background: areaColor }}></div>
       <div className="hybrid-content">
-        <span className="kpi-ico hybrid-icon"><Icon name={type.icon} size={21} /></span>
+        <span className="kpi-ico hybrid-icon"><Icon name={type?.icon || 'doc'} size={21} /></span>
         <div className="hybrid-main">
           <div className="hybrid-title">{doc.name}</div>
           <div className="row gap-8 text-xs muted wrap hybrid-meta">
             <span className="mono">{doc.documentNumber} · v{doc.version}</span>
             <span style={{ color: 'var(--line)' }}>•</span>
-            <span className="tag tag-type" style={{ padding: '1px 7px' }}>{type.name}</span>
+            <span className="tag tag-type" style={{ padding: '1px 7px' }}>{type?.name || 'Tipo no disponible'}</span>
             <span style={{ color: 'var(--line)' }}>•</span>
-            <span>Resp. {DATA.personById(doc.owner).name}</span>
+            <span>Resp. {owner?.name || 'No disponible'}</span>
             <span style={{ color: 'var(--line)' }}>•</span>
-            <span>Act. {DATA.fmtDate(doc.updated)}</span>
+            <span>Act. {fmtDate(doc.updated)}</span>
           </div>
         </div>
         <div className="row gap-12 hybrid-actions">
@@ -101,6 +110,9 @@ function HybridRow({ doc, nav, toggleFav }) {
 }
 
 export function Library({ nav, docs, toggleFav, initParams }) {
+  const { hasPermission } = useAuth();
+  const { areaById, typeById, personById } = useCatalogs();
+  const canCreate = hasPermission('crear');
   const savedPrefs = storage.getLibraryPrefs();
   const toNumberList = (values = []) => values.map(v => Number(v)).filter(Number.isFinite);
   const [filt, setFilt] = useState({
@@ -150,7 +162,7 @@ export function Library({ nav, docs, toggleFav, initParams }) {
     return r;
   }, [docs, filt]);
 
-  const areaName = initParams?.area ? DATA.areaById(initParams.area)?.name : null;
+  const areaName = initParams?.area ? areaById(initParams.area)?.name : null;
   const activeFilterCount = filt.areas.length + filt.types.length + filt.states.length + (filt.fav ? 1 : 0);
 
   return (
@@ -165,7 +177,7 @@ export function Library({ nav, docs, toggleFav, initParams }) {
             <h1 className="page-title">Biblioteca documental</h1>
             <p className="page-sub">{filtered.length} de {docs.length} documentos · repositorio operativo centralizado</p>
           </div>
-          <button className="btn btn-primary" onClick={() => nav('upload')}><Icon name="upload" size={16} />Cargar documento</button>
+          {canCreate && <button className="btn btn-primary" onClick={() => nav('upload')}><Icon name="upload" size={16} />Cargar documento</button>}
         </div>
       </div>
 
@@ -198,9 +210,9 @@ export function Library({ nav, docs, toggleFav, initParams }) {
 
           {activeFilterCount > 0 && (
             <div className="row gap-8 wrap mb-16">
-              {filt.areas.map(a => <span key={a} className="chip active" onClick={() => setFilt({ ...filt, areas: filt.areas.filter(x => x !== a) })}>{DATA.areaById(a).abbreviation} <Icon name="x" size={12} /></span>)}
-              {filt.types.map(t => <span key={t} className="chip active" onClick={() => setFilt({ ...filt, types: filt.types.filter(x => x !== t) })}>{DATA.typeById(t).name} <Icon name="x" size={12} /></span>)}
-              {filt.states.map(s => <span key={s} className="chip active" onClick={() => setFilt({ ...filt, states: filt.states.filter(x => x !== s) })}>{DATA.STATES[s].label} <Icon name="x" size={12} /></span>)}
+              {filt.areas.map(a => <span key={a} className="chip active" onClick={() => setFilt({ ...filt, areas: filt.areas.filter(x => x !== a) })}>{areaById(a)?.abbreviation || a} <Icon name="x" size={12} /></span>)}
+              {filt.types.map(t => <span key={t} className="chip active" onClick={() => setFilt({ ...filt, types: filt.types.filter(x => x !== t) })}>{typeById(t)?.name || t} <Icon name="x" size={12} /></span>)}
+              {filt.states.map(s => <span key={s} className="chip active" onClick={() => setFilt({ ...filt, states: filt.states.filter(x => x !== s) })}>{STATES[s].label} <Icon name="x" size={12} /></span>)}
               {filt.fav && <span className="chip active" onClick={() => setFilt({ ...filt, fav: false })}>Favoritos <Icon name="x" size={12} /></span>}
             </div>
           )}
@@ -223,11 +235,11 @@ export function Library({ nav, docs, toggleFav, initParams }) {
                     <tr key={d.id} onClick={() => nav('detail', { id: d.id })}>
                       <td className="col-name">{d.name}</td>
                       <td className="col-number">{d.documentNumber}</td>
-                      <td>{DATA.typeById(d.type).name}</td>
+                      <td>{typeById(d.type)?.name || 'Tipo no disponible'}</td>
                       <td><AreaTag areaId={d.area} /></td>
                       <td className="mono text-xs">v{d.version}</td>
-                      <td className="text-sm">{DATA.personById(d.owner).name}</td>
-                      <td className="text-sm muted">{DATA.fmtDate(d.updated)}</td>
+                      <td className="text-sm">{personById(d.owner)?.name || 'No disponible'}</td>
+                      <td className="text-sm muted">{fmtDate(d.updated)}</td>
                       <td><StateBadge state={d.state} /></td>
                     </tr>
                   ))}
@@ -245,16 +257,33 @@ export function Library({ nav, docs, toggleFav, initParams }) {
   );
 }
 
-export function DocDetail({ nav, docId, docs, toggleFav, requestUpdate }) {
+function nextVersion(current) {
+  const parts = String(current || '1.0').split('.');
+  const major = Number(parts[0]) || 1;
+  const minor = Number(parts[1]) || 0;
+  return `${major}.${minor + 1}`;
+}
+
+export function DocDetail({ nav, docId, docs, toggleFav, requestUpdate, showToast, onVersionCreated }) {
   const { hasPermission } = useAuth();
+  const { people, areaById, typeById, personById } = useCatalogs();
   const numericDocId = Number(docId);
-  const localDoc = docs.find(d => Number(d.id) === numericDocId) || DATA.docById(docId);
+  const localDoc = docs.find(d => Number(d.id) === numericDocId);
   const [remoteDoc, setRemoteDoc] = useState(null);
   const [loadingDoc, setLoadingDoc] = useState(() => !localDoc && Number.isFinite(numericDocId));
-  const doc = localDoc || remoteDoc;
+  const doc = remoteDoc || localDoc;
   const [tab, setTab] = useState('preview');
+  const [versionModal, setVersionModal] = useState(false);
+  const [versionForm, setVersionForm] = useState({ version: '', note: '', vigencia: '', desc: '' });
+  const [versionFile, setVersionFile] = useState(null);
+  const [savingVersion, setSavingVersion] = useState(false);
+  const [editModal, setEditModal] = useState(false);
+  const [editForm, setEditForm] = useState({ name: '', owner: '', vigencia: '', desc: '', tags: '' });
+  const [savingEdit, setSavingEdit] = useState(false);
   const viewed = useRef(false);
   const canDownload = hasPermission('descargar');
+  const canCreateVersion = hasPermission('editar');
+  const canEditDocument = hasPermission('editar');
 
   const handleDownload = async () => {
     const record = await api.getDocumentFileUrl(doc.id);
@@ -268,6 +297,78 @@ export function DocDetail({ nav, docId, docs, toggleFav, requestUpdate }) {
     a.remove();
     URL.revokeObjectURL(url);
   };
+
+  const handleVersionDownload = async (versionId) => {
+    const record = await api.getDocumentVersionFileUrl(doc.id, versionId);
+    if (!record?.blob) {
+      showToast?.('No se pudo descargar esta versión.', 'error');
+      return;
+    }
+    const url = URL.createObjectURL(record.blob);
+    const a = document.createElement('a');
+    a.href = url;
+    a.download = record.name || `${doc.documentNumber}-version.bin`;
+    document.body.appendChild(a);
+    a.click();
+    a.remove();
+    URL.revokeObjectURL(url);
+  };
+
+  const openVersionModal = () => {
+    setVersionForm({ version: nextVersion(doc.version), note: '', vigencia: '', desc: '' });
+    setVersionFile(null);
+    setVersionModal(true);
+  };
+
+  const submitVersion = async () => {
+    if (!versionFile) {
+      showToast?.('Selecciona el archivo de la nueva versión.', 'warning');
+      return;
+    }
+    setSavingVersion(true);
+    try {
+      const updated = await api.createDocumentVersion(doc.id, versionForm, versionFile);
+      setRemoteDoc(updated);
+      await onVersionCreated?.();
+      setVersionModal(false);
+      showToast?.('Nueva versión creada como borrador.', 'success');
+    } catch (err) {
+      showToast?.(err.message || 'No se pudo crear la nueva versión.', 'error');
+    } finally {
+      setSavingVersion(false);
+    }
+  };
+
+  const openEditModal = () => {
+    setEditForm({
+      name: doc.name || '',
+      owner: doc.owner || '',
+      vigencia: doc.vigencia && doc.vigencia !== '—' ? doc.vigencia : '',
+      desc: doc.desc || '',
+      tags: (doc.tags || []).join(', '),
+    });
+    setEditModal(true);
+  };
+
+  const submitEdit = async () => {
+    setSavingEdit(true);
+    try {
+      const updated = await api.updateDocument(doc.id, editForm);
+      setRemoteDoc(updated);
+      await onVersionCreated?.();
+      setEditModal(false);
+      showToast?.('Documento actualizado correctamente.', 'success');
+    } catch (err) {
+      showToast?.(err.message || 'No se pudo actualizar el documento.', err.status === 403 ? 'warning' : 'error');
+    } finally {
+      setSavingEdit(false);
+    }
+  };
+
+  useEffect(() => {
+    setRemoteDoc(null);
+    viewed.current = false;
+  }, [numericDocId]);
 
   useEffect(() => {
     if (doc && !viewed.current) {
@@ -312,10 +413,14 @@ export function DocDetail({ nav, docId, docs, toggleFav, requestUpdate }) {
     );
   }
 
-  const area = DATA.areaById(doc.area);
-  const type = DATA.typeById(doc.type);
-  const owner = DATA.personById(doc.owner);
-  const related = (doc.related || []).map(id => DATA.docById(id)).filter(Boolean);
+  const area = areaById(doc.area);
+  const type = typeById(doc.type);
+  const owner = personById(doc.owner);
+  const areaColor = area?.color || 'var(--brand-700)';
+  const typeIcon = type?.icon || 'doc';
+  const related = (doc.related || [])
+    .map(id => docs.find(d => Number(d.id) === Number(id)))
+    .filter(Boolean);
 
   const contextLink = doc.ans ? { label: 'Ver ficha ANS completa', view: 'ansDetail', params: { id: doc.ans } }
     : doc.cargo ? { label: 'Ver descriptor de cargo', view: 'cargoDetail', params: { id: doc.cargo } }
@@ -326,19 +431,19 @@ export function DocDetail({ nav, docId, docs, toggleFav, requestUpdate }) {
       <div className="breadcrumb">
         <a onClick={() => nav('dashboard')}>Inicio</a><span className="sep">/</span>
         <a onClick={() => nav('library')}>Biblioteca</a><span className="sep">/</span>
-        <a onClick={() => nav('library', { area: doc.area })}>{area.name}</a><span className="sep">/</span>
+        <a onClick={() => nav('library', { area: doc.area })}>{area?.name || 'Área'}</a><span className="sep">/</span>
         <span style={{ color: 'var(--ink-700)' }}>{doc.documentNumber}</span>
       </div>
 
       <div className="card doc-header">
-        <div className="doc-header-accent" style={{ background: area.color }}></div>
+        <div className="doc-header-accent" style={{ background: areaColor }}></div>
         <div className="doc-header-body">
           <div className="row between wrap gap-16">
             <div className="row gap-16 doc-header-info">
-              <span className="kpi-ico doc-header-icon"><Icon name={type.icon} size={28} /></span>
+              <span className="kpi-ico doc-header-icon"><Icon name={typeIcon} size={28} /></span>
               <div>
                 <div className="row gap-8 wrap" style={{ marginBottom: 8 }}>
-                  <span className="tag tag-type">{type.name}</span>
+                  <span className="tag tag-type">{type?.name || 'Tipo no disponible'}</span>
                   <AreaTag areaId={doc.area} />
                   <StateBadge state={doc.state} />
                 </div>
@@ -353,6 +458,8 @@ export function DocDetail({ nav, docId, docs, toggleFav, requestUpdate }) {
             <div className="row gap-8 doc-header-actions">
               <button className="btn btn-ghost" onClick={() => toggleFav(doc.id)} style={doc.fav ? { color: '#c98a13', borderColor: '#ecd9a8' } : null}><Icon name="star" size={16} />{doc.fav ? 'Favorito' : 'Marcar'}</button>
               <button className="btn btn-ghost" onClick={() => requestUpdate(doc)}><Icon name="refresh" size={16} />Solicitar actualización</button>
+              {canEditDocument && <button className="btn btn-ghost" onClick={openEditModal}><Icon name="edit" size={16} />Editar datos</button>}
+              {canCreateVersion && <button className="btn btn-ghost" onClick={openVersionModal}><Icon name="history" size={16} />Nueva versión</button>}
               {canDownload && <button className="btn btn-primary" onClick={handleDownload}><Icon name="download" size={16} />Descargar</button>}
             </div>
           </div>
@@ -367,7 +474,7 @@ export function DocDetail({ nav, docId, docs, toggleFav, requestUpdate }) {
           </div>
           {tab === 'preview' ? (
             <div className="card" style={{ padding: 22 }}>
-              <DocumentPreview docId={doc.id} doc={doc} height={420} onFullscreen />
+              <DocumentPreview docId={doc.id} doc={doc} height={420} onFullscreen canDownload={canDownload} />
             </div>
           ) : (
             <div className="card" style={{ padding: '22px 24px' }}>
@@ -393,7 +500,7 @@ export function DocDetail({ nav, docId, docs, toggleFav, requestUpdate }) {
                 {related.map(r => (
                   <div key={r.id} className="card related-card" onClick={() => nav('detail', { id: r.id })} role="button" tabIndex={0}>
                     <div className="row gap-10">
-                      <span className="kpi-ico related-icon"><Icon name={DATA.typeById(r.type).icon} size={16} /></span>
+                      <span className="kpi-ico related-icon"><Icon name={typeById(r.type)?.icon || 'doc'} size={16} /></span>
                       <div style={{ minWidth: 0 }}>
                         <div className="related-title">{r.name}</div>
                         <div className="mono text-xs muted">{r.documentNumber}</div>
@@ -411,19 +518,19 @@ export function DocDetail({ nav, docId, docs, toggleFav, requestUpdate }) {
             <h3 className="section-title">Ficha técnica</h3>
             <div className="spec-list">
               <div className="spec-row"><span className="k">Número documental</span><span className="v mono">{doc.documentNumber}</span></div>
-              <div className="spec-row"><span className="k">Tipo documental</span><span className="v">{type.name}</span></div>
-              <div className="spec-row"><span className="k">Área responsable</span><span className="v">{area.name}</span></div>
+              <div className="spec-row"><span className="k">Tipo documental</span><span className="v">{type?.name || 'Tipo no disponible'}</span></div>
+              <div className="spec-row"><span className="k">Área responsable</span><span className="v">{area?.name || 'No disponible'}</span></div>
               <div className="spec-row"><span className="k">Versión vigente</span><span className="v">v{doc.version}</span></div>
               <div className="spec-row"><span className="k">Estado</span><span className="v"><StateBadge state={doc.state} /></span></div>
-              <div className="spec-row"><span className="k">Creación</span><span className="v">{DATA.fmtDate(doc.created)}</span></div>
-              <div className="spec-row"><span className="k">Última actualización</span><span className="v">{DATA.fmtDate(doc.updated)}</span></div>
-              <div className="spec-row"><span className="k">Vigencia</span><span className="v" style={doc.state === 'vencido' ? { color: 'var(--st-vencido-fg)' } : null}>{DATA.fmtDate(doc.vigencia)}</span></div>
+              <div className="spec-row"><span className="k">Creación</span><span className="v">{fmtDate(doc.created)}</span></div>
+              <div className="spec-row"><span className="k">Última actualización</span><span className="v">{fmtDate(doc.updated)}</span></div>
+              <div className="spec-row"><span className="k">Vigencia</span><span className="v" style={doc.state === 'vencido' ? { color: 'var(--st-vencido-fg)' } : null}>{fmtDate(doc.vigencia)}</span></div>
             </div>
             <div className="row gap-10 mt-16 owner-row">
-              <Avatar name={owner.name} size={38} />
+              <Avatar name={owner?.name} size={38} />
               <div>
-                <div style={{ fontSize: 13.5, fontWeight: 600 }}>{owner.name}</div>
-                <div className="text-xs muted">{owner.role}</div>
+                <div style={{ fontSize: 13.5, fontWeight: 600 }}>{owner?.name || 'No disponible'}</div>
+                <div className="text-xs muted">{owner?.role || ''}</div>
               </div>
             </div>
           </div>
@@ -439,16 +546,133 @@ export function DocDetail({ nav, docId, docs, toggleFav, requestUpdate }) {
                   <span className={'tl-dot' + (i === 0 ? '' : ' muted')}></span>
                   <div className="row between">
                     <span style={{ fontSize: 13.5, fontWeight: 700 }}>v{h.v}{i === 0 && <span className="tag tag-type" style={{ marginLeft: 8, padding: '1px 7px' }}>vigente</span>}</span>
-                    <span className="text-xs muted">{DATA.fmtDate(h.date)}</span>
+                    <span className="text-xs muted">{fmtDate(h.date)}</span>
                   </div>
                   <div style={{ fontSize: 12.5, color: 'var(--ink-600)', marginTop: 3 }}>{h.note}</div>
-                  <div className="text-xs muted" style={{ marginTop: 2 }}>por {DATA.personById(h.by) ? DATA.personById(h.by).name : h.by}</div>
+                  <div className="text-xs muted" style={{ marginTop: 2 }}>por {personById(h.by)?.name || h.by || 'Sistema'}</div>
+                </div>
+              ))}
+              {(doc.versions || []).map((v) => (
+                <div key={`file-${v.id}`} className="tl-item">
+                  <span className="tl-dot muted"></span>
+                  <div className="row between">
+                    <span style={{ fontSize: 13.5, fontWeight: 700 }}>Archivo v{v.version}</span>
+                    <span className="text-xs muted">{fmtDate(String(v.createdAt || '').slice(0, 10))}</span>
+                  </div>
+                  <div style={{ fontSize: 12.5, color: 'var(--ink-600)', marginTop: 3 }}>{v.originalName || 'Archivo versionado'}</div>
+                  {v.note && <div className="text-xs muted" style={{ marginTop: 2 }}>{v.note}</div>}
+                  {canDownload && v.storedName && (
+                    <button className="link text-xs mt-8" type="button" onClick={() => handleVersionDownload(v.id)}>Descargar esta versión</button>
+                  )}
+                </div>
+              ))}
+            </div>
+          </div>
+
+          <div className="card" style={{ padding: '20px 22px' }}>
+            <h3 className="section-title">Trazabilidad operativa</h3>
+            <div className="timeline">
+              {(doc.activity || []).length === 0 ? (
+                <div className="text-sm muted">Sin eventos registrados.</div>
+              ) : (doc.activity || []).map((event) => (
+                <div key={event.id} className="tl-item">
+                  <span className="tl-dot muted"></span>
+                  <div className="row between">
+                    <span style={{ fontSize: 13.5, fontWeight: 700 }}>{event.action}</span>
+                    <span className="text-xs muted">{fmtDate(event.date)}</span>
+                  </div>
+                  <div className="text-xs muted" style={{ marginTop: 2 }}>por {event.whoName || 'Sistema'} · {event.eventType}</div>
+                  {event.details?.version && <div className="text-xs muted" style={{ marginTop: 2 }}>Versión: v{event.details.version}</div>}
                 </div>
               ))}
             </div>
           </div>
         </div>
       </div>
+
+      {versionModal && (
+        <div className="modal-backdrop" onClick={() => !savingVersion && setVersionModal(false)}>
+          <div className="modal" onClick={e => e.stopPropagation()}>
+            <div className="modal-head">
+              <div>
+                <h3>Nueva versión</h3>
+                <p className="muted text-sm">El documento quedará en borrador para iniciar nuevamente el flujo.</p>
+              </div>
+              <button className="tbar-icon-btn" type="button" onClick={() => setVersionModal(false)} disabled={savingVersion}><Icon name="x" size={16} /></button>
+            </div>
+            <div className="modal-body">
+              <div className="form-grid">
+                <div className="form-row">
+                  <label>Versión *</label>
+                  <input className="input" value={versionForm.version} onChange={e => setVersionForm(f => ({ ...f, version: e.target.value }))} />
+                </div>
+                <div className="form-row">
+                  <label>Vigencia hasta</label>
+                  <input className="input" type="date" value={versionForm.vigencia} onChange={e => setVersionForm(f => ({ ...f, vigencia: e.target.value }))} />
+                </div>
+              </div>
+              <div className="form-row">
+                <label>Nota de versión</label>
+                <textarea className="input" value={versionForm.note} onChange={e => setVersionForm(f => ({ ...f, note: e.target.value }))} placeholder="Ej. Ajuste normativo, actualización de formato, corrección de contenido." />
+              </div>
+              <div className="form-row">
+                <label>Descripción actualizada</label>
+                <textarea className="input" value={versionForm.desc} onChange={e => setVersionForm(f => ({ ...f, desc: e.target.value }))} placeholder="Opcional. Si lo dejas vacío se conserva la descripción actual." />
+              </div>
+              <FileDropzone file={versionFile} onFile={setVersionFile} />
+            </div>
+            <div className="modal-foot">
+              <button className="btn btn-ghost" type="button" onClick={() => setVersionModal(false)} disabled={savingVersion}>Cancelar</button>
+              <button className="btn btn-primary" type="button" onClick={submitVersion} disabled={savingVersion}>{savingVersion ? 'Creando...' : 'Crear versión'}<Icon name="arrowRight" size={15} /></button>
+            </div>
+          </div>
+        </div>
+      )}
+      {editModal && (
+        <div className="modal-backdrop" onClick={() => !savingEdit && setEditModal(false)}>
+          <div className="modal" onClick={e => e.stopPropagation()}>
+            <div className="modal-head">
+              <div>
+                <h3>Editar datos del documento</h3>
+                <p className="muted text-sm">{doc.documentNumber} · v{doc.version}</p>
+              </div>
+              <button className="tbar-icon-btn" type="button" onClick={() => setEditModal(false)} disabled={savingEdit}><Icon name="x" size={16} /></button>
+            </div>
+            <div className="modal-body">
+              <div className="form-row">
+                <label>Nombre *</label>
+                <input className="input" value={editForm.name} onChange={e => setEditForm(f => ({ ...f, name: e.target.value }))} />
+              </div>
+              <div className="form-grid">
+                <div className="form-row">
+                  <label>Responsable *</label>
+                  <select className="input" value={editForm.owner} onChange={e => setEditForm(f => ({ ...f, owner: e.target.value }))}>
+                    <option value="">Seleccionar...</option>
+                    {people.filter(p => !p.area || Number(p.area) === Number(doc.area)).map(p => <option key={p.id} value={p.id}>{p.name}</option>)}
+                  </select>
+                </div>
+                <div className="form-row">
+                  <label>Vigencia hasta</label>
+                  <input className="input" type="date" value={editForm.vigencia} onChange={e => setEditForm(f => ({ ...f, vigencia: e.target.value }))} />
+                </div>
+              </div>
+              <div className="form-row">
+                <label>Descripción</label>
+                <textarea className="input" value={editForm.desc} onChange={e => setEditForm(f => ({ ...f, desc: e.target.value }))} />
+              </div>
+              <div className="form-row">
+                <label>Palabras clave <span className="hint">separadas por coma</span></label>
+                <input className="input" value={editForm.tags} onChange={e => setEditForm(f => ({ ...f, tags: e.target.value }))} />
+              </div>
+            </div>
+            <div className="modal-foot">
+              <button className="btn btn-ghost" type="button" onClick={() => setEditModal(false)} disabled={savingEdit}>Cancelar</button>
+              <button className="btn btn-primary" type="button" onClick={submitEdit} disabled={savingEdit}>{savingEdit ? 'Guardando...' : 'Guardar cambios'}<Icon name="check" size={15} /></button>
+            </div>
+          </div>
+        </div>
+      )}
     </div>
   );
 }
+

@@ -1,10 +1,15 @@
 import { useMemo, useState, useEffect } from 'react';
-import { DATA } from '../data';
 import { api } from '../services/api';
 import { Icon, StateBadge, AreaTag, KpiCard } from '../components';
+import { useCatalogs } from '../context/CatalogContext';
+import { STATES, fmtDate } from '../utils/display';
 
 export function Dashboard({ nav, docs, userName = 'Usuario' }) {
   const [activity, setActivity] = useState([]);
+  const [recentPage, setRecentPage] = useState(1);
+  const [activityPage, setActivityPage] = useState(1);
+  const { areas, typeById } = useCatalogs();
+  const pageSize = 6;
 
   useEffect(() => {
     api.getActivity().then(setActivity).catch(() => {});
@@ -19,10 +24,37 @@ export function Dashboard({ nav, docs, userName = 'Usuario' }) {
     return { total, vigentes, revision, vencidos, borradores };
   }, [docs]);
 
-  const recientes = useMemo(() => [...docs].sort((a, b) => b.updated.localeCompare(a.updated)).slice(0, 6), [docs]);
+  const allRecientes = useMemo(() => [...docs].sort((a, b) => b.updated.localeCompare(a.updated)), [docs]);
+  const recentPages = Math.max(1, Math.ceil(allRecientes.length / pageSize));
+  const recientes = useMemo(() => allRecientes.slice((recentPage - 1) * pageSize, recentPage * pageSize), [allRecientes, recentPage]);
   const masConsultados = useMemo(() => [...docs].sort((a, b) => b.views - a.views).slice(0, 5), [docs]);
   const pendientes = useMemo(() => docs.filter(d => d.state === 'vencido' || d.state === 'revision').sort((a, b) => a.vigencia.localeCompare(b.vigencia)).slice(0, 5), [docs]);
-  const areaCounts = DATA.AREAS.map(a => ({ ...a, count: docs.filter(d => d.area === a.id).length, vencidos: docs.filter(d => d.area === a.id && d.state === 'vencido').length }));
+  const areaCounts = areas.map(a => ({ ...a, count: docs.filter(d => Number(d.area) === Number(a.id)).length, vencidos: docs.filter(d => Number(d.area) === Number(a.id) && d.state === 'vencido').length }));
+  const activityPages = Math.max(1, Math.ceil(activity.length / pageSize));
+  const visibleActivity = useMemo(() => activity.slice((activityPage - 1) * pageSize, activityPage * pageSize), [activity, activityPage]);
+
+  useEffect(() => {
+    setRecentPage(1);
+  }, [docs.length]);
+
+  useEffect(() => {
+    setActivityPage(1);
+  }, [activity.length]);
+
+  const Pager = ({ page, pages, onPage, total }) => {
+    if (pages <= 1) return <span className="text-xs muted">{total} registros</span>;
+    return (
+      <div className="dashboard-pager">
+        <button type="button" className="tbar-icon-btn" disabled={page <= 1} onClick={() => onPage(page - 1)} aria-label="Página anterior">
+          <Icon name="chevLeft" size={15} />
+        </button>
+        <span className="text-xs muted mono">{page}/{pages}</span>
+        <button type="button" className="tbar-icon-btn" disabled={page >= pages} onClick={() => onPage(page + 1)} aria-label="Página siguiente">
+          <Icon name="chevRight" size={15} />
+        </button>
+      </div>
+    );
+  };
 
   return (
     <div className="page fade-in">
@@ -54,7 +86,7 @@ export function Dashboard({ nav, docs, userName = 'Usuario' }) {
                 </span>
                 <div className="grow" style={{ minWidth: 0 }}>
                   <div className="attention-name">{d.name}</div>
-                  <div className="mono text-xs muted">{d.documentNumber} · vence {DATA.fmtDate(d.vigencia)}</div>
+                  <div className="mono text-xs muted">{d.documentNumber} · vence {fmtDate(d.vigencia)}</div>
                 </div>
               </div>
             ))}
@@ -64,10 +96,10 @@ export function Dashboard({ nav, docs, userName = 'Usuario' }) {
       </div>
 
       <div className="grid-kpi mb-24">
-        <KpiCard icon="doc" value={stats.total} label="Documentos totales" tone="brand" trend={{ dir: 'up', val: '+4' }} />
+        <KpiCard icon="doc" value={stats.total} label="Documentos totales" tone="brand" />
         <KpiCard icon="check" value={stats.vigentes} label="Vigentes (aprob./publicados)" tone="brand" />
         <KpiCard icon="clock" value={stats.revision} label="En revisión" tone="amber" />
-        <KpiCard icon="alert" value={stats.vencidos} label="Vencidos" tone="red" trend={{ dir: 'down', val: '−1' }} />
+        <KpiCard icon="alert" value={stats.vencidos} label="Vencidos" tone="red" />
         <KpiCard icon="edit" value={stats.borradores} label="Borradores" tone="gray" />
       </div>
 
@@ -94,19 +126,17 @@ export function Dashboard({ nav, docs, userName = 'Usuario' }) {
         <div className="card" style={{ padding: '20px 22px' }}>
           <div className="row between mb-16">
             <h3 className="section-title" style={{ margin: 0 }}>Documentos recientes</h3>
-            <div className="seg" style={{ fontSize: 12 }}>
-              <button className="active" type="button">Recientes</button>
-            </div>
+            <Pager page={recentPage} pages={recentPages} total={allRecientes.length} onPage={setRecentPage} />
           </div>
           <div className="doc-list">
             {recientes.map((d, i) => {
-              const type = DATA.typeById(d.type);
+              const type = typeById(d.type);
               return (
                 <div key={d.id} className="doc-list-item" style={{ borderTop: i ? '1px solid var(--line-soft)' : 'none' }} onClick={() => nav('detail', { id: d.id })} role="button" tabIndex={0}>
-                  <span className="doc-list-icon"><Icon name={type.icon} size={17} /></span>
+                  <span className="doc-list-icon"><Icon name={type?.icon || 'doc'} size={17} /></span>
                   <div className="grow" style={{ minWidth: 0 }}>
                     <div className="doc-list-title">{d.name}</div>
-                    <div className="row gap-8 text-xs muted mono">{d.documentNumber}<span style={{ color: 'var(--line)' }}>•</span>{DATA.fmtDate(d.updated)}</div>
+                    <div className="row gap-8 text-xs muted mono">{d.documentNumber}<span style={{ color: 'var(--line)' }}>•</span>{fmtDate(d.updated)}</div>
                   </div>
                   <AreaTag areaId={d.area} />
                   <StateBadge state={d.state} />
@@ -130,11 +160,14 @@ export function Dashboard({ nav, docs, userName = 'Usuario' }) {
             ))}
           </div>
           <div className="card" style={{ padding: '20px 22px' }}>
-            <h3 className="section-title">Actividad reciente</h3>
+            <div className="row between mb-16">
+              <h3 className="section-title" style={{ margin: 0 }}>Actividad reciente</h3>
+              <Pager page={activityPage} pages={activityPages} total={activity.length} onPage={setActivityPage} />
+            </div>
             <div className="timeline">
               {activity.length === 0 ? (
                 <p className="text-xs muted" style={{ margin: 0 }}>Sin actividad registrada aún.</p>
-              ) : activity.map((a, i) => (
+              ) : visibleActivity.map((a, i) => (
                 <div key={a.id ?? i} className="tl-item">
                   <span className={'tl-dot' + (i > 1 ? ' muted' : '')}></span>
                   <div style={{ fontSize: 13 }}>
@@ -159,3 +192,4 @@ export function Dashboard({ nav, docs, userName = 'Usuario' }) {
     </div>
   );
 }
+

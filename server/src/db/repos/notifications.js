@@ -48,6 +48,7 @@ async function deliverEmail(notificationId) {
       title: row.title,
       message: row.message,
       docNumber: row.document_number,
+      docId: row.doc_id,
     });
     await markEmailStatus(notificationId, 'sent');
   } catch (err) {

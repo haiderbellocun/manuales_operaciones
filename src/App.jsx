@@ -1,23 +1,37 @@
-import { useState, useEffect, useRef } from 'react';
+import { lazy, Suspense, useState, useEffect, useRef } from 'react';
 import { useLocation, useNavigate } from 'react-router-dom';
-import { DATA } from './data';
 import { Icon, Modal, useClickOutside } from './components';
 import { useAuth } from './context/AuthContext';
 import { useDocs } from './context/DocsContext';
+import { useCatalogs } from './context/CatalogContext';
 import { api } from './services/api';
-import { Dashboard } from './views/Dashboard';
-import { Library, DocDetail } from './views/Library';
-import { AnsModule, AnsDetail, CargosModule, CargoDetail, AppsModule, AppDetail } from './views/Modules';
-import { SearchView, UploadFlow, WorkflowView, UsersView, ReportsView, HelpView, LoginView } from './views/Gestion';
 
-const NAV = [
+const Dashboard = lazy(() => import('./views/Dashboard').then(m => ({ default: m.Dashboard })));
+const Library = lazy(() => import('./views/Library').then(m => ({ default: m.Library })));
+const DocDetail = lazy(() => import('./views/Library').then(m => ({ default: m.DocDetail })));
+const AnsModule = lazy(() => import('./views/Modules').then(m => ({ default: m.AnsModule })));
+const AnsDetail = lazy(() => import('./views/Modules').then(m => ({ default: m.AnsDetail })));
+const CargosModule = lazy(() => import('./views/Modules').then(m => ({ default: m.CargosModule })));
+const CargoDetail = lazy(() => import('./views/Modules').then(m => ({ default: m.CargoDetail })));
+const AppsModule = lazy(() => import('./views/Modules').then(m => ({ default: m.AppsModule })));
+const AppDetail = lazy(() => import('./views/Modules').then(m => ({ default: m.AppDetail })));
+const SearchView = lazy(() => import('./views/Gestion').then(m => ({ default: m.SearchView })));
+const UploadFlow = lazy(() => import('./views/Gestion').then(m => ({ default: m.UploadFlow })));
+const WorkflowView = lazy(() => import('./views/Gestion').then(m => ({ default: m.WorkflowView })));
+const UsersView = lazy(() => import('./views/Gestion').then(m => ({ default: m.UsersView })));
+const ReportsView = lazy(() => import('./views/Gestion').then(m => ({ default: m.ReportsView })));
+const HelpView = lazy(() => import('./views/Gestion').then(m => ({ default: m.HelpView })));
+const LoginView = lazy(() => import('./views/Gestion').then(m => ({ default: m.LoginView })));
+
+function buildNav(areas = []) {
+  return [
   { id: 'dashboard', label: 'Inicio', view: 'dashboard' },
   {
     id: 'biblioteca', label: 'Biblioteca', dd: [
       { label: 'Todos los documentos', desc: 'Repositorio completo', icon: 'library', view: 'library' },
       { label: 'Favoritos', desc: 'Tus documentos frecuentes', icon: 'star', view: 'library', params: { fav: true } },
       { section: 'Áreas' },
-      ...DATA.AREAS.map(a => ({ label: a.name, desc: a.abbreviation, icon: 'building', view: 'library', params: { area: a.id }, color: a.color })),
+      ...areas.map(a => ({ label: a.name, desc: a.abbreviation, icon: 'building', view: 'library', params: { area: a.id }, color: a.color })),
     ],
   },
   {
@@ -35,7 +49,8 @@ const NAV = [
     ],
   },
   { id: 'reportes', label: 'Reportes', view: 'reports' },
-];
+  ];
+}
 
 const VIEW_TO_NAV = {
   dashboard: 'dashboard',
@@ -86,6 +101,9 @@ function filterNav(nav, access) {
         if (link.section) return true;
         if (link.permission && !access.hasPermission(link.permission)) return false;
         if (link.role && !access.hasRole(link.role)) return false;
+        if (link.params?.area && [2, 3, 4].includes(Number(access.user?.role))) {
+          return Number(access.user?.area) === Number(link.params.area);
+        }
         return canAccessView(link.view, access);
       });
       return dd.some(link => !link.section) ? { ...item, dd } : null;
@@ -324,9 +342,21 @@ function TopBar({
   );
 }
 
+function ViewLoading() {
+  return (
+    <div className="page fade-in">
+      <div className="card empty-state">
+        <Icon name="clock" size={32} style={{ color: 'var(--brand-500)' }} />
+        <p className="muted mt-16">Cargando vista...</p>
+      </div>
+    </div>
+  );
+}
+
 export default function App() {
   const { isAuthenticated, loading: authLoading, user, initials, roleName, logout, hasPermission, hasRole } = useAuth();
   const { docs, loading: docsLoading, toggleFav, refresh } = useDocs();
+  const { areas, personById } = useCatalogs();
   const location = useLocation();
   const navigate = useNavigate();
   const route = routeFromLocation(location);
@@ -338,8 +368,9 @@ export default function App() {
   const [notifications, setNotifications] = useState([]);
   const [unreadNotifications, setUnreadNotifications] = useState(0);
   const mainRef = useRef(null);
-  const access = { hasPermission, hasRole };
-  const navItems = filterNav(NAV, access);
+  const toastTimerRef = useRef(null);
+  const access = { hasPermission, hasRole, user };
+  const navItems = filterNav(buildNav(areas), access);
 
   const nav = (view, params = {}) => {
     navigate(urlForView(view, params));
@@ -355,7 +386,14 @@ export default function App() {
   };
 
   const requestUpdate = (doc) => setUpdateModal(doc);
-  const showToast = (msg) => { setToast(msg); setTimeout(() => setToast(null), 2600); };
+  const showToast = (toastInput, type = 'success') => {
+    const nextToast = typeof toastInput === 'string'
+      ? { message: toastInput, type }
+      : { type: 'success', ...toastInput };
+    setToast(nextToast);
+    if (toastTimerRef.current) clearTimeout(toastTimerRef.current);
+    toastTimerRef.current = setTimeout(() => setToast(null), nextToast.duration || 3600);
+  };
 
   const loadNotifications = async () => {
     if (!isAuthenticated) {
@@ -393,9 +431,9 @@ export default function App() {
     try {
       await api.requestUpdate(doc.id, { reason, detail });
       setUpdateModal(null);
-      showToast('Solicitud de actualización enviada al responsable');
+      showToast('Solicitud de actualización enviada al responsable', 'success');
     } catch {
-      showToast('No se pudo enviar la solicitud. Intenta de nuevo.');
+      showToast('No se pudo enviar la solicitud. Intenta de nuevo.', 'error');
     }
   };
 
@@ -436,6 +474,10 @@ export default function App() {
     if (notifOpen) loadNotifications();
   }, [notifOpen]);
 
+  useEffect(() => () => {
+    if (toastTimerRef.current) clearTimeout(toastTimerRef.current);
+  }, []);
+
   if (authLoading) {
     return (
       <div className="app">
@@ -452,7 +494,11 @@ export default function App() {
   }
 
   if (!isAuthenticated) {
-    return <LoginView />;
+    return (
+      <Suspense fallback={<ViewLoading />}>
+        <LoginView />
+      </Suspense>
+    );
   }
 
   const render = () => {
@@ -484,7 +530,7 @@ export default function App() {
     switch (v) {
       case 'dashboard': return <Dashboard nav={nav} docs={docs} userName={userName} />;
       case 'library': return <Library nav={nav} docs={docs} toggleFav={toggleFav} initParams={p} />;
-      case 'detail': return <DocDetail nav={nav} docId={p.id} docs={docs} toggleFav={toggleFav} requestUpdate={requestUpdate} />;
+      case 'detail': return <DocDetail nav={nav} docId={p.id} docs={docs} toggleFav={toggleFav} requestUpdate={requestUpdate} showToast={showToast} onVersionCreated={refresh} />;
       case 'ans': return <AnsModule nav={nav} />;
       case 'ansDetail': return <AnsDetail nav={nav} ansId={p.id} />;
       case 'cargos': return <CargosModule nav={nav} />;
@@ -493,10 +539,10 @@ export default function App() {
       case 'appDetail': return <AppDetail nav={nav} appId={p.id} />;
       case 'search': return <SearchView nav={nav} docs={docs} initial={p.q} />;
       case 'upload': return <UploadFlow nav={nav} showToast={showToast} onUploaded={refresh} />;
-      case 'workflow': return <WorkflowView nav={nav} docs={docs} />;
+      case 'workflow': return <WorkflowView nav={nav} docs={docs} showToast={showToast} />;
       case 'users': return <UsersView nav={nav} />;
       case 'reports': return <ReportsView nav={nav} docs={docs} />;
-      case 'history': return <DocDetail nav={nav} docId={p.id} docs={docs} toggleFav={toggleFav} requestUpdate={requestUpdate} />;
+      case 'history': return <DocDetail nav={nav} docId={p.id} docs={docs} toggleFav={toggleFav} requestUpdate={requestUpdate} showToast={showToast} onVersionCreated={refresh} />;
       case 'help': return <HelpView nav={nav} />;
       default: return <Dashboard nav={nav} docs={docs} userName={userName} />;
     }
@@ -525,22 +571,32 @@ export default function App() {
         onReadAllNotifications={handleReadAllNotifications}
         onLogout={handleLogout}
       />
-      <main className="main" ref={mainRef}>{render()}</main>
+      <main className="main" ref={mainRef}>
+        <Suspense fallback={<ViewLoading />}>
+          {render()}
+        </Suspense>
+      </main>
 
       {updateModal && (
-        <UpdateRequestModal doc={updateModal} onClose={() => setUpdateModal(null)} onSubmit={handleSubmitUpdate} />
+        <UpdateRequestModal doc={updateModal} owner={personById(updateModal.owner)} onClose={() => setUpdateModal(null)} onSubmit={handleSubmitUpdate} />
       )}
 
       {toast && (
-        <div className="toast">
-          <Icon name="check" size={17} style={{ color: '#7fdca6' }} />{toast}
+        <div className={'toast toast-' + (toast.type || 'success')} role="status" aria-live="polite">
+          <span className="toast-icon">
+            <Icon name={toast.type === 'error' ? 'alert' : toast.type === 'warning' ? 'alert' : toast.type === 'info' ? 'help' : 'check'} size={17} />
+          </span>
+          <span className="toast-message">{toast.message}</span>
+          <button type="button" className="toast-close" onClick={() => setToast(null)} aria-label="Cerrar aviso">
+            <Icon name="x" size={14} />
+          </button>
         </div>
       )}
     </div>
   );
 }
 
-function UpdateRequestModal({ doc, onClose, onSubmit }) {
+function UpdateRequestModal({ doc, owner, onClose, onSubmit }) {
   const [reason, setReason] = useState('Información desactualizada');
   const [detail, setDetail] = useState('');
   return (
@@ -561,7 +617,7 @@ function UpdateRequestModal({ doc, onClose, onSubmit }) {
         <textarea className="input" value={detail} onChange={e => setDetail(e.target.value)} placeholder="Ej. El paso 4 ya no aplica desde la integración con ARL digital…"></textarea>
       </div>
       <div className="row gap-10" style={{ fontSize: 13, color: 'var(--ink-500)' }}>
-        <Icon name="bell" size={15} />Se notificará a <strong style={{ color: 'var(--ink-700)' }}>{DATA.personById(doc.owner).name}</strong>
+        <Icon name="bell" size={15} />Se notificará a <strong style={{ color: 'var(--ink-700)' }}>{owner?.name || 'el responsable'}</strong>
       </div>
     </Modal>
   );

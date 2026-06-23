@@ -1,38 +1,39 @@
 import { useState, useEffect, useRef } from 'react';
-import mammoth from 'mammoth';
 import { Icon } from '../components';
 import { getFile, getFileUrl, revokeFileUrl, formatFileSize, validateFile } from '../services/fileStore';
-import { DATA } from '../data';
+import { useCatalogs } from '../context/CatalogContext';
+import { STATES, fmtDate } from '../utils/display';
 
-function MockDocumentPreview({ doc, height = 420 }) {
-  const area = DATA.areaById(doc.area);
-  const type = DATA.typeById(doc.type);
-  const owner = DATA.personById(doc.owner);
+function FallbackDocumentPreview({ doc, height = 420 }) {
+  const { areaById, typeById, personById } = useCatalogs();
+  const area = areaById(doc.area);
+  const type = typeById(doc.type);
+  const owner = personById(doc.owner);
   return (
-    <div className="mock-doc-preview" style={{ minHeight: height }}>
-      <div className="mock-doc-header" style={{ borderTopColor: area.color }}>
-        <div className="mock-doc-logo"><Icon name="building" size={20} /></div>
+    <div className="fallback-doc-preview" style={{ minHeight: height }}>
+      <div className="fallback-doc-header" style={{ borderTopColor: area?.color || 'var(--brand-700)' }}>
+        <div className="fallback-doc-logo"><Icon name="building" size={20} /></div>
         <div>
-          <div className="mock-doc-org">Área de Operaciones — Documento institucional</div>
-          <div className="mock-doc-number">{doc.documentNumber} · v{doc.version}</div>
+          <div className="fallback-doc-org">Área de Operaciones — Documento institucional</div>
+          <div className="fallback-doc-number">{doc.documentNumber} · v{doc.version}</div>
         </div>
       </div>
-      <div className="mock-doc-body">
-        <span className="tag tag-type">{type.name}</span>
-        <h2 className="mock-doc-title">{doc.name}</h2>
-        <p className="mock-doc-desc">{doc.desc}</p>
-        <div className="mock-doc-meta">
-          <div><strong>Área:</strong> {area.name}</div>
-          <div><strong>Responsable:</strong> {owner.name}</div>
-          <div><strong>Estado:</strong> {DATA.STATES[doc.state]?.label}</div>
-          <div><strong>Vigencia:</strong> {DATA.fmtDate(doc.vigencia)}</div>
+      <div className="fallback-doc-body">
+        <span className="tag tag-type">{type?.name || 'Tipo no disponible'}</span>
+        <h2 className="fallback-doc-title">{doc.name}</h2>
+        <p className="fallback-doc-desc">{doc.desc}</p>
+        <div className="fallback-doc-meta">
+          <div><strong>Área:</strong> {area?.name || 'No disponible'}</div>
+          <div><strong>Responsable:</strong> {owner?.name || 'No disponible'}</div>
+          <div><strong>Estado:</strong> {STATES[doc.state]?.label}</div>
+          <div><strong>Vigencia:</strong> {fmtDate(doc.vigencia)}</div>
         </div>
         {(doc.tags || []).length > 0 && (
           <div className="row gap-8 wrap mt-16">
             {doc.tags.map(t => <span key={t} className="tag">{t}</span>)}
           </div>
         )}
-        <p className="mock-doc-note text-xs muted mt-24">
+        <p className="fallback-doc-note text-xs muted mt-24">
           Vista simulada del repositorio. Carga un archivo PDF o DOCX para previsualización real.
         </p>
       </div>
@@ -40,7 +41,7 @@ function MockDocumentPreview({ doc, height = 420 }) {
   );
 }
 
-export function DocumentPreview({ docId, doc, height = 420, onFullscreen }) {
+export function DocumentPreview({ docId, doc, height = 420, onFullscreen, canDownload = true }) {
   const [fileRecord, setFileRecord] = useState(null);
   const [fileUrl, setFileUrl] = useState(null);
   const [docxHtml, setDocxHtml] = useState(null);
@@ -55,6 +56,11 @@ export function DocumentPreview({ docId, doc, height = 420, onFullscreen }) {
       setError(null);
       setDocxHtml(null);
       if (urlRef.current) { revokeFileUrl(urlRef.current); urlRef.current = null; setFileUrl(null); }
+      if (!canDownload) {
+        setFileRecord(null);
+        setLoading(false);
+        return;
+      }
 
       const record = await getFile(docId);
       if (cancelled) return;
@@ -74,8 +80,9 @@ export function DocumentPreview({ docId, doc, height = 420, onFullscreen }) {
 
       if (isDocx && record.blob) {
         try {
+          const mammoth = await import('mammoth');
           const arrayBuffer = await record.blob.arrayBuffer();
-          const result = await mammoth.convertToHtml({ arrayBuffer });
+          const result = await mammoth.default.convertToHtml({ arrayBuffer });
           if (!cancelled) setDocxHtml(result.value);
         } catch {
           if (!cancelled) setError('No se pudo renderizar el DOCX. Descarga el archivo para verlo.');
@@ -88,7 +95,7 @@ export function DocumentPreview({ docId, doc, height = 420, onFullscreen }) {
       cancelled = true;
       if (urlRef.current) { revokeFileUrl(urlRef.current); urlRef.current = null; }
     };
-  }, [docId]);
+  }, [docId, canDownload]);
 
   if (loading) {
     return (
@@ -121,7 +128,7 @@ export function DocumentPreview({ docId, doc, height = 420, onFullscreen }) {
           <div className="doc-preview-unsupported" style={{ height }}>
             <Icon name="file" size={32} style={{ color: 'var(--ink-300)' }} />
             <p className="text-sm muted">Previsualización no disponible para este formato.</p>
-            <a href={fileUrl} download={fileRecord.name} className="btn btn-primary btn-sm mt-16">Descargar archivo</a>
+            {canDownload && <a href={fileUrl} download={fileRecord.name} className="btn btn-primary btn-sm mt-16">Descargar archivo</a>}
           </div>
         )}
         {onFullscreen && isPdf && (
@@ -133,7 +140,7 @@ export function DocumentPreview({ docId, doc, height = 420, onFullscreen }) {
     );
   }
 
-  return <MockDocumentPreview doc={doc} height={height} />;
+  return <FallbackDocumentPreview doc={doc} height={height} />;
 }
 
 export function FileDropzone({ file, onFile, error: externalError }) {
@@ -184,3 +191,4 @@ export function FileDropzone({ file, onFile, error: externalError }) {
     </div>
   );
 }
+

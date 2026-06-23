@@ -7,8 +7,6 @@
   "scripts": {
     "dev": "node src/index.js",
     "start": "node src/index.js",
-    "seed": "node src/scripts/seed.js",
-    "seed:force": "node src/scripts/seed.js --force",
     "db:migrate": "node -e \"import('./src/db/migrate.js').then(m=>m.migrate()).then(()=>{console.log('OK');process.exit(0)}).catch(e=>{console.error(e);process.exit(1)})\""
   },
   "dependencies": {

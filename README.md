@@ -74,10 +74,9 @@ app_manuales_operaciones/
 │
 ├── server/                     # Backend API REST
 │   ├── src/
-│   │   ├── db/                 # Pool, repositorios, migrate, seed
+│   │   ├── db/                 # Pool, repositorios y migración
 │   │   ├── middleware/         # Auth JWT
 │   │   ├── routes/             # Rutas de la API
-│   │   ├── scripts/            # Scripts de utilidad (seed)
 │   │   └── index.js
 │   ├── .env.example            # Variables de entorno del servidor
 │   └── package.json
@@ -122,9 +121,9 @@ app_manuales_operaciones/
    npm run db:up
    ```
 
-5. Ejecutar la migración y cargar datos iniciales:
+5. La migración del esquema se ejecuta automáticamente al iniciar el backend.
    ```bash
-   npm run db:seed
+   npm run db:migrate --prefix server
    ```
 
 6. Arrancar el proyecto completo:
@@ -170,7 +169,6 @@ El proyecto usa Docker para PostgreSQL. Los comandos disponibles son:
 ```bash
 npm run db:up        # Inicia PostgreSQL en Docker
 npm run db:down      # Detiene el contenedor
-npm run db:seed      # Carga el esquema y datos iniciales (--force)
 ```
 
 Para ejecutar solo la migración del esquema:
@@ -194,7 +192,6 @@ npm run db:migrate --prefix server
 | `npm run build` | Compila el frontend para producción |
 | `npm run db:up` | Levanta PostgreSQL con Docker |
 | `npm run db:down` | Detiene PostgreSQL |
-| `npm run db:seed` | Carga esquema y datos de prueba |
 
 ---
 

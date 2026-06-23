@@ -22,8 +22,11 @@ async function request(path, options = {}) {
 
   const res = await fetch(`${API_BASE}${path}`, { ...options, headers });
   if (!res.ok) {
-    const err = await res.json().catch(() => ({}));
-    throw new Error(err.message || `Error ${res.status}`);
+    const data = await res.json().catch(() => ({}));
+    const err = new Error(data.message || `Error ${res.status}`);
+    err.status = res.status;
+    err.payload = data;
+    throw err;
   }
   if (res.status === 204) return null;
   const ct = res.headers.get('content-type') || '';
@@ -75,15 +78,38 @@ export const api = {
     return newDoc;
   },
 
+  async updateDocument(id, payload) {
+    return request(`/documents/${id}`, { method: 'PUT', body: JSON.stringify(payload) });
+  },
+
   async uploadDocumentFile(docId, file) {
     const form = new FormData();
     form.append('file', file);
     return request(`/documents/${docId}/file`, { method: 'POST', body: form });
   },
 
+  async createDocumentVersion(docId, payload, file) {
+    const form = new FormData();
+    Object.entries(payload || {}).forEach(([key, value]) => {
+      if (value !== undefined && value !== null) form.append(key, value);
+    });
+    if (file) form.append('file', file);
+    return request(`/documents/${docId}/versions`, { method: 'POST', body: form });
+  },
+
   async getDocumentFileUrl(docId) {
     const token = getToken();
     const res = await fetch(`${API_BASE}/documents/${docId}/file`, {
+      headers: token ? { Authorization: `Bearer ${token}` } : {},
+    });
+    if (!res.ok) return null;
+    const blob = await res.blob();
+    return { blob, name: res.headers.get('content-disposition')?.match(/filename="(.+)"/)?.[1] || 'documento' };
+  },
+
+  async getDocumentVersionFileUrl(docId, versionId) {
+    const token = getToken();
+    const res = await fetch(`${API_BASE}/documents/${docId}/versions/${versionId}/file`, {
       headers: token ? { Authorization: `Bearer ${token}` } : {},
     });
     if (!res.ok) return null;
@@ -111,6 +137,10 @@ export const api = {
     return request('/roles');
   },
 
+  async updateRole(id, payload) {
+    return request(`/roles/${id}`, { method: 'PUT', body: JSON.stringify(payload) });
+  },
+
   async getPeople() {
     return request('/people');
   },
@@ -119,8 +149,23 @@ export const api = {
     return request('/workflow');
   },
 
+  async transitionWorkflow(id, action, comments = '') {
+    return request(`/workflow/${id}/transition`, {
+      method: 'POST',
+      body: JSON.stringify({ action, comments }),
+    });
+  },
+
   async getUsers() {
     return request('/users');
+  },
+
+  async createUser(payload) {
+    return request('/users', { method: 'POST', body: JSON.stringify(payload) });
+  },
+
+  async updateUser(id, payload) {
+    return request(`/users/${id}`, { method: 'PUT', body: JSON.stringify(payload) });
   },
 
   async getAssignableUsers() {
@@ -129,6 +174,30 @@ export const api = {
 
   async getActivity() {
     return request('/activity');
+  },
+
+  async getAnsModules() {
+    return request('/modules/ans');
+  },
+
+  async getAnsModule(id) {
+    return request(`/modules/ans/${id}`);
+  },
+
+  async getCargoModules() {
+    return request('/modules/cargos');
+  },
+
+  async getCargoModule(id) {
+    return request(`/modules/cargos/${id}`);
+  },
+
+  async getAppModules() {
+    return request('/modules/apps');
+  },
+
+  async getAppModule(id) {
+    return request(`/modules/apps/${id}`);
   },
 
   async getNotifications() {
@@ -145,6 +214,10 @@ export const api = {
 
   async getStats() {
     return request('/stats');
+  },
+
+  async getReportSummary() {
+    return request('/reports/summary');
   },
 };
 

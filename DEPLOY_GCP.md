@@ -81,6 +81,6 @@ Recomendado: guarda `DB_PASSWORD` y `JWT_SECRET` en Secret Manager.
 
 ## Notas importantes
 
-- Si la base está vacía, la app ejecuta migración y seed inicial al arrancar.
+- Si la base está vacía, la app ejecuta la migración del esquema al arrancar, pero no carga datos demo.
 - Los archivos siempre se guardan en Cloud Storage. Si `GCS_BUCKET` no está configurado, las operaciones de archivo fallan con un error explícito.
 - Para trabajar local, usa preferiblemente `GOOGLE_APPLICATION_CREDENTIALS` apuntando al JSON de una cuenta de servicio con permisos sobre el bucket.

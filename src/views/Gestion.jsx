@@ -1,13 +1,15 @@
 import { useState, useMemo, useEffect, useRef } from 'react';
-import { DATA } from '../data';
 import { api } from '../services/api';
 import { storage } from '../utils/storage';
 import { useAuth } from '../context/AuthContext';
 import { useDocs } from '../context/DocsContext';
+import { useCatalogs } from '../context/CatalogContext';
+import { STATES, fmtDate } from '../utils/display';
 import { Icon, StateBadge, AreaTag, KpiCard, Avatar, FilterToggleButton } from '../components';
 import { FileDropzone } from '../components/DocumentPreview';
 
 export function SearchView({ nav, docs, initial }) {
+  const { areas, types, typeById } = useCatalogs();
   const [q, setQ] = useState(initial || '');
   const [areaF, setAreaF] = useState([]);
   const [typeF, setTypeF] = useState([]);
@@ -20,9 +22,16 @@ export function SearchView({ nav, docs, initial }) {
     if (e.key === 'Enter' && q.trim()) storage.addSearchQuery(q);
   };
 
-  const sugerencias = ['Homologación', 'ANS prácticas', 'Coordinador', 'Pruebas Saber', 'Procedimiento matrícula', 'SIHO'];
   const [recentSearches, setRecentSearches] = useState(() => storage.getSearchHistory());
   const populares = useMemo(() => [...docs].sort((a, b) => b.views - a.views).slice(0, 5), [docs]);
+  const suggestions = useMemo(() => {
+    const values = new Set();
+    docs.forEach(d => {
+      (d.tags || []).forEach(tag => values.add(tag));
+      if (d.name) values.add(d.name.split(' ').slice(0, 3).join(' '));
+    });
+    return [...values].filter(Boolean).slice(0, 6);
+  }, [docs]);
 
   const results = useMemo(() => {
     if (!q.trim()) return [];
@@ -67,7 +76,7 @@ export function SearchView({ nav, docs, initial }) {
         <div className="search-suggestions">
           <div className="card" style={{ padding: '22px 24px' }}>
             <h3 className="section-title">Sugerencias</h3>
-            <div className="row gap-8 wrap">{sugerencias.map(s => <span key={s} className="chip" onClick={() => setQ(s)}><Icon name="search" size={13} />{s}</span>)}</div>
+            <div className="row gap-8 wrap">{suggestions.map(s => <span key={s} className="chip" onClick={() => setQ(s)}><Icon name="search" size={13} />{s}</span>)}</div>
           </div>
           <div className="card" style={{ padding: '22px 24px' }}>
             {recentSearches.length > 0 && (
@@ -84,7 +93,7 @@ export function SearchView({ nav, docs, initial }) {
             <h3 className="section-title">Más consultados</h3>
             {populares.map((d, i) => (
               <div key={d.id} className="rank-item" style={{ borderTop: i ? '1px solid var(--line-soft)' : 'none', cursor: 'pointer' }} onClick={() => nav('detail', { id: d.id })} role="button" tabIndex={0}>
-                <Icon name={DATA.typeById(d.type).icon} size={16} style={{ color: 'var(--brand-600)' }} />
+                <Icon name={typeById(d.type)?.icon || 'doc'} size={16} style={{ color: 'var(--brand-600)' }} />
                 <span className="text-sm grow" style={{ fontWeight: 500 }}>{d.name}</span>
                 <span className="text-xs muted row gap-6"><Icon name="eye" size={12} />{d.views}</span>
               </div>
@@ -97,11 +106,11 @@ export function SearchView({ nav, docs, initial }) {
           <aside className={'filter-rail ' + (filtersOpen ? 'open' : '')}>
             <div className="filter-group">
               <h4>Refinar por área</h4>
-              {DATA.AREAS.map(a => <label key={a.id} className="filter-opt"><input type="checkbox" checked={areaF.includes(a.id)} onChange={() => toggle(areaF, setAreaF, a.id)} /><span className="area-dot" style={{ background: a.color }}></span><span className="grow text-sm">{a.abbreviation}</span></label>)}
+              {areas.map(a => <label key={a.id} className="filter-opt"><input type="checkbox" checked={areaF.includes(a.id)} onChange={() => toggle(areaF, setAreaF, a.id)} /><span className="area-dot" style={{ background: a.color }}></span><span className="grow text-sm">{a.abbreviation}</span></label>)}
             </div>
             <div className="filter-group">
               <h4>Tipo documental</h4>
-              {DATA.TYPES.map(t => <label key={t.id} className="filter-opt"><input type="checkbox" checked={typeF.includes(t.id)} onChange={() => toggle(typeF, setTypeF, t.id)} /><span className="grow text-sm">{t.name}</span></label>)}
+              {types.map(t => <label key={t.id} className="filter-opt"><input type="checkbox" checked={typeF.includes(t.id)} onChange={() => toggle(typeF, setTypeF, t.id)} /><span className="grow text-sm">{t.name}</span></label>)}
             </div>
           </aside>
           <div className="grow library-main">
@@ -112,14 +121,14 @@ export function SearchView({ nav, docs, initial }) {
             {results.length === 0 ? (
               <div className="card empty-state"><Icon name="search" size={30} style={{ color: 'var(--ink-300)' }} /><p className="muted mt-16">Sin coincidencias. Prueba con otras palabras clave.</p></div>
             ) : Object.keys(grouped).map(typeId => {
-              const t = DATA.typeById(typeId);
+              const t = typeById(typeId);
               return (
                 <div key={typeId} className="search-group">
-                  <div className="row gap-8 mb-12"><Icon name={t.icon} size={16} style={{ color: 'var(--brand-600)' }} /><h3 className="search-group-title">{t.name}</h3><span className="tag" style={{ padding: '1px 8px' }}>{grouped[typeId].length}</span></div>
+                  <div className="row gap-8 mb-12"><Icon name={t?.icon || 'doc'} size={16} style={{ color: 'var(--brand-600)' }} /><h3 className="search-group-title">{t?.name || 'Tipo no disponible'}</h3><span className="tag" style={{ padding: '1px 8px' }}>{grouped[typeId].length}</span></div>
                   <div className="search-results">
                     {grouped[typeId].map(d => (
                       <div key={d.id} className="card search-result" onClick={() => { storage.addSearchQuery(q); setRecentSearches(storage.getSearchHistory()); nav('detail', { id: d.id }); }} role="button" tabIndex={0}>
-                        <span className="kpi-ico" style={{ width: 38, height: 38, borderRadius: 9, background: 'var(--brand-50)', color: 'var(--brand-700)', flexShrink: 0 }}><Icon name={t.icon} size={18} /></span>
+                        <span className="kpi-ico" style={{ width: 38, height: 38, borderRadius: 9, background: 'var(--brand-50)', color: 'var(--brand-700)', flexShrink: 0 }}><Icon name={t?.icon || 'doc'} size={18} /></span>
                         <div className="grow" style={{ minWidth: 0 }}>
                           <div className="row gap-8 wrap" style={{ marginBottom: 4 }}><span className="search-result-title">{highlight(d.name)}</span><AreaTag areaId={d.area} /><StateBadge state={d.state} /></div>
                           <p className="search-result-desc">{highlight(d.desc.slice(0, 130))}…</p>
@@ -141,6 +150,7 @@ export function SearchView({ nav, docs, initial }) {
 
 export function UploadFlow({ nav, showToast, onUploaded }) {
   const { addDocument } = useDocs();
+  const { user, hasPermission } = useAuth();
   const [step, setStep] = useState(0);
   const [file, setFile] = useState(null);
   const [submitting, setSubmitting] = useState(false);
@@ -149,6 +159,13 @@ export function UploadFlow({ nav, showToast, onUploaded }) {
   const [catalogErrors, setCatalogErrors] = useState([]);
   const [f, setF] = useState({ type: '', area: '', name: '', desc: '', owner: '', vigencia: '', tags: '', version: '1.0', revisor: '', aprobador: '', versionNote: '' });
   const set = (k, v) => setF(prev => ({ ...prev, [k]: v }));
+  const canAdmin = hasPermission('administrar');
+  const visibleAreas = canAdmin || !user?.area
+    ? catalogs.areas
+    : catalogs.areas.filter(a => Number(a.id) === Number(user.area));
+  const visiblePeople = canAdmin || !user?.area
+    ? catalogs.people
+    : catalogs.people.filter(p => Number(p.area) === Number(user.area));
   const steps = ['Tipo y datos', 'Archivo y versión', 'Flujo de aprobación'];
   const typeCode = catalogs.types.find(t => String(t.id) === String(f.type));
   const areaCode = catalogs.areas.find(a => String(a.id) === String(f.area));
@@ -175,15 +192,21 @@ export function UploadFlow({ nav, showToast, onUploaded }) {
       .finally(() => setCatalogLoading(false));
   }, []);
 
+  useEffect(() => {
+    if (!canAdmin && user?.area && catalogs.areas.length > 0) {
+      set('area', String(user.area));
+    }
+  }, [canAdmin, user?.area, catalogs.areas.length]);
+
   const handleSubmit = async () => {
     setSubmitting(true);
     try {
       const newDoc = await addDocument({ ...f, file });
-      showToast('Documento cargado y enviado al flujo de revisión');
+      showToast('Documento cargado y enviado al flujo de revisión', 'success');
       onUploaded?.();
       nav('detail', { id: newDoc.id });
     } catch (err) {
-      showToast(err.message || 'Error al cargar el documento. Intenta de nuevo.');
+      showToast(err.message || 'Error al cargar el documento. Intenta de nuevo.', 'error');
     } finally {
       setSubmitting(false);
     }
@@ -215,12 +238,12 @@ export function UploadFlow({ nav, showToast, onUploaded }) {
             )}
             <div className="form-grid">
               <div className="form-row"><label>Tipo documental *</label><select className="input" value={f.type} disabled={catalogLoading || catalogs.types.length === 0} onChange={e => set('type', e.target.value)}><option value="">{catalogLoading ? 'Cargando...' : 'Seleccionar…'}</option>{catalogs.types.map(t => <option key={t.id} value={t.id}>{t.name}</option>)}</select></div>
-              <div className="form-row"><label>Área responsable *</label><select className="input" value={f.area} disabled={catalogLoading || catalogs.areas.length === 0} onChange={e => set('area', e.target.value)}><option value="">{catalogLoading ? 'Cargando...' : 'Seleccionar…'}</option>{catalogs.areas.map(a => <option key={a.id} value={a.id}>{a.name}</option>)}</select></div>
+              <div className="form-row"><label>Área responsable *</label><select className="input" value={f.area} disabled={catalogLoading || visibleAreas.length === 0 || (!canAdmin && !!user?.area)} onChange={e => set('area', e.target.value)}><option value="">{catalogLoading ? 'Cargando...' : 'Seleccionar…'}</option>{visibleAreas.map(a => <option key={a.id} value={a.id}>{a.name}</option>)}</select></div>
             </div>
             <div className="form-row"><label>Nombre del documento *</label><input className="input" value={f.name} onChange={e => set('name', e.target.value)} placeholder="Ej. Procedimiento de matrícula de pregrado" /></div>
             <div className="form-row"><label>Descripción corta</label><textarea className="input" value={f.desc} onChange={e => set('desc', e.target.value)} placeholder="Resumen del propósito y alcance del documento…"></textarea></div>
             <div className="form-grid">
-              <div className="form-row"><label>Responsable</label><select className="input" value={f.owner} disabled={catalogLoading || catalogs.people.length === 0} onChange={e => set('owner', e.target.value)}><option value="">{catalogLoading ? 'Cargando...' : 'Seleccionar…'}</option>{catalogs.people.map(p => <option key={p.id} value={p.id}>{p.name}</option>)}</select></div>
+              <div className="form-row"><label>Responsable</label><select className="input" value={f.owner} disabled={catalogLoading || visiblePeople.length === 0} onChange={e => set('owner', e.target.value)}><option value="">{catalogLoading ? 'Cargando...' : 'Seleccionar…'}</option>{visiblePeople.map(p => <option key={p.id} value={p.id}>{p.name}</option>)}</select></div>
               <div className="form-row"><label>Vigencia hasta</label><input className="input" type="date" value={f.vigencia} onChange={e => set('vigencia', e.target.value)} /></div>
             </div>
             <div className="form-row"><label>Palabras clave <span className="hint">— separadas por coma</span></label><input className="input" value={f.tags} onChange={e => set('tags', e.target.value)} placeholder="matrícula, pregrado, procedimiento" /></div>
@@ -277,28 +300,57 @@ export function UploadFlow({ nav, showToast, onUploaded }) {
   );
 }
 
-export function WorkflowView({ nav }) {
+export function WorkflowView({ nav, showToast }) {
+  const { refresh } = useDocs();
   const [items, setItems] = useState([]);
   const [loading, setLoading] = useState(true);
+  const [busy, setBusy] = useState(null);
 
-  useEffect(() => {
-    api.getWorkflow()
+  const loadWorkflow = () => {
+    setLoading(true);
+    return api.getWorkflow()
       .then(setItems)
-      .catch(() => setItems([]))
+      .catch(() => {
+        setItems([]);
+        showToast?.('No se pudo cargar el flujo de aprobación.', 'error');
+      })
       .finally(() => setLoading(false));
-  }, []);
+  };
+
+  useEffect(() => { loadWorkflow(); }, []);
+
+  const runTransition = async (item, action) => {
+    setBusy(`${item.id}-${action}`);
+    try {
+      await api.transitionWorkflow(item.id, action);
+      await loadWorkflow();
+      await refresh();
+      const messages = {
+        submit: 'Borrador enviado a revisión.',
+        approve: 'Documento enviado a aprobación.',
+        publish: 'Documento publicado correctamente.',
+        return: 'Documento devuelto para ajustes.',
+      };
+      showToast?.(messages[action] || 'Flujo actualizado correctamente.', action === 'return' ? 'warning' : 'success');
+    } catch (err) {
+      const type = err.status === 403 ? 'warning' : 'error';
+      showToast?.(err.message || 'No se pudo actualizar el flujo.', type);
+    } finally {
+      setBusy(null);
+    }
+  };
 
   const flowSteps = [
     { k: 'creacion', label: 'Creación / Carga', icon: 'upload', desc: 'El editor crea o carga el documento' },
-    { k: 'revision', label: 'Revisión', icon: 'eye', desc: 'El responsable del área revisa' },
-    { k: 'aprobacion', label: 'Aprobación', icon: 'check', desc: 'El líder o autoridad aprueba' },
+    { k: 'revision', label: 'Revisión', icon: 'eye', desc: 'El responsable revisa y valida' },
+    { k: 'aprobacion', label: 'Aprobación', icon: 'check', desc: 'La autoridad aprueba para publicar' },
     { k: 'publicacion', label: 'Publicación', icon: 'send', desc: 'Se publica y notifica' },
-    { k: 'archivo', label: 'Archivo', icon: 'archive', desc: 'Versiones obsoletas se archivan' },
   ];
   const stages = [
     { k: 'creacion', label: 'En creación', tone: 'borrador' },
     { k: 'revision', label: 'En revisión', tone: 'revision' },
     { k: 'aprobacion', label: 'En aprobación', tone: 'publicado' },
+    { k: 'publicados', label: 'Publicados por mí', tone: 'aprobado' },
   ];
   const prioColor = { alta: 'var(--st-vencido-fg)', media: 'var(--st-revision-fg)', baja: 'var(--ink-400)' };
 
@@ -307,7 +359,7 @@ export function WorkflowView({ nav }) {
       <div className="page-head">
         <div className="breadcrumb"><a onClick={() => nav('dashboard')}>Inicio</a><span className="sep">/</span><span>Gestión</span><span className="sep">/</span><span style={{ color: 'var(--ink-700)' }}>Revisión y aprobación</span></div>
         <h1 className="page-title">Flujo de revisión y aprobación</h1>
-        <p className="page-sub">{items.length} documentos en proceso · ciclo de vida documental</p>
+        <p className="page-sub">{items.length} documentos en tu bandeja · ciclo de vida documental</p>
       </div>
       <div className="card" style={{ padding: '24px 28px', marginBottom: 26 }}>
         <h3 className="section-title">Ciclo documental</h3>
@@ -326,7 +378,7 @@ export function WorkflowView({ nav }) {
       </div>
       <div className="kanban-grid">
         {stages.map(st => {
-          const col = items.filter(it => it.stage === st.k);
+          const col = items.filter(it => (it.completedAt ? 'publicados' : it.stage) === st.k);
           return (
             <div key={st.k}>
               <div className="row between mb-12 kanban-header">
@@ -334,18 +386,28 @@ export function WorkflowView({ nav }) {
                 <span className="text-xs muted mono">{col.length}</span>
               </div>
               <div className="kanban-col">
-                {col.length === 0 ? <div className="text-xs muted kanban-empty">Sin documentos</div> : col.filter(it => it.doc).map(it => (
+                {loading ? <div className="text-xs muted kanban-empty">Cargando flujo...</div> : col.length === 0 ? <div className="text-xs muted kanban-empty">Sin documentos</div> : col.filter(it => it.doc).map(it => (
                   <div key={it.id} className="card kanban-card" onClick={() => nav('detail', { id: it.doc.id })} role="button" tabIndex={0}>
                     <div className="row between mb-12"><AreaTag areaId={it.doc.area} /><span className="priority-label" style={{ color: prioColor[it.priority] }}>{it.priority}</span></div>
                     <div className="text-sm" style={{ fontWeight: 600, lineHeight: 1.3 }}>{it.doc.name}</div>
                     <div className="mono text-xs muted" style={{ marginTop: 5 }}>{it.doc.documentNumber} · v{it.doc.version}</div>
                     <div className="row gap-8 kanban-assignee">
-                      <Avatar name={it.assignee} size={24} /><span className="text-xs muted grow assignee-name">{it.assignee}</span><span className="text-xs muted">{DATA.fmtDate(it.since)}</span>
+                      <Avatar name={it.assignee} size={24} /><span className="text-xs muted grow assignee-name">{it.assignee}</span><span className="text-xs muted">{fmtDate(it.since)}</span>
                     </div>
-                    {st.k !== 'creacion' && (
+                    {(it.canSubmitToReview || it.canSendToApproval || it.canPublish || it.canReturn) && (
                       <div className="row gap-8 mt-12">
-                        <button className="btn btn-primary btn-sm" style={{ flex: 1 }} onClick={(e) => e.stopPropagation()} type="button"><Icon name="check" size={14} />{st.k === 'revision' ? 'Aprobar' : 'Publicar'}</button>
-                        <button className="btn btn-danger btn-sm btn-icon" onClick={(e) => e.stopPropagation()} type="button"><Icon name="x" size={14} /></button>
+                        {it.canSubmitToReview && (
+                          <button className="btn btn-primary btn-sm" style={{ flex: 1 }} disabled={busy === `${it.id}-submit`} onClick={(e) => { e.stopPropagation(); runTransition(it, 'submit'); }} type="button"><Icon name="send" size={14} />Enviar a revisión</button>
+                        )}
+                        {it.canSendToApproval && (
+                          <button className="btn btn-primary btn-sm" style={{ flex: 1 }} disabled={busy === `${it.id}-approve`} onClick={(e) => { e.stopPropagation(); runTransition(it, 'approve'); }} type="button"><Icon name="check" size={14} />Enviar a aprobación</button>
+                        )}
+                        {it.canPublish && (
+                          <button className="btn btn-primary btn-sm" style={{ flex: 1 }} disabled={busy === `${it.id}-publish`} onClick={(e) => { e.stopPropagation(); runTransition(it, 'publish'); }} type="button"><Icon name="send" size={14} />Publicar</button>
+                        )}
+                        {it.canReturn && (
+                          <button className="btn btn-danger btn-sm btn-icon" disabled={busy === `${it.id}-return`} onClick={(e) => { e.stopPropagation(); runTransition(it, 'return'); }} type="button" title="Devolver para ajustes"><Icon name="x" size={14} /></button>
+                        )}
                       </div>
                     )}
                   </div>
@@ -360,31 +422,130 @@ export function WorkflowView({ nav }) {
 }
 
 export function UsersView({ nav }) {
+  const { areaById } = useCatalogs();
   const [tab, setTab] = useState('users');
   const [users, setUsers] = useState([]);
   const [roles, setRoles] = useState([]);
+  const [areas, setAreas] = useState([]);
   const [loading, setLoading] = useState(true);
+  const [modal, setModal] = useState(null);
+  const [roleModal, setRoleModal] = useState(null);
+  const [saving, setSaving] = useState(false);
+  const [error, setError] = useState('');
   const permLabels = { crear: 'Crear', editar: 'Editar', aprobar: 'Aprobar', publicar: 'Publicar', archivar: 'Archivar', consultar: 'Consultar', descargar: 'Descargar', administrar: 'Administrar' };
   const permKeys = Object.keys(permLabels);
+  const emptyForm = { name: '', email: '', role: '', area: '', status: 'Activo', password: '' };
 
-  useEffect(() => {
-    Promise.all([api.getUsers(), api.getRoles()])
-      .then(([nextUsers, nextRoles]) => {
+  const loadUsers = () => {
+    setLoading(true);
+    return Promise.all([api.getUsers(), api.getRoles(), api.getAreas()])
+      .then(([nextUsers, nextRoles, nextAreas]) => {
         setUsers(nextUsers);
         setRoles(nextRoles);
+        setAreas(nextAreas);
       })
       .catch(() => {
         setUsers([]);
         setRoles([]);
+        setAreas([]);
       })
       .finally(() => setLoading(false));
-  }, []);
+  };
+
+  useEffect(() => { loadUsers(); }, []);
+
+  const openCreate = () => {
+    setError('');
+    setModal({ mode: 'create', form: emptyForm });
+  };
+
+  const openEdit = (user) => {
+    setError('');
+    setModal({
+      mode: 'edit',
+      user,
+      form: {
+        name: user.name || '',
+        email: user.email || '',
+        role: user.role || '',
+        area: user.area || '',
+        status: user.status || 'Activo',
+        password: '',
+      },
+    });
+  };
+
+  const setForm = (key, value) => setModal(prev => ({ ...prev, form: { ...prev.form, [key]: value } }));
+
+  const submitUser = async () => {
+    if (!modal) return;
+    setSaving(true);
+    setError('');
+    try {
+      const payload = {
+        name: modal.form.name,
+        email: modal.form.email,
+        role: modal.form.role,
+        area: modal.form.area,
+        status: modal.form.status,
+      };
+      if (modal.form.password) payload.password = modal.form.password;
+      if (modal.mode === 'create') {
+        payload.password = modal.form.password || 'demo1234';
+        await api.createUser(payload);
+      } else {
+        await api.updateUser(modal.user.id, payload);
+      }
+      setModal(null);
+      await loadUsers();
+    } catch (err) {
+      setError(err.message || 'No se pudo guardar el usuario.');
+    } finally {
+      setSaving(false);
+    }
+  };
+
+  const openRoleEdit = (role) => {
+    setError('');
+    setRoleModal({
+      role,
+      form: {
+        name: role.name || '',
+        desc: role.desc || '',
+        perms: { ...role.perms },
+      },
+    });
+  };
+
+  const setRoleForm = (key, value) => setRoleModal(prev => ({ ...prev, form: { ...prev.form, [key]: value } }));
+  const togglePerm = (key) => setRoleModal(prev => ({
+    ...prev,
+    form: {
+      ...prev.form,
+      perms: { ...prev.form.perms, [key]: !prev.form.perms[key] },
+    },
+  }));
+
+  const submitRole = async () => {
+    if (!roleModal) return;
+    setSaving(true);
+    setError('');
+    try {
+      await api.updateRole(roleModal.role.id, roleModal.form);
+      setRoleModal(null);
+      await loadUsers();
+    } catch (err) {
+      setError(err.message || 'No se pudo guardar el rol.');
+    } finally {
+      setSaving(false);
+    }
+  };
 
   return (
     <div className="page fade-in">
       <div className="page-head">
         <div className="breadcrumb"><a onClick={() => nav('dashboard')}>Inicio</a><span className="sep">/</span><span>Gestión</span><span className="sep">/</span><span style={{ color: 'var(--ink-700)' }}>Usuarios y roles</span></div>
-        <div className="row between wrap gap-12"><div><h1 className="page-title">Administración de usuarios y roles</h1><p className="page-sub">{loading ? 'Cargando usuarios y roles...' : `${users.length} usuarios · ${roles.length} roles definidos`}</p></div><button className="btn btn-primary"><Icon name="plus" size={16} />Invitar usuario</button></div>
+        <div className="row between wrap gap-12"><div><h1 className="page-title">Administración de usuarios y roles</h1><p className="page-sub">{loading ? 'Cargando usuarios y roles...' : `${users.length} usuarios · ${roles.length} roles definidos`}</p></div>{tab === 'users' && <button className="btn btn-primary" onClick={openCreate}><Icon name="plus" size={16} />Crear usuario</button>}</div>
       </div>
       <div className="seg mb-24">
         <button type="button" className={tab === 'users' ? 'active' : ''} onClick={() => setTab('users')}><Icon name="users" size={15} />Usuarios</button>
@@ -396,17 +557,17 @@ export function UsersView({ nav }) {
             <thead><tr><th>Usuario</th><th>Correo</th><th>Rol</th><th>Área</th><th>Último acceso</th><th>Estado</th><th></th></tr></thead>
             <tbody>
               {users.map(u => {
-                const role = roles.find(r => r.id === u.role);
-                const ar = u.area ? DATA.areaById(u.area) : null;
+                const role = roles.find(r => Number(r.id) === Number(u.role));
+                const ar = u.area ? areaById(u.area) : null;
                 return (
                   <tr key={u.id}>
                     <td><div className="row gap-10"><Avatar name={u.name} size={32} /><span style={{ fontWeight: 600 }}>{u.name}</span></div></td>
                     <td className="text-sm muted">{u.email}</td>
                     <td><span className="tag tag-type">{role?.name || u.roleName || u.role}</span></td>
                     <td>{ar ? <AreaTag areaId={u.area} /> : <span className="text-xs muted">Transversal</span>}</td>
-                    <td className="text-sm muted">{DATA.fmtDate(u.last)}</td>
+                    <td className="text-sm muted">{fmtDate(u.last)}</td>
                     <td><span className={'badge badge-' + (u.status === 'Activo' ? 'aprobado' : 'archivado')}><span className="b-dot"></span>{u.status}</span></td>
-                    <td><button className="tbar-icon-btn" style={{ color: 'var(--ink-400)', width: 32, height: 32 }} type="button"><Icon name="dots" size={16} /></button></td>
+                    <td><button className="tbar-icon-btn" style={{ color: 'var(--ink-500)', width: 32, height: 32 }} type="button" title="Editar usuario" onClick={() => openEdit(u)}><Icon name="edit" size={16} /></button></td>
                   </tr>
                 );
               })}
@@ -414,29 +575,93 @@ export function UsersView({ nav }) {
           </table>
         </div>
       ) : (
-        <div>
-          <div className="roles-grid">
-            {roles.map(r => (
-              <div key={r.id} className="card" style={{ padding: 18 }}>
-                <div className="row gap-10 mb-12"><span className="kpi-ico" style={{ width: 38, height: 38, borderRadius: 10, background: 'var(--brand-50)', color: 'var(--brand-700)' }}><Icon name="shield" size={18} /></span><span style={{ fontSize: 14.5, fontWeight: 700 }}>{r.name}</span></div>
-                <p style={{ fontSize: 12.5, color: 'var(--ink-600)', margin: 0, lineHeight: 1.5 }}>{r.desc}</p>
-                <div className="row gap-6 wrap mt-12">{permKeys.filter(k => r.perms[k]).map(k => <span key={k} className="tag" style={{ padding: '1px 7px', fontSize: 11 }}>{permLabels[k]}</span>)}</div>
-              </div>
-            ))}
-          </div>
-          <h3 className="section-title">Matriz de permisos</h3>
-          <div className="tbl-wrap">
-            <table className="tbl">
-              <thead><tr><th>Rol</th>{permKeys.map(k => <th key={k} style={{ textAlign: 'center' }}>{permLabels[k]}</th>)}</tr></thead>
-              <tbody>
-                {roles.map(r => (
-                  <tr key={r.id} style={{ cursor: 'default' }}>
-                    <td style={{ fontWeight: 600 }}>{r.name}</td>
-                    {permKeys.map(k => <td key={k} style={{ textAlign: 'center' }}>{r.perms[k] ? <Icon name="check" size={17} style={{ color: 'var(--brand-600)' }} /> : <span style={{ color: 'var(--ink-300)' }}>—</span>}</td>)}
+        <div className="tbl-wrap">
+          <table className="tbl">
+            <thead><tr><th>Rol</th><th>Descripción</th><th>Permisos activos</th><th>Usuarios</th><th></th></tr></thead>
+            <tbody>
+              {roles.map(r => {
+                const activePerms = permKeys.filter(k => r.perms?.[k]);
+                const userCount = users.filter(u => Number(u.role) === Number(r.id)).length;
+                return (
+                  <tr key={r.id}>
+                    <td><div className="row gap-10"><span className="kpi-ico" style={{ width: 32, height: 32, borderRadius: 9, background: 'var(--brand-50)', color: 'var(--brand-700)' }}><Icon name="shield" size={16} /></span><span style={{ fontWeight: 700 }}>{r.name}</span></div></td>
+                    <td className="text-sm muted" style={{ maxWidth: 360 }}>{r.desc}</td>
+                    <td>
+                      <div className="row gap-6 wrap">
+                        {activePerms.slice(0, 5).map(k => <span key={k} className="tag" style={{ padding: '1px 7px', fontSize: 11 }}>{permLabels[k]}</span>)}
+                        {activePerms.length > 5 && <span className="tag" style={{ padding: '1px 7px', fontSize: 11 }}>+{activePerms.length - 5}</span>}
+                      </div>
+                    </td>
+                    <td className="text-sm mono muted">{userCount}</td>
+                    <td><button className="tbar-icon-btn" style={{ color: 'var(--ink-500)', width: 32, height: 32 }} type="button" title="Editar rol" onClick={() => openRoleEdit(r)}><Icon name="edit" size={16} /></button></td>
                   </tr>
+                );
+              })}
+            </tbody>
+          </table>
+        </div>
+      )}
+      {modal && (
+        <div className="modal-backdrop" onClick={() => !saving && setModal(null)}>
+          <div className="modal" onClick={e => e.stopPropagation()}>
+            <div className="modal-head">
+              <div>
+                <h3>{modal.mode === 'create' ? 'Crear usuario' : 'Editar usuario'}</h3>
+                <p className="muted text-sm">Configura acceso, rol y alcance operativo.</p>
+              </div>
+              <button className="tbar-icon-btn" type="button" onClick={() => setModal(null)} disabled={saving}><Icon name="x" size={16} /></button>
+            </div>
+            <div className="modal-body">
+              {error && <div className="login-error"><Icon name="alert" size={16} />{error}</div>}
+              <div className="form-grid">
+                <div className="form-row"><label>Nombre *</label><input className="input" value={modal.form.name} onChange={e => setForm('name', e.target.value)} /></div>
+                <div className="form-row"><label>Correo *</label><input className="input" type="email" value={modal.form.email} onChange={e => setForm('email', e.target.value)} /></div>
+                <div className="form-row"><label>Rol *</label><select className="input" value={modal.form.role} onChange={e => setForm('role', e.target.value)}><option value="">Seleccionar...</option>{roles.map(r => <option key={r.id} value={r.id}>{r.name}</option>)}</select></div>
+                <div className="form-row"><label>Área</label><select className="input" value={modal.form.area || ''} onChange={e => setForm('area', e.target.value)}><option value="">Transversal</option>{areas.map(a => <option key={a.id} value={a.id}>{a.name}</option>)}</select></div>
+                <div className="form-row"><label>Estado</label><select className="input" value={modal.form.status} onChange={e => setForm('status', e.target.value)}><option value="Activo">Activo</option><option value="Inactivo">Inactivo</option></select></div>
+                <div className="form-row"><label>{modal.mode === 'create' ? 'Contraseña inicial' : 'Nueva contraseña'}</label><input className="input" type="password" value={modal.form.password} onChange={e => setForm('password', e.target.value)} placeholder={modal.mode === 'create' ? 'Por defecto demo1234' : 'Dejar vacía para conservar'} /></div>
+              </div>
+            </div>
+            <div className="modal-foot">
+              <button className="btn btn-ghost" type="button" onClick={() => setModal(null)} disabled={saving}>Cancelar</button>
+              <button className="btn btn-primary" type="button" onClick={submitUser} disabled={saving}>{saving ? 'Guardando...' : 'Guardar usuario'}<Icon name="check" size={15} /></button>
+            </div>
+          </div>
+        </div>
+      )}
+      {roleModal && (
+        <div className="modal-backdrop" onClick={() => !saving && setRoleModal(null)}>
+          <div className="modal" onClick={e => e.stopPropagation()}>
+            <div className="modal-head">
+              <div>
+                <h3>Editar rol</h3>
+                <p className="muted text-sm">Activa o desactiva permisos para todos los usuarios con este rol.</p>
+              </div>
+              <button className="tbar-icon-btn" type="button" onClick={() => setRoleModal(null)} disabled={saving}><Icon name="x" size={16} /></button>
+            </div>
+            <div className="modal-body">
+              {error && <div className="login-error"><Icon name="alert" size={16} />{error}</div>}
+              <div className="form-row">
+                <label>Nombre *</label>
+                <input className="input" value={roleModal.form.name} onChange={e => setRoleForm('name', e.target.value)} />
+              </div>
+              <div className="form-row">
+                <label>Descripción</label>
+                <textarea className="input" value={roleModal.form.desc} onChange={e => setRoleForm('desc', e.target.value)} />
+              </div>
+              <div className="permissions-grid">
+                {permKeys.map(k => (
+                  <label key={k} className="permission-toggle">
+                    <input type="checkbox" checked={!!roleModal.form.perms[k]} onChange={() => togglePerm(k)} disabled={Number(roleModal.role.id) === 1 && ['administrar', 'consultar'].includes(k)} />
+                    <span><strong>{permLabels[k]}</strong><small>{k}</small></span>
+                  </label>
                 ))}
-              </tbody>
-            </table>
+              </div>
+            </div>
+            <div className="modal-foot">
+              <button className="btn btn-ghost" type="button" onClick={() => setRoleModal(null)} disabled={saving}>Cancelar</button>
+              <button className="btn btn-primary" type="button" onClick={submitRole} disabled={saving}>{saving ? 'Guardando...' : 'Guardar rol'}<Icon name="check" size={15} /></button>
+            </div>
           </div>
         </div>
       )}
@@ -459,24 +684,35 @@ function BarChart({ data, color }) {
 }
 
 export function ReportsView({ nav, docs }) {
-  const byArea = DATA.AREAS.map(a => ({ label: a.abbreviation, value: docs.filter(d => d.area === a.id).length, color: a.color }));
-  const byState = Object.keys(DATA.STATES).map(s => ({ label: DATA.STATES[s].label, value: docs.filter(d => d.state === s).length, color: `var(--st-${DATA.STATES[s].cls}-fg)` }));
-  const byType = DATA.TYPES.map(t => ({ label: t.name, value: docs.filter(d => d.type === t.id).length })).filter(x => x.value).sort((a, b) => b.value - a.value);
-  const topViews = [...docs].sort((a, b) => b.views - a.views).slice(0, 6);
-  const avgVers = (docs.reduce((s, d) => s + d.history.length, 0) / docs.length).toFixed(1);
+  const [summary, setSummary] = useState(null);
+
+  useEffect(() => {
+    api.getReportSummary()
+      .then(setSummary)
+      .catch(() => setSummary(null));
+  }, []);
+
+  const byArea = summary?.byArea || [];
+  const byState = (summary?.byState || []).map(s => {
+    const state = STATES[s.label];
+    return { ...s, label: state?.label || s.label, color: state ? `var(--st-${state.cls}-fg)` : undefined };
+  });
+  const byType = summary?.byType || [];
+  const topViews = summary?.topViews || [];
+  const avgVers = summary?.averageVersions ?? 0;
 
   return (
     <div className="page fade-in">
       <div className="page-head">
         <div className="breadcrumb"><a onClick={() => nav('dashboard')}>Inicio</a><span className="sep">/</span><span style={{ color: 'var(--ink-700)' }}>Reportes e indicadores</span></div>
-        <div className="row between wrap gap-12"><div><h1 className="page-title">Reportes e indicadores de gestión</h1><p className="page-sub">Estado del repositorio documental · corte 11 jun 2026</p></div><button className="btn btn-ghost"><Icon name="download" size={16} />Exportar informe</button></div>
+        <div className="row between wrap gap-12"><div><h1 className="page-title">Reportes e indicadores de gestión</h1><p className="page-sub">Estado del repositorio documental según tu alcance actual</p></div><button className="btn btn-ghost"><Icon name="download" size={16} />Exportar informe</button></div>
       </div>
       <div className="grid-kpi mb-24">
         <KpiCard icon="check" value={docs.filter(d => ['publicado', 'aprobado'].includes(d.state)).length} label="Documentos vigentes" tone="brand" />
         <KpiCard icon="alert" value={docs.filter(d => d.state === 'vencido').length} label="Documentos vencidos" tone="red" />
         <KpiCard icon="clock" value={docs.filter(d => d.state === 'revision').length} label="Pendientes de revisión" tone="amber" />
-        <KpiCard icon="history" value={'4.2 días'} label="Tiempo prom. de aprobación" tone="blue" />
-        <KpiCard icon="doc" value={avgVers} label="Versiones por documento" tone="gray" />
+        <KpiCard icon="doc" value={docs.length} label="Documentos visibles" tone="blue" />
+        <KpiCard icon="history" value={avgVers} label="Versiones por documento" tone="gray" />
       </div>
       <div className="reports-grid">
         <div className="card" style={{ padding: '22px 24px' }}><h3 className="section-title">Documentos por área</h3><BarChart data={byArea} /></div>
@@ -591,3 +827,4 @@ export function LoginView() {
     </div>
   );
 }
+

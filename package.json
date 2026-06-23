@@ -11,10 +11,8 @@
     "build": "vite build",
     "preview": "vite preview",
     "server:start": "npm run start --prefix server",
-    "server:seed": "npm run seed --prefix server",
     "db:up": "docker compose up -d postgres",
-    "db:down": "docker compose down",
-    "db:seed": "npm run seed:force --prefix server"
+    "db:down": "docker compose down"
   },
   "dependencies": {
     "mammoth": "^1.12.0",

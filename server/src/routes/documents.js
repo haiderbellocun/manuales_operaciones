@@ -4,12 +4,15 @@ import path from 'path';
 import { fileStorage } from '../store/files.js';
 import { authRequired, requirePermission } from '../middleware/auth.js';
 import { getArea, getType } from '../db/repos/catalog.js';
+import { logActivity } from '../db/repos/catalog.js';
 import { notifyUsers } from '../db/repos/notifications.js';
 import { findDocumentOwnerRecipient } from '../db/repos/users.js';
 import {
   listDocuments, getDocument, createDocument, toggleFavorite,
   incrementViews, createUpdateRequest, getFileMeta, upsertFile,
-  addWorkflowItem, resolveRevisorName,
+  getVersionFileMeta, updateDocument,
+  addWorkflowItem, resolveRevisorName, assertCanCreateInArea,
+  assertCanEditInArea, createDocumentVersion,
 } from '../db/repos/documents.js';
 
 const router = Router();
@@ -38,7 +41,7 @@ const upload = multer({
 router.get('/', requirePermission('consultar'), async (req, res, next) => {
   try {
     const { area, type, state, search, page, limit } = req.query;
-    res.json(await listDocuments(req.user.sub, { area, type, state, search, page, limit }));
+    res.json(await listDocuments(req.auth, { area, type, state, search, page, limit }));
   } catch (err) {
     next(err);
   }
@@ -46,6 +49,8 @@ router.get('/', requirePermission('consultar'), async (req, res, next) => {
 
 router.get('/:id/file/meta', requirePermission('consultar'), async (req, res, next) => {
   try {
+    const doc = await getDocument(req.params.id, req.auth);
+    if (!doc) return res.status(404).json({ message: 'Documento no encontrado.' });
     const meta = await getFileMeta(req.params.id);
     if (!meta) return res.status(404).json({ message: 'Sin archivo adjunto.' });
     res.json(meta);
@@ -56,7 +61,7 @@ router.get('/:id/file/meta', requirePermission('consultar'), async (req, res, ne
 
 router.get('/:id/file', requirePermission('descargar'), async (req, res, next) => {
   try {
-    const doc = await getDocument(req.params.id, req.user.sub);
+    const doc = await getDocument(req.params.id, req.auth);
     if (!doc) return res.status(404).json({ message: 'Documento no encontrado.' });
     const meta = await getFileMeta(req.params.id);
     if (!meta?.storedName) {
@@ -67,6 +72,33 @@ router.get('/:id/file', requirePermission('descargar'), async (req, res, next) =
     }
     res.setHeader('Content-Type', meta.mimeType || 'application/octet-stream');
     res.setHeader('Content-Disposition', `inline; filename="${encodeURIComponent(meta.originalName)}"`);
+    await logActivity(req.auth.id, 'Descargo archivo vigente del documento', doc.id, {
+      eventType: 'file_downloaded',
+      details: { version: doc.version, originalName: meta.originalName, storedName: meta.storedName },
+    });
+    fileStorage.stream(meta.storedName).pipe(res);
+  } catch (err) {
+    next(err);
+  }
+});
+
+router.get('/:id/versions/:versionId/file', requirePermission('descargar'), async (req, res, next) => {
+  try {
+    const doc = await getDocument(req.params.id, req.auth);
+    if (!doc) return res.status(404).json({ message: 'Documento no encontrado.' });
+    const meta = await getVersionFileMeta(doc.id, req.params.versionId);
+    if (!meta?.storedName) {
+      return res.status(404).json({ message: 'Esta version no tiene archivo adjunto.' });
+    }
+    if (!(await fileStorage.exists(meta.storedName))) {
+      return res.status(404).json({ message: 'Archivo de version no encontrado en Cloud Storage.' });
+    }
+    res.setHeader('Content-Type', meta.mimeType || 'application/octet-stream');
+    res.setHeader('Content-Disposition', `inline; filename="${encodeURIComponent(meta.originalName || `${doc.documentNumber}-v${meta.version}`)}"`);
+    await logActivity(req.auth.id, `Descargo archivo de version ${meta.version}`, doc.id, {
+      eventType: 'version_downloaded',
+      details: { version: meta.version, versionId: meta.id, originalName: meta.originalName, storedName: meta.storedName },
+    });
     fileStorage.stream(meta.storedName).pipe(res);
   } catch (err) {
     next(err);
@@ -75,9 +107,47 @@ router.get('/:id/file', requirePermission('descargar'), async (req, res, next) =
 
 router.get('/:id', requirePermission('consultar'), async (req, res, next) => {
   try {
-    const doc = await getDocument(req.params.id, req.user.sub);
+    const doc = await getDocument(req.params.id, req.auth);
     if (!doc) return res.status(404).json({ message: 'Documento no encontrado.' });
     res.json(doc);
+  } catch (err) {
+    next(err);
+  }
+});
+
+router.post('/:id/versions', requirePermission('editar'), (req, res) => {
+  upload.single('file')(req, res, async (err) => {
+    if (err) return res.status(400).json({ message: err.message || 'Error al subir archivo.' });
+    let storedName;
+    try {
+      const doc = await getDocument(req.params.id, req.auth);
+      if (!doc) return res.status(404).json({ message: 'Documento no encontrado.' });
+      assertCanEditInArea(req.auth, doc.area);
+      if (!req.file) return res.status(400).json({ message: 'El archivo de la nueva version es obligatorio.' });
+
+      const version = String(req.body?.version || '').trim();
+      storedName = await fileStorage.save(doc.id, doc.documentNumber, version, req.file);
+      const updated = await createDocumentVersion(doc, req.body || {}, req.file, storedName, req.auth);
+      const owner = await findDocumentOwnerRecipient(doc.owner, doc.area);
+      await notifySafely([owner?.id], {
+        title: 'Nueva version documental',
+        message: `${req.auth.email} creo la version ${version} de "${doc.name}".`,
+        type: 'workflow',
+        docId: doc.id,
+      });
+      res.status(201).json(updated);
+    } catch (e) {
+      if (storedName) await fileStorage.remove(storedName).catch(() => {});
+      res.status(e.statusCode || 500).json({ message: e.message || 'Error al crear la nueva version.' });
+    }
+  });
+});
+
+router.put('/:id', requirePermission('editar'), async (req, res, next) => {
+  try {
+    const doc = await getDocument(req.params.id, req.auth);
+    if (!doc) return res.status(404).json({ message: 'Documento no encontrado.' });
+    res.json(await updateDocument(doc, req.body || {}, req.auth));
   } catch (err) {
     next(err);
   }
@@ -90,6 +160,7 @@ router.post('/', requirePermission('crear'), async (req, res, next) => {
     if (!type || !area || !name || !owner) {
       return res.status(400).json({ message: 'Tipo, area, nombre y responsable son obligatorios.' });
     }
+    assertCanCreateInArea(req.auth, area);
     const areaObj = await getArea(area);
     const typeObj = await getType(type);
     if (!areaObj || !typeObj) {
@@ -101,7 +172,7 @@ router.post('/', requirePermission('crear'), async (req, res, next) => {
       typeObj,
     );
     const revisorName = await resolveRevisorName(payload.revisor);
-    await addWorkflowItem(newDoc.id, revisorName);
+    await addWorkflowItem(newDoc.id, revisorName, payload.revisor, payload.aprobador);
     await notifySafely([payload.revisor], {
       title: 'Nuevo documento para revision',
       message: `${req.user.email} cargo "${newDoc.name}" y te asigno la revision.`,
@@ -116,7 +187,7 @@ router.post('/', requirePermission('crear'), async (req, res, next) => {
 
 router.post('/:id/favorite', requirePermission('consultar'), async (req, res, next) => {
   try {
-    const doc = await getDocument(req.params.id, req.user.sub);
+    const doc = await getDocument(req.params.id, req.auth);
     if (!doc) return res.status(404).json({ message: 'Documento no encontrado.' });
     res.json(await toggleFavorite(req.user.sub, doc.id));
   } catch (err) {
@@ -126,7 +197,7 @@ router.post('/:id/favorite', requirePermission('consultar'), async (req, res, ne
 
 router.post('/:id/view', requirePermission('consultar'), async (req, res, next) => {
   try {
-    const doc = await getDocument(req.params.id, req.user.sub);
+    const doc = await getDocument(req.params.id, req.auth);
     if (!doc) return res.status(404).json({ message: 'Documento no encontrado.' });
     const views = await incrementViews(doc.id);
     res.json({ views });
@@ -137,7 +208,7 @@ router.post('/:id/view', requirePermission('consultar'), async (req, res, next) 
 
 router.post('/:id/update-request', requirePermission('consultar'), async (req, res, next) => {
   try {
-    const doc = await getDocument(req.params.id, req.user.sub);
+    const doc = await getDocument(req.params.id, req.auth);
     if (!doc) return res.status(404).json({ message: 'Documento no encontrado.' });
     const entry = await createUpdateRequest(
       doc.id,
@@ -163,8 +234,9 @@ router.post('/:id/file', requirePermission('crear'), (req, res) => {
     if (err) return res.status(400).json({ message: err.message || 'Error al subir archivo.' });
     try {
       const routeDocId = Number(req.params.id);
-      const doc = await getDocument(routeDocId, req.user.sub);
+      const doc = await getDocument(routeDocId, req.auth);
       if (!doc) return res.status(404).json({ message: 'Documento no encontrado.' });
+      assertCanCreateInArea(req.auth, doc.area);
       if (Number(doc.id) !== routeDocId) {
         return res.status(409).json({ message: 'El documento consultado no coincide con el id de la ruta.' });
       }

@@ -45,10 +45,9 @@ npm run dev:server       # solo backend (node --watch)
 
 npm run db:up            # levanta PostgreSQL (Docker)
 npm run db:down          # detiene PostgreSQL
-npm run db:seed          # migración + seed forzado
 ```
 
-Al arrancar, el servidor **auto-migra** el esquema (`migrate()`) y **auto-siembra** si la BD está vacía (`seedIfEmpty()`). No se necesita correr migración manualmente en desarrollo.
+Al arrancar, el servidor **auto-migra** el esquema (`migrate()`) y asegura los catálogos maestros mínimos. No hay siembra de datos demo en runtime ni seed manual.
 
 ---
 
@@ -145,14 +144,13 @@ El esquema completo está en [server/sql/schema.sql](server/sql/schema.sql).
 
 ```
 server/src/
-├── app.js                  # Crea la app Express (migrate + seed + rutas)
+├── app.js                  # Crea la app Express (migrate + rutas)
 ├── index.js                # Entry point — listen en PORT
 ├── middleware/
 │   └── auth.js             # signToken, verifyToken, authRequired, authOptional
 ├── db/
 │   ├── pool.js             # Pool de conexiones pg
 │   ├── migrate.js          # Lee y ejecuta server/sql/schema.sql
-│   ├── seedData.js         # Siembra datos iniciales desde src/data.js
 │   ├── mapper.js           # Mapea filas BD → objetos de dominio
 │   └── repos/
 │       ├── documents.js    # Repositorio de documentos y archivos
@@ -166,8 +164,6 @@ server/src/
 │   └── catalog.js          # Catálogos y estadísticas
 ├── store/
 │   └── files.js            # Almacenamiento de documentos en Cloud Storage
-├── scripts/
-│   └── seed.js             # Script CLI para seed manual
 └── sql/
     └── schema.sql          # DDL completo de la base de datos
 ```
@@ -176,8 +172,8 @@ server/src/
 
 ## Notas de desarrollo
 
-**Passwords en texto plano** — Las contraseñas se almacenan y comparan en texto plano. Funciona en desarrollo pero **debe reemplazarse con bcrypt antes de producción**. Ver `server/src/db/seedData.js:53` y `server/src/routes/auth.js`.
+**Passwords en texto plano** — Las contraseñas se almacenan y comparan en texto plano. Funciona en desarrollo pero **debe reemplazarse con bcrypt antes de producción**. Ver `server/src/routes/auth.js`.
 
-**Auto-migración** — El servidor corre `migrate()` cada vez que arranca. Si el esquema cambia, editar `server/sql/schema.sql` y reiniciar. Para limpiar y re-sembrar: `npm run db:seed`.
+**Auto-migración** — El servidor corre `migrate()` cada vez que arranca. Si el esquema cambia, editar `server/sql/schema.sql` y reiniciar.
 
 **Subida de archivos** — Los archivos se guardan exclusivamente en Cloud Storage. `GCS_BUCKET` es obligatorio incluso corriendo local. Formatos permitidos: PDF, DOCX, DOC, XLSX. Límite: 25 MB.

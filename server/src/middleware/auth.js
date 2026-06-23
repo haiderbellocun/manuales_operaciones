@@ -88,8 +88,10 @@ export function requirePermission(...permissions) {
 
       req.auth = {
         id: authUser.id,
+        name: authUser.name,
         email: authUser.email,
         role: authUser.role_id,
+        area: authUser.area_id,
         roleName: authUser.role_name,
         perms,
       };
@@ -112,8 +114,10 @@ export function requireRole(...roles) {
 
       req.auth = {
         id: authUser.id,
+        name: authUser.name,
         email: authUser.email,
         role: authUser.role_id,
+        area: authUser.area_id,
         roleName: authUser.role_name,
         perms: authUser.perms || {},
       };
