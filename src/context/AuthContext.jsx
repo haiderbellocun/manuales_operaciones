@@ -1,54 +1,27 @@
 import { createContext, useContext, useState, useEffect, useCallback } from 'react';
 import { api } from '../services/api';
-import { KEYS } from '../utils/storage';
 
 const AuthContext = createContext(null);
 
-function readSession() {
-  try {
-    const raw = localStorage.getItem(KEYS.session);
-    return raw ? JSON.parse(raw) : null;
-  } catch {
-    return null;
-  }
-}
-
-function saveSession(session) {
-  if (session) localStorage.setItem(KEYS.session, JSON.stringify(session));
-  else localStorage.removeItem(KEYS.session);
-}
-
 export function AuthProvider({ children }) {
-  const [session, setSession] = useState(readSession);
-  const [loading, setLoading] = useState(() => Boolean(readSession()?.token));
+  const [session, setSession] = useState(null);
+  const [loading, setLoading] = useState(true);
   const [error, setError] = useState(null);
 
   useEffect(() => {
-    if (session?.token) {
-      setLoading(true);
-      api.getSession()
-        .then(({ user }) => {
-          const next = { ...session, user };
-          saveSession(next);
-          setSession(next);
-        })
-        .catch(() => {
-          saveSession(null);
-          setSession(null);
-        })
-        .finally(() => setLoading(false));
-    } else {
-      setLoading(false);
-    }
+    localStorage.removeItem('acervo_session');
+    api.getSession()
+      .then(({ user }) => setSession({ user, provider: 'session' }))
+      .catch(() => setSession(null))
+      .finally(() => setLoading(false));
   }, []);
 
-  const login = useCallback(async (email, password) => {
+  const loginWithGoogle = useCallback(async (credential) => {
     setLoading(true);
     setError(null);
     try {
-      const result = await api.login(email, password);
+      const result = await api.loginWithGoogle(credential);
       const next = { ...result, loginAt: Date.now() };
-      saveSession(next);
       setSession(next);
       return next;
     } catch (e) {
@@ -59,25 +32,8 @@ export function AuthProvider({ children }) {
     }
   }, []);
 
-  const loginWithMicrosoft = useCallback(async () => {
-    setLoading(true);
-    setError(null);
-    try {
-      const result = await api.loginWithMicrosoft();
-      const next = { ...result, loginAt: Date.now() };
-      saveSession(next);
-      setSession(next);
-      return next;
-    } catch (e) {
-      setError(e.message);
-      throw e;
-    } finally {
-      setLoading(false);
-    }
-  }, []);
-
-  const logout = useCallback(() => {
-    saveSession(null);
+  const logout = useCallback(async () => {
+    await api.logout().catch(() => {});
     setSession(null);
     setError(null);
   }, []);
@@ -92,7 +48,7 @@ export function AuthProvider({ children }) {
 
   return (
     <AuthContext.Provider value={{
-      user, session, loading, error, login, loginWithMicrosoft, logout,
+      user, session, loading, error, loginWithGoogle, logout,
       isAuthenticated: !!session,
       initials,
       roleName: user?.roleName || '',

@@ -1,6 +1,6 @@
 import { lazy, Suspense, useState, useEffect, useRef } from 'react';
 import { useLocation, useNavigate } from 'react-router-dom';
-import { Icon, Modal, useClickOutside } from './components';
+import { Icon, Modal, SelectField, useClickOutside } from './components';
 import { useAuth } from './context/AuthContext';
 import { useDocs } from './context/DocsContext';
 import { useCatalogs } from './context/CatalogContext';
@@ -21,7 +21,7 @@ const WorkflowView = lazy(() => import('./views/Gestion').then(m => ({ default: 
 const UsersView = lazy(() => import('./views/Gestion').then(m => ({ default: m.UsersView })));
 const ReportsView = lazy(() => import('./views/Gestion').then(m => ({ default: m.ReportsView })));
 const HelpView = lazy(() => import('./views/Gestion').then(m => ({ default: m.HelpView })));
-const LoginView = lazy(() => import('./views/Gestion').then(m => ({ default: m.LoginView })));
+const LoginView = lazy(() => import('./views/Login').then(m => ({ default: m.LoginView })));
 
 function buildNav(areas = []) {
   return [
@@ -604,13 +604,13 @@ function UpdateRequestModal({ doc, owner, onClose, onSubmit }) {
       footer={<><button type="button" className="btn btn-ghost" onClick={onClose}>Cancelar</button><button type="button" className="btn btn-primary" onClick={() => onSubmit(doc, reason, detail)}><Icon name="send" size={15} />Enviar solicitud</button></>}>
       <div className="form-row">
         <label>Motivo de la solicitud</label>
-        <select className="input" value={reason} onChange={e => setReason(e.target.value)}>
-          <option>Información desactualizada</option>
-          <option>Cambio en el procedimiento</option>
-          <option>Documento vencido</option>
-          <option>Error o inconsistencia</option>
-          <option>Otro</option>
-        </select>
+        <SelectField value={reason} onChange={setReason} options={[
+          'Informaci\u00f3n desactualizada',
+          'Cambio en el procedimiento',
+          'Documento vencido',
+          'Error o inconsistencia',
+          'Otro',
+        ]} />
       </div>
       <div className="form-row">
         <label>Detalle <span className="hint">— describe el cambio sugerido</span></label>

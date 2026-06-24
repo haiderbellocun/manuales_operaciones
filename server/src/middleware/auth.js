@@ -1,9 +1,36 @@
+import '../config/env.js';
 import jwt from 'jsonwebtoken';
 import { findByEmail, getAuthContext } from '../db/repos/users.js';
+import { isAllowedGoogleEmail } from '../services/googleIdentity.js';
 
 const JWT_SECRET = process.env.JWT_SECRET;
 if (!JWT_SECRET) throw new Error('JWT_SECRET no esta definido en las variables de entorno. Configura server/.env');
-const JWT_EXPIRES = '7d';
+const JWT_EXPIRES = '4h';
+export const SESSION_COOKIE_NAME = 'acervo_session';
+export const SESSION_MAX_AGE_MS = 4 * 60 * 60 * 1000;
+
+function getCookie(req, name) {
+  const raw = req.headers.cookie || '';
+  const cookies = raw.split(';').map(part => part.trim()).filter(Boolean);
+  for (const cookie of cookies) {
+    const eq = cookie.indexOf('=');
+    if (eq === -1) continue;
+    const key = cookie.slice(0, eq);
+    if (key === name) return decodeURIComponent(cookie.slice(eq + 1));
+  }
+  return null;
+}
+
+export function sessionCookieOptions() {
+  const production = process.env.NODE_ENV === 'production';
+  return {
+    httpOnly: true,
+    secure: production,
+    sameSite: 'strict',
+    maxAge: SESSION_MAX_AGE_MS,
+    path: '/',
+  };
+}
 
 export function signToken(user) {
   return jwt.sign(
@@ -34,13 +61,18 @@ async function normalizeTokenPayload(payload) {
 }
 
 export async function authRequired(req, res, next) {
-  const header = req.headers.authorization;
-  if (!header?.startsWith('Bearer ')) {
+  const cookieToken = getCookie(req, SESSION_COOKIE_NAME);
+  const token = cookieToken;
+
+  if (!token) {
     return res.status(401).json({ message: 'Sesion no valida. Inicia sesion de nuevo.' });
   }
 
   try {
-    req.user = await normalizeTokenPayload(verifyToken(header.slice(7)));
+    req.user = await normalizeTokenPayload(verifyToken(token));
+    if (!isAllowedGoogleEmail(req.user.email)) {
+      return res.status(401).json({ message: 'Sesion no valida para el dominio institucional permitido.' });
+    }
     next();
   } catch {
     return res.status(401).json({ message: 'Token expirado o invalido.' });
@@ -48,10 +80,11 @@ export async function authRequired(req, res, next) {
 }
 
 export async function authOptional(req, _res, next) {
-  const header = req.headers.authorization;
-  if (header?.startsWith('Bearer ')) {
+  const cookieToken = getCookie(req, SESSION_COOKIE_NAME);
+  const token = cookieToken;
+  if (token) {
     try {
-      req.user = await normalizeTokenPayload(verifyToken(header.slice(7)));
+      req.user = await normalizeTokenPayload(verifyToken(token));
     } catch {
       // Ignore invalid optional tokens.
     }

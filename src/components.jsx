@@ -1,4 +1,5 @@
-import { useEffect } from 'react';
+import { useEffect, useMemo, useRef, useState } from 'react';
+import { createPortal } from 'react-dom';
 import { useCatalogs } from './context/CatalogContext';
 import { STATES } from './utils/display';
 
@@ -68,6 +69,130 @@ export function Icon({ name, size = 18, stroke = 2, style, className }) {
       style={style} className={className} aria-hidden="true">
       {d.split('M').filter(Boolean).map((seg, i) => <path key={i} d={'M' + seg} />)}
     </svg>
+  );
+}
+
+export function SelectField({
+  value,
+  onChange,
+  options = [],
+  placeholder = 'Seleccionar...',
+  disabled = false,
+  className = '',
+  ariaLabel,
+}) {
+  const triggerRef = useRef(null);
+  const menuRef = useRef(null);
+  const [open, setOpen] = useState(false);
+  const [menuStyle, setMenuStyle] = useState({});
+  const normalized = useMemo(() => options.map(option => (
+    typeof option === 'string' ? { value: option, label: option } : option
+  )), [options]);
+  const selected = normalized.find(option => String(option.value) === String(value));
+  const enabled = normalized.filter(option => !option.disabled);
+
+  useEffect(() => {
+    if (!open) return undefined;
+
+    const placeMenu = () => {
+      const rect = triggerRef.current?.getBoundingClientRect();
+      if (!rect) return;
+      const spaceBelow = window.innerHeight - rect.bottom - 12;
+      const spaceAbove = rect.top - 12;
+      const maxHeight = Math.max(180, Math.min(320, Math.max(spaceBelow, spaceAbove)));
+      const opensUp = spaceBelow < 220 && spaceAbove > spaceBelow;
+      setMenuStyle({
+        position: 'fixed',
+        left: rect.left,
+        top: opensUp ? undefined : rect.bottom + 6,
+        bottom: opensUp ? window.innerHeight - rect.top + 6 : undefined,
+        width: rect.width,
+        maxHeight,
+      });
+    };
+
+    placeMenu();
+    window.addEventListener('resize', placeMenu);
+    window.addEventListener('scroll', placeMenu, true);
+    return () => {
+      window.removeEventListener('resize', placeMenu);
+      window.removeEventListener('scroll', placeMenu, true);
+    };
+  }, [open]);
+
+  useEffect(() => {
+    if (!open) return undefined;
+    const onPointerDown = (event) => {
+      if (triggerRef.current?.contains(event.target) || menuRef.current?.contains(event.target)) return;
+      setOpen(false);
+    };
+    document.addEventListener('mousedown', onPointerDown);
+    return () => document.removeEventListener('mousedown', onPointerDown);
+  }, [open]);
+
+  const choose = (nextValue) => {
+    onChange?.(nextValue);
+    setOpen(false);
+    triggerRef.current?.focus();
+  };
+
+  const onKeyDown = (event) => {
+    if (disabled) return;
+    if (['Enter', ' '].includes(event.key)) {
+      event.preventDefault();
+      setOpen(prev => !prev);
+    }
+    if (event.key === 'Escape') setOpen(false);
+    if (['ArrowDown', 'ArrowUp'].includes(event.key)) {
+      event.preventDefault();
+      const current = enabled.findIndex(option => String(option.value) === String(value));
+      const dir = event.key === 'ArrowDown' ? 1 : -1;
+      const next = enabled[(current + dir + enabled.length) % enabled.length] || enabled[0];
+      if (next) onChange?.(next.value);
+    }
+  };
+
+  return (
+    <>
+      <button
+        ref={triggerRef}
+        type="button"
+        className={`input custom-select-trigger ${open ? 'open' : ''} ${className}`}
+        disabled={disabled}
+        aria-haspopup="listbox"
+        aria-expanded={open}
+        aria-label={ariaLabel}
+        onClick={() => !disabled && setOpen(prev => !prev)}
+        onKeyDown={onKeyDown}
+      >
+        <span className={selected ? 'custom-select-value' : 'custom-select-placeholder'}>
+          {selected?.label || placeholder}
+        </span>
+        <Icon name="chevDown" size={16} className="custom-select-icon" />
+      </button>
+      {open && createPortal(
+        <div ref={menuRef} className="custom-select-menu" style={menuStyle} role="listbox">
+          {normalized.map(option => {
+            const active = String(option.value) === String(value);
+            return (
+              <button
+                key={String(option.value)}
+                type="button"
+                className={'custom-select-option' + (active ? ' selected' : '')}
+                disabled={option.disabled}
+                role="option"
+                aria-selected={active}
+                onClick={() => !option.disabled && choose(option.value)}
+              >
+                <span>{option.label}</span>
+                {active && <Icon name="check" size={15} />}
+              </button>
+            );
+          })}
+        </div>,
+        document.body,
+      )}
+    </>
   );
 }
 

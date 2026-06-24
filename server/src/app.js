@@ -1,7 +1,9 @@
 import express from 'express';
 import cors from 'cors';
+import helmet from 'helmet';
 import path from 'path';
 import { fileURLToPath } from 'url';
+import './config/env.js';
 import authRoutes from './routes/auth.js';
 import documentRoutes from './routes/documents.js';
 import workflowRoutes from './routes/workflow.js';
@@ -19,9 +21,28 @@ export async function createApp() {
 
   const app = express();
   const corsOrigin = process.env.CORS_ORIGIN || 'http://localhost:5173';
+  const allowedOrigins = new Set(corsOrigin.split(',').map(origin => origin.trim()).filter(Boolean));
 
-  app.use(cors({ origin: corsOrigin, credentials: true }));
+  app.use(helmet({
+    crossOriginResourcePolicy: { policy: 'same-site' },
+    contentSecurityPolicy: false,
+  }));
+  app.use(cors({
+    origin(origin, callback) {
+      if (!origin || allowedOrigins.has(origin)) return callback(null, true);
+      return callback(new Error('Origen no permitido por CORS.'));
+    },
+    credentials: true,
+  }));
   app.use(express.json({ limit: '2mb' }));
+  app.use((req, res, next) => {
+    if (['GET', 'HEAD', 'OPTIONS'].includes(req.method)) return next();
+    const origin = req.get('origin');
+    if (origin && !allowedOrigins.has(origin)) {
+      return res.status(403).json({ message: 'Origen no permitido para esta operacion.' });
+    }
+    return next();
+  });
 
   app.get('/api/health', async (_req, res) => {
     try {
@@ -62,7 +83,11 @@ export async function createApp() {
 
   app.use((err, _req, res, _next) => {
     console.error(err);
-    res.status(err.statusCode || 500).json({ message: err.message || 'Error interno del servidor.' });
+    const status = err.statusCode || 500;
+    const message = status >= 500 && process.env.NODE_ENV === 'production'
+      ? 'Error interno del servidor.'
+      : (err.message || 'Error interno del servidor.');
+    res.status(status).json({ message });
   });
 
   return app;

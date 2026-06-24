@@ -1,26 +1,12 @@
-import { KEYS } from '../utils/storage';
-
 const API_BASE = import.meta.env.VITE_API_URL || '/api';
 
-function getToken() {
-  try {
-    const raw = localStorage.getItem(KEYS.session);
-    if (!raw) return null;
-    return JSON.parse(raw).token || null;
-  } catch {
-    return null;
-  }
-}
-
 async function request(path, options = {}) {
-  const token = getToken();
   const headers = { ...options.headers };
-  if (token) headers.Authorization = `Bearer ${token}`;
   if (!(options.body instanceof FormData)) {
     headers['Content-Type'] = headers['Content-Type'] || 'application/json';
   }
 
-  const res = await fetch(`${API_BASE}${path}`, { ...options, headers });
+  const res = await fetch(`${API_BASE}${path}`, { ...options, headers, credentials: 'include' });
   if (!res.ok) {
     const data = await res.json().catch(() => ({}));
     const err = new Error(data.message || `Error ${res.status}`);
@@ -37,18 +23,16 @@ async function request(path, options = {}) {
 export const api = {
   config: { baseUrl: API_BASE },
 
-  getToken,
-
-  async login(email, password) {
-    return request('/auth/login', { method: 'POST', body: JSON.stringify({ email, password }) });
-  },
-
-  async loginWithMicrosoft() {
-    return request('/auth/microsoft', { method: 'POST' });
+  async loginWithGoogle(credential) {
+    return request('/auth/google', { method: 'POST', body: JSON.stringify({ credential }) });
   },
 
   async getSession() {
     return request('/auth/session');
+  },
+
+  async logout() {
+    return request('/auth/logout', { method: 'POST' });
   },
 
   async getDocuments(params = {}) {
@@ -98,9 +82,8 @@ export const api = {
   },
 
   async getDocumentFileUrl(docId) {
-    const token = getToken();
     const res = await fetch(`${API_BASE}/documents/${docId}/file`, {
-      headers: token ? { Authorization: `Bearer ${token}` } : {},
+      credentials: 'include',
     });
     if (!res.ok) return null;
     const blob = await res.blob();
@@ -108,9 +91,8 @@ export const api = {
   },
 
   async getDocumentVersionFileUrl(docId, versionId) {
-    const token = getToken();
     const res = await fetch(`${API_BASE}/documents/${docId}/versions/${versionId}/file`, {
-      headers: token ? { Authorization: `Bearer ${token}` } : {},
+      credentials: 'include',
     });
     if (!res.ok) return null;
     const blob = await res.blob();

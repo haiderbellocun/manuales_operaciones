@@ -35,84 +35,6 @@ async function addColumn(table, column, definition) {
   }
 }
 
-const SYSTEM_AREAS = [
-  [1, 'Fábrica de Contenidos', 'FCO', 'var(--area-fco)', 'Laura Restrepo Mejía'],
-  [2, 'Prácticas', 'PRA', 'var(--area-pra)', 'Mauricio Salazar Ríos'],
-  [3, 'Homologaciones', 'HOM', 'var(--area-hom)', 'Diana Marcela Ruiz'],
-  [4, 'Operación Académica de Pregrado', 'OAP', 'var(--area-oap)', 'Carlos Andrés Gómez'],
-  [5, 'Operación Académica de Posgrado', 'OPG', 'var(--area-opg)', 'Andrea Forero Castro'],
-  [6, 'Pruebas Saber', 'PSB', 'var(--area-psb)', 'Julián Ospina Vélez'],
-];
-
-const SYSTEM_TYPES = [
-  [1, 'Procedimiento', 'PR', 'flow'],
-  [2, 'Manual de funciones', 'MF', 'briefcase'],
-  [3, 'Descriptor de cargo', 'DC', 'idcard'],
-  [4, 'Manual de aplicación', 'MA', 'app'],
-  [5, 'ANS', 'ANS', 'handshake'],
-  [6, 'Formato', 'FT', 'form'],
-  [7, 'Instructivo', 'IN', 'list'],
-  [8, 'Guía', 'GU', 'compass'],
-  [9, 'Política', 'PO', 'shield'],
-];
-
-const SYSTEM_ROLES = [
-  [1, 'Administrador general', 'Control total de la plataforma, configuración y usuarios.', { crear: true, editar: true, aprobar: true, publicar: true, archivar: true, consultar: true, descargar: true, administrar: true }],
-  [2, 'Líder de área', 'Gestiona y aprueba los documentos de su área.', { crear: true, editar: true, aprobar: true, publicar: true, archivar: true, consultar: true, descargar: true, administrar: false }],
-  [3, 'Editor documental', 'Crea y edita documentos; los envía a revisión.', { crear: true, editar: true, aprobar: false, publicar: false, archivar: false, consultar: true, descargar: true, administrar: false }],
-  [4, 'Revisor', 'Revisa documentos y devuelve observaciones.', { crear: false, editar: false, aprobar: false, publicar: false, archivar: false, consultar: true, descargar: true, administrar: false }],
-  [5, 'Aprobador', 'Aprueba documentos revisados para su publicación.', { crear: false, editar: false, aprobar: true, publicar: true, archivar: false, consultar: true, descargar: true, administrar: false }],
-  [6, 'Usuario consultor', 'Consulta y descarga documentos publicados.', { crear: false, editar: false, aprobar: false, publicar: false, archivar: false, consultar: true, descargar: true, administrar: false }],
-  [7, 'Auditor / lector institucional', 'Lectura y trazabilidad sin descarga.', { crear: false, editar: false, aprobar: false, publicar: false, archivar: false, consultar: true, descargar: false, administrar: false }],
-];
-
-async function syncIdentity(table) {
-  await query(`
-    SELECT setval(
-      pg_get_serial_sequence($1, 'id'),
-      GREATEST((SELECT COALESCE(MAX(id), 1) FROM ${table}), 1),
-      true
-    )
-  `, [table]);
-}
-
-async function ensureSystemCatalogs() {
-  for (const [id, name, abbreviation, color, leadName] of SYSTEM_AREAS) {
-    await query(`
-      INSERT INTO areas (id, name, abbreviation, color, lead_name)
-      VALUES ($1, $2, $3, $4, $5)
-      ON CONFLICT (id) DO UPDATE
-      SET name = EXCLUDED.name,
-          abbreviation = EXCLUDED.abbreviation,
-          color = EXCLUDED.color,
-          lead_name = EXCLUDED.lead_name
-    `, [id, name, abbreviation, color, leadName]);
-  }
-
-  for (const [id, name, abbreviation, icon] of SYSTEM_TYPES) {
-    await query(`
-      INSERT INTO document_types (id, name, abbreviation, icon)
-      VALUES ($1, $2, $3, $4)
-      ON CONFLICT (id) DO UPDATE
-      SET name = EXCLUDED.name,
-          abbreviation = EXCLUDED.abbreviation,
-          icon = EXCLUDED.icon
-    `, [id, name, abbreviation, icon]);
-  }
-
-  for (const [id, name, description, perms] of SYSTEM_ROLES) {
-    await query(`
-      INSERT INTO roles (id, name, description, perms)
-      VALUES ($1, $2, $3, $4)
-      ON CONFLICT (id) DO NOTHING
-    `, [id, name, description, JSON.stringify(perms)]);
-  }
-
-  await syncIdentity('areas');
-  await syncIdentity('document_types');
-  await syncIdentity('roles');
-}
-
 export async function migrate() {
   const schemaPath = path.join(__dirname, '..', '..', 'sql', 'schema.sql');
   const sql = fs.readFileSync(schemaPath, 'utf8');
@@ -128,6 +50,7 @@ export async function migrate() {
   await dropColumn('document_types', 'key');
   await dropColumn('roles', 'key');
   await dropColumn('people', 'key');
+  await dropColumn('users', 'password');
   await dropColumn('users', 'legacy_key');
   await dropColumn('documents', 'legacy_key');
   await dropColumn('workflow_items', 'legacy_key');
@@ -144,8 +67,6 @@ export async function migrate() {
   await addColumn('activity_log', 'event_type', "VARCHAR(50) NOT NULL DEFAULT 'general'");
   await addColumn('activity_log', 'details', "JSONB NOT NULL DEFAULT '{}'");
   await addColumn('activity_log', 'created_at', 'TIMESTAMPTZ NOT NULL DEFAULT NOW()');
-
-  await ensureSystemCatalogs();
 
   await query(`
     INSERT INTO document_versions (

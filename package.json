@@ -10,11 +10,10 @@
     "dev:all": "concurrently -n web,api -c green,blue \"npm run dev\" \"npm run dev:server\"",
     "build": "vite build",
     "preview": "vite preview",
-    "server:start": "npm run start --prefix server",
-    "db:up": "docker compose up -d postgres",
-    "db:down": "docker compose down"
+    "server:start": "npm run start --prefix server"
   },
   "dependencies": {
+    "dompurify": "^3.4.11",
     "mammoth": "^1.12.0",
     "react": "^18.3.1",
     "react-dom": "^18.3.1",
@@ -22,7 +21,7 @@
   },
   "devDependencies": {
     "@vitejs/plugin-react": "^4.3.4",
-    "concurrently": "^9.1.2",
+    "concurrently": "^10.0.3",
     "vite": "^6.0.3"
   }
 }

@@ -29,12 +29,24 @@ async function notifySafely(recipients, payload) {
 
 const upload = multer({
   storage: multer.memoryStorage(),
-  limits: { fileSize: 25 * 1024 * 1024 },
+  limits: {
+    fileSize: 25 * 1024 * 1024,
+    files: 1,
+    fields: 20,
+    fieldNameSize: 80,
+    fieldSize: 10 * 1024,
+  },
   fileFilter: (_req, file, cb) => {
-    const allowed = ['.pdf', '.docx', '.doc', '.xlsx'];
+    const allowed = {
+      '.pdf': ['application/pdf'],
+      '.docx': ['application/vnd.openxmlformats-officedocument.wordprocessingml.document'],
+      '.doc': ['application/msword', 'application/octet-stream'],
+      '.xlsx': ['application/vnd.openxmlformats-officedocument.spreadsheetml.sheet'],
+    };
     const ext = path.extname(file.originalname).toLowerCase();
-    if (allowed.includes(ext)) cb(null, true);
-    else cb(new Error('Formato no permitido. Usa PDF, DOCX o XLSX.'));
+    const acceptedMimes = allowed[ext];
+    if (acceptedMimes?.includes(file.mimetype)) return cb(null, true);
+    return cb(new Error('Formato no permitido. Usa PDF, DOCX o XLSX.'));
   },
 });
 

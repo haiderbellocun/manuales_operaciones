@@ -1,5 +1,9 @@
 FROM node:22-slim AS client-build
 WORKDIR /app
+ARG VITE_API_URL=/api
+ARG VITE_GOOGLE_CLIENT_ID
+ENV VITE_API_URL=$VITE_API_URL
+ENV VITE_GOOGLE_CLIENT_ID=$VITE_GOOGLE_CLIENT_ID
 COPY package*.json ./
 RUN npm ci
 COPY index.html vite.config.js ./
@@ -17,7 +21,6 @@ WORKDIR /app
 
 COPY --from=server-deps /app/server/node_modules ./server/node_modules
 COPY server ./server
-COPY src/data.js ./src/data.js
 COPY --from=client-build /app/dist ./dist
 
 EXPOSE 8080

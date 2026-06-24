@@ -9,5 +9,9 @@ dist
 server/.env
 server/.env.*
 !server/.env.example
+secrets
+sa.json
+*.service-account.json
+*service-account*.json
+google-credentials*.json
 *.log
-npm-debug.log*

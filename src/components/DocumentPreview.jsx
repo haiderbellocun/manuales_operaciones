@@ -1,4 +1,5 @@
 import { useState, useEffect, useRef } from 'react';
+import DOMPurify from 'dompurify';
 import { Icon } from '../components';
 import { getFile, getFileUrl, revokeFileUrl, formatFileSize, validateFile } from '../services/fileStore';
 import { useCatalogs } from '../context/CatalogContext';
@@ -83,7 +84,13 @@ export function DocumentPreview({ docId, doc, height = 420, onFullscreen, canDow
           const mammoth = await import('mammoth');
           const arrayBuffer = await record.blob.arrayBuffer();
           const result = await mammoth.default.convertToHtml({ arrayBuffer });
-          if (!cancelled) setDocxHtml(result.value);
+          if (!cancelled) {
+            setDocxHtml(DOMPurify.sanitize(result.value, {
+              USE_PROFILES: { html: true },
+              FORBID_TAGS: ['style', 'script', 'iframe', 'object', 'embed'],
+              FORBID_ATTR: ['style', 'onerror', 'onload', 'onclick'],
+            }));
+          }
         } catch {
           if (!cancelled) setError('No se pudo renderizar el DOCX. Descarga el archivo para verlo.');
         }

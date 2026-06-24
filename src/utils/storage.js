@@ -2,7 +2,6 @@ const KEYS = {
   favorites: 'acervo_favorites',
   libraryPrefs: 'acervo_library_prefs',
   searchHistory: 'acervo_search_history',
-  session: 'acervo_session',
 };
 
 function read(key, fallback) {

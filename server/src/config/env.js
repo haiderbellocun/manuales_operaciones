@@ -16,3 +16,24 @@ if (
     process.env.GOOGLE_APPLICATION_CREDENTIALS,
   );
 }
+
+function requireEnv(name) {
+  if (!process.env[name]) {
+    throw new Error(`${name} no esta definido en las variables de entorno.`);
+  }
+}
+
+if (process.env.NODE_ENV === 'production') {
+  [
+    'PORT',
+    'JWT_SECRET',
+    'CORS_ORIGIN',
+    'APP_URL',
+    'GCS_BUCKET',
+    'CLOUD_SQL_CONNECTION_NAME',
+    'DB_USER',
+    'DB_PASSWORD',
+    'DB_NAME',
+    'GOOGLE_OAUTH_CLIENT_ID',
+  ].forEach(requireEnv);
+}

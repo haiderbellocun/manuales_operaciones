@@ -1,0 +1,176 @@
+name: Deploy Cloud Run
+
+on:
+  push:
+    branches: [main]
+  workflow_dispatch:
+    inputs:
+      bump:
+        description: Version bump when no PR label exists
+        required: false
+        default: patch
+        type: choice
+        options:
+          - patch
+          - minor
+          - major
+
+permissions:
+  contents: write
+  pull-requests: read
+
+env:
+  NODE_VERSION: "22"
+  IMAGE_URI: ${{ vars.GCP_REGION }}-docker.pkg.dev/${{ vars.GCP_PROJECT_ID }}/${{ vars.ARTIFACT_REGISTRY_REPOSITORY }}/${{ vars.IMAGE_NAME }}
+
+jobs:
+  deploy:
+    name: Build, scan and deploy
+    runs-on: ubuntu-latest
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+
+      - name: Setup Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: ${{ env.NODE_VERSION }}
+          cache: npm
+
+      - name: Install frontend dependencies
+        run: npm ci
+
+      - name: Audit frontend dependencies
+        run: npm audit --audit-level=high
+
+      - name: Install backend dependencies
+        run: npm ci --prefix server
+
+      - name: Audit backend dependencies
+        run: npm audit --prefix server --audit-level=high
+
+      - name: Build frontend
+        run: npm run build
+        env:
+          VITE_API_URL: /api
+          VITE_GOOGLE_CLIENT_ID: placeholder-before-docker-build
+
+      - name: Authenticate to Google Cloud
+        uses: google-github-actions/auth@v2
+        with:
+          credentials_json: ${{ secrets.GCP_SERVICE_ACCOUNT_KEY }}
+
+      - name: Setup gcloud
+        uses: google-github-actions/setup-gcloud@v2
+        with:
+          project_id: ${{ vars.GCP_PROJECT_ID }}
+
+      - name: Read build secrets from Secret Manager
+        id: build-secrets
+        shell: bash
+        run: |
+          google_client_id="$(gcloud secrets versions access latest --secret="${{ secrets.GOOGLE_OAUTH_CLIENT_ID_SECRET_NAME }}")"
+          echo "::add-mask::$google_client_id"
+          echo "google_client_id=$google_client_id" >> "$GITHUB_OUTPUT"
+
+      - name: Resolve semantic version
+        id: version
+        env:
+          GH_TOKEN: ${{ github.token }}
+          MANUAL_BUMP: ${{ inputs.bump }}
+        shell: bash
+        run: |
+          git fetch --tags --force
+          latest_tag="$(git tag --list 'v[0-9]*.[0-9]*.[0-9]*' --sort=-v:refname | head -n 1)"
+          if [[ -z "$latest_tag" ]]; then
+            latest_tag="v0.0.0"
+          fi
+
+          bump="${MANUAL_BUMP:-patch}"
+          pr_json="$(gh api \
+            -H "Accept: application/vnd.github+json" \
+            "/repos/${GITHUB_REPOSITORY}/commits/${GITHUB_SHA}/pulls" 2>/dev/null || echo "[]")"
+          labels="$(echo "$pr_json" | jq -r '.[0].labels[]?.name' 2>/dev/null || true)"
+
+          if echo "$labels" | grep -qx "major"; then
+            bump="major"
+          elif echo "$labels" | grep -qx "minor"; then
+            bump="minor"
+          elif echo "$labels" | grep -qx "patch"; then
+            bump="patch"
+          fi
+
+          version="${latest_tag#v}"
+          IFS='.' read -r major minor patch <<< "$version"
+          case "$bump" in
+            major) major=$((major + 1)); minor=0; patch=0 ;;
+            minor) minor=$((minor + 1)); patch=0 ;;
+            patch|*) patch=$((patch + 1)) ;;
+          esac
+
+          next="v${major}.${minor}.${patch}"
+          echo "tag=$next" >> "$GITHUB_OUTPUT"
+          echo "bump=$bump" >> "$GITHUB_OUTPUT"
+
+      - name: Configure Docker for Artifact Registry
+        run: gcloud auth configure-docker "${{ vars.GCP_REGION }}-docker.pkg.dev" --quiet
+
+      - name: Ensure Artifact Registry repository exists
+        run: |
+          gcloud artifacts repositories describe "${{ vars.ARTIFACT_REGISTRY_REPOSITORY }}" \
+            --project="${{ vars.GCP_PROJECT_ID }}" \
+            --location="${{ vars.GCP_REGION }}" \
+          || gcloud artifacts repositories create "${{ vars.ARTIFACT_REGISTRY_REPOSITORY }}" \
+            --project="${{ vars.GCP_PROJECT_ID }}" \
+            --location="${{ vars.GCP_REGION }}" \
+            --repository-format=docker \
+            --description="Acervo Operaciones container images"
+
+      - name: Build container image
+        run: |
+          docker build \
+            --build-arg VITE_API_URL=/api \
+            --build-arg VITE_GOOGLE_CLIENT_ID="${{ steps.build-secrets.outputs.google_client_id }}" \
+            -t "${IMAGE_URI}:${{ steps.version.outputs.tag }}" \
+            -t "${IMAGE_URI}:${GITHUB_SHA}" \
+            -t "${IMAGE_URI}:latest" \
+            .
+
+      - name: Scan container image
+        uses: aquasecurity/trivy-action@0.24.0
+        with:
+          image-ref: ${{ env.IMAGE_URI }}:${{ steps.version.outputs.tag }}
+          format: table
+          severity: CRITICAL,HIGH
+          exit-code: "1"
+          ignore-unfixed: true
+
+      - name: Push container image
+        run: |
+          docker push "${IMAGE_URI}:${{ steps.version.outputs.tag }}"
+          docker push "${IMAGE_URI}:${GITHUB_SHA}"
+          docker push "${IMAGE_URI}:latest"
+
+      - name: Deploy to Cloud Run
+        run: |
+          gcloud run deploy "${{ vars.CLOUD_RUN_SERVICE }}" \
+            --project="${{ vars.GCP_PROJECT_ID }}" \
+            --region="${{ vars.CLOUD_RUN_REGION }}" \
+            --platform=managed \
+            --image="${IMAGE_URI}:${{ steps.version.outputs.tag }}" \
+            --service-account="${{ secrets.GCP_SERVICE_ACCOUNT_EMAIL }}" \
+            --allow-unauthenticated \
+            --add-cloudsql-instances="${{ vars.CLOUD_SQL_CONNECTION_NAME }}" \
+            --set-env-vars="NODE_ENV=production,PORT=8080,CLOUD_SQL_CONNECTION_NAME=${{ vars.CLOUD_SQL_CONNECTION_NAME }},DB_USER=${{ vars.DB_USER }},DB_NAME=${{ vars.DB_NAME }},GCS_BUCKET=${{ vars.GCS_BUCKET }},CORS_ORIGIN=${{ vars.CORS_ORIGIN }},APP_URL=${{ vars.APP_URL }},GOOGLE_ALLOWED_DOMAINS=${{ vars.GOOGLE_ALLOWED_DOMAINS }},GOOGLE_DEFAULT_ROLE_ID=${{ vars.GOOGLE_DEFAULT_ROLE_ID }},SMTP_HOST=${{ vars.SMTP_HOST }},SMTP_PORT=${{ vars.SMTP_PORT }},SMTP_SECURE=${{ vars.SMTP_SECURE }}" \
+            --set-secrets="DB_PASSWORD=${{ secrets.DB_PASSWORD_SECRET_NAME }}:latest,JWT_SECRET=${{ secrets.JWT_SECRET_NAME }}:latest,GOOGLE_OAUTH_CLIENT_ID=${{ secrets.GOOGLE_OAUTH_CLIENT_ID_SECRET_NAME }}:latest,SMTP_USER=${{ secrets.SMTP_USER_SECRET_NAME }}:latest,SMTP_PASS=${{ secrets.SMTP_PASS_SECRET_NAME }}:latest,SMTP_FROM=${{ secrets.SMTP_FROM_SECRET_NAME }}:latest"
+
+      - name: Create git tag
+        if: github.ref == 'refs/heads/main'
+        run: |
+          git config user.name "github-actions[bot]"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+          git tag -a "${{ steps.version.outputs.tag }}" -m "Release ${{ steps.version.outputs.tag }} (${{ steps.version.outputs.bump }})"
+          git push origin "${{ steps.version.outputs.tag }}"

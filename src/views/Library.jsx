@@ -4,7 +4,7 @@ import { storage } from '../utils/storage';
 import { useAuth } from '../context/AuthContext';
 import { useCatalogs } from '../context/CatalogContext';
 import { STATES, fmtDate } from '../utils/display';
-import { Icon, StateBadge, AreaTag, DocCard, Avatar, FilterToggleButton } from '../components';
+import { Icon, StateBadge, AreaTag, DocCard, Avatar, FilterToggleButton, SelectField } from '../components';
 import { DocumentPreview, FileDropzone } from '../components/DocumentPreview';
 
 function FilterRail({ docs, filt, setFilt, className }) {
@@ -194,12 +194,17 @@ export function Library({ nav, docs, toggleFav, initParams }) {
             </div>
             <div className="field sort-field">
               <span className="text-xs muted">Ordenar</span>
-              <select value={filt.sort} onChange={e => setFilt({ ...filt, sort: e.target.value })}>
-                <option value="updated">Actualización</option>
-                <option value="name">Nombre</option>
-                <option value="documentNumber">Número documental</option>
-                <option value="views">Más consultados</option>
-              </select>
+              <SelectField
+                className="field-select"
+                value={filt.sort}
+                onChange={value => setFilt({ ...filt, sort: value })}
+                options={[
+                  { value: 'updated', label: 'Actualizaci\u00f3n' },
+                  { value: 'name', label: 'Nombre' },
+                  { value: 'documentNumber', label: 'N\u00famero documental' },
+                  { value: 'views', label: 'M\u00e1s consultados' },
+                ]}
+              />
             </div>
             <div className="seg view-seg">
               <button type="button" className={view === 'cards' ? 'active' : ''} onClick={() => setView('cards')} title="Tarjetas"><Icon name="cards" size={15} /><span className="seg-label">Tarjetas</span></button>
@@ -646,10 +651,12 @@ export function DocDetail({ nav, docId, docs, toggleFav, requestUpdate, showToas
               <div className="form-grid">
                 <div className="form-row">
                   <label>Responsable *</label>
-                  <select className="input" value={editForm.owner} onChange={e => setEditForm(f => ({ ...f, owner: e.target.value }))}>
-                    <option value="">Seleccionar...</option>
-                    {people.filter(p => !p.area || Number(p.area) === Number(doc.area)).map(p => <option key={p.id} value={p.id}>{p.name}</option>)}
-                  </select>
+                  <SelectField
+                    value={editForm.owner}
+                    onChange={value => setEditForm(f => ({ ...f, owner: value }))}
+                    placeholder="Seleccionar..."
+                    options={people.filter(p => !p.area || Number(p.area) === Number(doc.area)).map(p => ({ value: p.id, label: p.name }))}
+                  />
                 </div>
                 <div className="form-row">
                   <label>Vigencia hasta</label>
@@ -675,4 +682,3 @@ export function DocDetail({ nav, docId, docs, toggleFav, requestUpdate, showToas
     </div>
   );
 }
-

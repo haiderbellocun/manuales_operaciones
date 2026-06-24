@@ -5,7 +5,7 @@ import { useAuth } from '../context/AuthContext';
 import { useDocs } from '../context/DocsContext';
 import { useCatalogs } from '../context/CatalogContext';
 import { STATES, fmtDate } from '../utils/display';
-import { Icon, StateBadge, AreaTag, KpiCard, Avatar, FilterToggleButton } from '../components';
+import { Icon, StateBadge, AreaTag, KpiCard, Avatar, FilterToggleButton, SelectField } from '../components';
 import { FileDropzone } from '../components/DocumentPreview';
 
 export function SearchView({ nav, docs, initial }) {
@@ -237,13 +237,13 @@ export function UploadFlow({ nav, showToast, onUploaded }) {
               </div>
             )}
             <div className="form-grid">
-              <div className="form-row"><label>Tipo documental *</label><select className="input" value={f.type} disabled={catalogLoading || catalogs.types.length === 0} onChange={e => set('type', e.target.value)}><option value="">{catalogLoading ? 'Cargando...' : 'Seleccionar…'}</option>{catalogs.types.map(t => <option key={t.id} value={t.id}>{t.name}</option>)}</select></div>
-              <div className="form-row"><label>Área responsable *</label><select className="input" value={f.area} disabled={catalogLoading || visibleAreas.length === 0 || (!canAdmin && !!user?.area)} onChange={e => set('area', e.target.value)}><option value="">{catalogLoading ? 'Cargando...' : 'Seleccionar…'}</option>{visibleAreas.map(a => <option key={a.id} value={a.id}>{a.name}</option>)}</select></div>
+              <div className="form-row"><label>Tipo documental *</label><SelectField value={f.type} disabled={catalogLoading || catalogs.types.length === 0} onChange={value => set('type', value)} placeholder={catalogLoading ? 'Cargando...' : 'Seleccionar...'} options={catalogs.types.map(t => ({ value: t.id, label: t.name }))} /></div>
+              <div className="form-row"><label>Área responsable *</label><SelectField value={f.area} disabled={catalogLoading || visibleAreas.length === 0 || (!canAdmin && !!user?.area)} onChange={value => set('area', value)} placeholder={catalogLoading ? 'Cargando...' : 'Seleccionar...'} options={visibleAreas.map(a => ({ value: a.id, label: a.name }))} /></div>
             </div>
             <div className="form-row"><label>Nombre del documento *</label><input className="input" value={f.name} onChange={e => set('name', e.target.value)} placeholder="Ej. Procedimiento de matrícula de pregrado" /></div>
             <div className="form-row"><label>Descripción corta</label><textarea className="input" value={f.desc} onChange={e => set('desc', e.target.value)} placeholder="Resumen del propósito y alcance del documento…"></textarea></div>
             <div className="form-grid">
-              <div className="form-row"><label>Responsable</label><select className="input" value={f.owner} disabled={catalogLoading || visiblePeople.length === 0} onChange={e => set('owner', e.target.value)}><option value="">{catalogLoading ? 'Cargando...' : 'Seleccionar…'}</option>{visiblePeople.map(p => <option key={p.id} value={p.id}>{p.name}</option>)}</select></div>
+              <div className="form-row"><label>Responsable</label><SelectField value={f.owner} disabled={catalogLoading || visiblePeople.length === 0} onChange={value => set('owner', value)} placeholder={catalogLoading ? 'Cargando...' : 'Seleccionar...'} options={visiblePeople.map(p => ({ value: p.id, label: p.name }))} /></div>
               <div className="form-row"><label>Vigencia hasta</label><input className="input" type="date" value={f.vigencia} onChange={e => set('vigencia', e.target.value)} /></div>
             </div>
             <div className="form-row"><label>Palabras clave <span className="hint">— separadas por coma</span></label><input className="input" value={f.tags} onChange={e => set('tags', e.target.value)} placeholder="matrícula, pregrado, procedimiento" /></div>
@@ -257,7 +257,7 @@ export function UploadFlow({ nav, showToast, onUploaded }) {
             </div>
             <div className="form-grid">
               <div className="form-row"><label>Versión inicial</label><input className="input" value={f.version} onChange={e => set('version', e.target.value)} /></div>
-              <div className="form-row"><label>Estado inicial</label><select className="input"><option>Borrador</option><option>En revisión</option></select></div>
+              <div className="form-row"><label>Estado inicial</label><SelectField value="Borrador" onChange={() => {}} options={['Borrador', 'En revisión']} /></div>
             </div>
             <div className="form-row"><label>Descripción de la versión</label><textarea className="input" value={f.versionNote} onChange={e => set('versionNote', e.target.value)} placeholder="Ej. Versión inicial del documento."></textarea></div>
           </div>
@@ -272,8 +272,8 @@ export function UploadFlow({ nav, showToast, onUploaded }) {
             )}
             <p className="page-sub mb-24" style={{ marginTop: 0 }}>Define quién revisa y aprueba el documento antes de su publicación.</p>
             <div className="form-grid">
-              <div className="form-row"><label>Revisor</label><select className="input" value={f.revisor} disabled={catalogLoading || catalogs.users.length === 0} onChange={e => set('revisor', e.target.value)}><option value="">{catalogLoading ? 'Cargando...' : 'Seleccionar…'}</option>{catalogs.users.filter(u => [4, 2, 3].includes(Number(u.role))).map(u => <option key={u.id} value={u.id}>{u.name}</option>)}</select></div>
-              <div className="form-row"><label>Aprobador</label><select className="input" value={f.aprobador} disabled={catalogLoading || catalogs.users.length === 0} onChange={e => set('aprobador', e.target.value)}><option value="">{catalogLoading ? 'Cargando...' : 'Seleccionar…'}</option>{catalogs.users.filter(u => [5, 2, 1].includes(Number(u.role))).map(u => <option key={u.id} value={u.id}>{u.name}</option>)}</select></div>
+              <div className="form-row"><label>Revisor</label><SelectField value={f.revisor} disabled={catalogLoading || catalogs.users.length === 0} onChange={value => set('revisor', value)} placeholder={catalogLoading ? 'Cargando...' : 'Seleccionar...'} options={catalogs.users.filter(u => [4, 2, 3].includes(Number(u.role))).map(u => ({ value: u.id, label: u.name }))} /></div>
+              <div className="form-row"><label>Aprobador</label><SelectField value={f.aprobador} disabled={catalogLoading || catalogs.users.length === 0} onChange={value => set('aprobador', value)} placeholder={catalogLoading ? 'Cargando...' : 'Seleccionar...'} options={catalogs.users.filter(u => [5, 2, 1].includes(Number(u.role))).map(u => ({ value: u.id, label: u.name }))} /></div>
             </div>
             <div className="card summary-card">
               <h4 style={{ margin: '0 0 14px', fontSize: 13 }}>Resumen del documento</h4>
@@ -305,6 +305,8 @@ export function WorkflowView({ nav, showToast }) {
   const [items, setItems] = useState([]);
   const [loading, setLoading] = useState(true);
   const [busy, setBusy] = useState(null);
+  const [workflowPages, setWorkflowPages] = useState({});
+  const workflowPageSize = 4;
 
   const loadWorkflow = () => {
     setLoading(true);
@@ -353,6 +355,7 @@ export function WorkflowView({ nav, showToast }) {
     { k: 'publicados', label: 'Publicados por mí', tone: 'aprobado' },
   ];
   const prioColor = { alta: 'var(--st-vencido-fg)', media: 'var(--st-revision-fg)', baja: 'var(--ink-400)' };
+  const setStagePage = (stage, page) => setWorkflowPages(prev => ({ ...prev, [stage]: Math.max(0, page) }));
 
   return (
     <div className="page fade-in">
@@ -378,35 +381,49 @@ export function WorkflowView({ nav, showToast }) {
       </div>
       <div className="kanban-grid">
         {stages.map(st => {
-          const col = items.filter(it => (it.completedAt ? 'publicados' : it.stage) === st.k);
+          const col = items.filter(it => (it.completedAt ? 'publicados' : it.stage) === st.k).filter(it => it.doc);
+          const page = Math.min(workflowPages[st.k] || 0, Math.max(Math.ceil(col.length / workflowPageSize) - 1, 0));
+          const totalPages = Math.max(Math.ceil(col.length / workflowPageSize), 1);
+          const visibleItems = col.slice(page * workflowPageSize, page * workflowPageSize + workflowPageSize);
           return (
-            <div key={st.k}>
+            <div key={st.k} className="kanban-stage">
               <div className="row between mb-12 kanban-header">
                 <span className="row gap-8" style={{ fontWeight: 700, fontSize: 13.5 }}><span className={'badge badge-' + st.tone} style={{ padding: '2px 8px' }}><span className="b-dot"></span>{st.label}</span></span>
-                <span className="text-xs muted mono">{col.length}</span>
+                <div className="row gap-8">
+                  <span className="text-xs muted mono">{col.length}</span>
+                  {col.length > workflowPageSize && (
+                    <div className="kanban-pager">
+                      <button type="button" className="tbar-icon-btn" disabled={page === 0} onClick={() => setStagePage(st.k, page - 1)}><Icon name="chevLeft" size={13} /></button>
+                      <span className="text-xs mono">{page + 1}/{totalPages}</span>
+                      <button type="button" className="tbar-icon-btn" disabled={page >= totalPages - 1} onClick={() => setStagePage(st.k, page + 1)}><Icon name="chevRight" size={13} /></button>
+                    </div>
+                  )}
+                </div>
               </div>
               <div className="kanban-col">
-                {loading ? <div className="text-xs muted kanban-empty">Cargando flujo...</div> : col.length === 0 ? <div className="text-xs muted kanban-empty">Sin documentos</div> : col.filter(it => it.doc).map(it => (
+                {loading ? <div className="text-xs muted kanban-empty">Cargando flujo...</div> : col.length === 0 ? <div className="text-xs muted kanban-empty">Sin documentos</div> : visibleItems.map(it => (
                   <div key={it.id} className="card kanban-card" onClick={() => nav('detail', { id: it.doc.id })} role="button" tabIndex={0}>
-                    <div className="row between mb-12"><AreaTag areaId={it.doc.area} /><span className="priority-label" style={{ color: prioColor[it.priority] }}>{it.priority}</span></div>
-                    <div className="text-sm" style={{ fontWeight: 600, lineHeight: 1.3 }}>{it.doc.name}</div>
-                    <div className="mono text-xs muted" style={{ marginTop: 5 }}>{it.doc.documentNumber} · v{it.doc.version}</div>
+                    <div className="kanban-card-main">
+                      <div className="row between mb-12"><AreaTag areaId={it.doc.area} /><span className="priority-label" style={{ color: prioColor[it.priority] }}>{it.priority}</span></div>
+                      <div className="text-sm kanban-card-title">{it.doc.name}</div>
+                      <div className="mono text-xs muted" style={{ marginTop: 5 }}>{it.doc.documentNumber} - v{it.doc.version}</div>
+                    </div>
                     <div className="row gap-8 kanban-assignee">
-                      <Avatar name={it.assignee} size={24} /><span className="text-xs muted grow assignee-name">{it.assignee}</span><span className="text-xs muted">{fmtDate(it.since)}</span>
+                      <Avatar name={it.assignee} size={24} /><span className="text-xs muted grow assignee-name">{it.assignee}</span><span className="text-xs muted kanban-date">{fmtDate(it.since)}</span>
                     </div>
                     {(it.canSubmitToReview || it.canSendToApproval || it.canPublish || it.canReturn) && (
-                      <div className="row gap-8 mt-12">
+                      <div className="kanban-actions">
                         {it.canSubmitToReview && (
-                          <button className="btn btn-primary btn-sm" style={{ flex: 1 }} disabled={busy === `${it.id}-submit`} onClick={(e) => { e.stopPropagation(); runTransition(it, 'submit'); }} type="button"><Icon name="send" size={14} />Enviar a revisión</button>
+                          <button className="btn btn-primary btn-sm kanban-action-main" disabled={busy === `${it.id}-submit`} onClick={(e) => { e.stopPropagation(); runTransition(it, 'submit'); }} type="button"><Icon name="send" size={14} />Enviar a revision</button>
                         )}
                         {it.canSendToApproval && (
-                          <button className="btn btn-primary btn-sm" style={{ flex: 1 }} disabled={busy === `${it.id}-approve`} onClick={(e) => { e.stopPropagation(); runTransition(it, 'approve'); }} type="button"><Icon name="check" size={14} />Enviar a aprobación</button>
+                          <button className="btn btn-primary btn-sm kanban-action-main" disabled={busy === `${it.id}-approve`} onClick={(e) => { e.stopPropagation(); runTransition(it, 'approve'); }} type="button"><Icon name="check" size={14} />Enviar a aprobacion</button>
                         )}
                         {it.canPublish && (
-                          <button className="btn btn-primary btn-sm" style={{ flex: 1 }} disabled={busy === `${it.id}-publish`} onClick={(e) => { e.stopPropagation(); runTransition(it, 'publish'); }} type="button"><Icon name="send" size={14} />Publicar</button>
+                          <button className="btn btn-primary btn-sm kanban-action-main" disabled={busy === `${it.id}-publish`} onClick={(e) => { e.stopPropagation(); runTransition(it, 'publish'); }} type="button"><Icon name="send" size={14} />Publicar</button>
                         )}
                         {it.canReturn && (
-                          <button className="btn btn-danger btn-sm btn-icon" disabled={busy === `${it.id}-return`} onClick={(e) => { e.stopPropagation(); runTransition(it, 'return'); }} type="button" title="Devolver para ajustes"><Icon name="x" size={14} /></button>
+                          <button className="btn btn-danger btn-sm btn-icon kanban-return" disabled={busy === `${it.id}-return`} onClick={(e) => { e.stopPropagation(); runTransition(it, 'return'); }} type="button" title="Devolver para ajustes"><Icon name="x" size={14} /></button>
                         )}
                       </div>
                     )}
@@ -434,7 +451,7 @@ export function UsersView({ nav }) {
   const [error, setError] = useState('');
   const permLabels = { crear: 'Crear', editar: 'Editar', aprobar: 'Aprobar', publicar: 'Publicar', archivar: 'Archivar', consultar: 'Consultar', descargar: 'Descargar', administrar: 'Administrar' };
   const permKeys = Object.keys(permLabels);
-  const emptyForm = { name: '', email: '', role: '', area: '', status: 'Activo', password: '' };
+  const emptyForm = { name: '', email: '', role: '', area: '', status: 'Activo' };
 
   const loadUsers = () => {
     setLoading(true);
@@ -470,7 +487,6 @@ export function UsersView({ nav }) {
         role: user.role || '',
         area: user.area || '',
         status: user.status || 'Activo',
-        password: '',
       },
     });
   };
@@ -489,9 +505,7 @@ export function UsersView({ nav }) {
         area: modal.form.area,
         status: modal.form.status,
       };
-      if (modal.form.password) payload.password = modal.form.password;
       if (modal.mode === 'create') {
-        payload.password = modal.form.password || 'demo1234';
         await api.createUser(payload);
       } else {
         await api.updateUser(modal.user.id, payload);
@@ -554,17 +568,19 @@ export function UsersView({ nav }) {
       {tab === 'users' ? (
         <div className="tbl-wrap">
           <table className="tbl">
-            <thead><tr><th>Usuario</th><th>Correo</th><th>Rol</th><th>Área</th><th>Último acceso</th><th>Estado</th><th></th></tr></thead>
+            <thead><tr><th>Usuario</th><th>Correo</th><th>Acceso</th><th>Rol</th><th>Área</th><th>Último acceso</th><th>Estado</th><th></th></tr></thead>
             <tbody>
               {users.map(u => {
                 const role = roles.find(r => Number(r.id) === Number(u.role));
                 const ar = u.area ? areaById(u.area) : null;
+                const googleEnabled = String(u.email || '').toLowerCase().endsWith('@cun.edu.co');
                 return (
                   <tr key={u.id}>
                     <td><div className="row gap-10"><Avatar name={u.name} size={32} /><span style={{ fontWeight: 600 }}>{u.name}</span></div></td>
                     <td className="text-sm muted">{u.email}</td>
+                    <td><span className={'badge badge-' + (googleEnabled ? 'aprobado' : 'vencido')}><span className="b-dot"></span>{googleEnabled ? 'Google CUN' : 'Fuera de dominio'}</span></td>
                     <td><span className="tag tag-type">{role?.name || u.roleName || u.role}</span></td>
-                    <td>{ar ? <AreaTag areaId={u.area} /> : <span className="text-xs muted">Transversal</span>}</td>
+                    <td>{ar ? <AreaTag areaId={u.area} /> : <span className="tag tag-muted">Sin área</span>}</td>
                     <td className="text-sm muted">{fmtDate(u.last)}</td>
                     <td><span className={'badge badge-' + (u.status === 'Activo' ? 'aprobado' : 'archivado')}><span className="b-dot"></span>{u.status}</span></td>
                     <td><button className="tbar-icon-btn" style={{ color: 'var(--ink-500)', width: 32, height: 32 }} type="button" title="Editar usuario" onClick={() => openEdit(u)}><Icon name="edit" size={16} /></button></td>
@@ -613,13 +629,13 @@ export function UsersView({ nav }) {
             </div>
             <div className="modal-body">
               {error && <div className="login-error"><Icon name="alert" size={16} />{error}</div>}
+              <div className="form-note"><Icon name="shield" size={15} />El acceso se valida con Google y solo se aceptan correos @cun.edu.co registrados en esta tabla.</div>
               <div className="form-grid">
                 <div className="form-row"><label>Nombre *</label><input className="input" value={modal.form.name} onChange={e => setForm('name', e.target.value)} /></div>
-                <div className="form-row"><label>Correo *</label><input className="input" type="email" value={modal.form.email} onChange={e => setForm('email', e.target.value)} /></div>
-                <div className="form-row"><label>Rol *</label><select className="input" value={modal.form.role} onChange={e => setForm('role', e.target.value)}><option value="">Seleccionar...</option>{roles.map(r => <option key={r.id} value={r.id}>{r.name}</option>)}</select></div>
-                <div className="form-row"><label>Área</label><select className="input" value={modal.form.area || ''} onChange={e => setForm('area', e.target.value)}><option value="">Transversal</option>{areas.map(a => <option key={a.id} value={a.id}>{a.name}</option>)}</select></div>
-                <div className="form-row"><label>Estado</label><select className="input" value={modal.form.status} onChange={e => setForm('status', e.target.value)}><option value="Activo">Activo</option><option value="Inactivo">Inactivo</option></select></div>
-                <div className="form-row"><label>{modal.mode === 'create' ? 'Contraseña inicial' : 'Nueva contraseña'}</label><input className="input" type="password" value={modal.form.password} onChange={e => setForm('password', e.target.value)} placeholder={modal.mode === 'create' ? 'Por defecto demo1234' : 'Dejar vacía para conservar'} /></div>
+                <div className="form-row"><label>Correo CUN *</label><input className="input" type="email" value={modal.form.email} onChange={e => setForm('email', e.target.value)} placeholder="usuario@cun.edu.co" /></div>
+                <div className="form-row"><label>Rol *</label><SelectField value={modal.form.role} onChange={value => setForm('role', value)} placeholder="Seleccionar..." options={roles.map(r => ({ value: r.id, label: r.name }))} /></div>
+                <div className="form-row"><label>Área</label><SelectField value={modal.form.area || ''} onChange={value => setForm('area', value)} placeholder="Sin área" options={[{ value: '', label: 'Sin área' }, ...areas.map(a => ({ value: a.id, label: a.name }))]} /></div>
+                <div className="form-row"><label>Estado</label><SelectField value={modal.form.status} onChange={value => setForm('status', value)} options={['Activo', 'Inactivo']} /></div>
               </div>
             </div>
             <div className="modal-foot">
@@ -769,62 +785,3 @@ export function HelpView({ nav }) {
     </div>
   );
 }
-
-export function LoginView() {
-  const { login, loginWithMicrosoft, loading, error } = useAuth();
-  const [email, setEmail] = useState('mlopez@institucion.edu.co');
-  const [password, setPassword] = useState('');
-  const [remember, setRemember] = useState(true);
-  const [msLoading, setMsLoading] = useState(false);
-
-  const handleLogin = async (e) => {
-    e?.preventDefault();
-    try {
-      await login(email, password || 'demo1234');
-    } catch { /* error shown via context */ }
-  };
-
-  const handleMicrosoft = async () => {
-    setMsLoading(true);
-    try {
-      await loginWithMicrosoft();
-    } catch { /* error shown via context */ }
-    finally { setMsLoading(false); }
-  };
-
-  return (
-    <div className="login-layout">
-      <div className="login-hero">
-        <div className="hero-bg-circle hero-bg-circle-1"></div>
-        <div className="hero-bg-circle hero-bg-circle-2"></div>
-        <div className="row gap-12 login-brand">
-          <span className="brand-mark" style={{ width: 40, height: 40 }}><svg viewBox="0 0 24 24" fill="none" stroke="#fff" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" width="22" height="22"><path d="M4 19V5a2 2 0 0 1 2-2h2v18H6a2 2 0 0 1-2-2zM10 3h2v18h-2zM15.5 3.5l3.8 1 3.7 14.5-3.8 1z" /></svg></span>
-          <div><div style={{ fontWeight: 800, fontSize: 22 }}>Acervo</div><div className="login-brand-sub">Operaciones</div></div>
-        </div>
-        <div className="login-hero-content">
-          <h1 className="login-hero-title">Centro de Conocimiento Operativo</h1>
-          <p className="login-hero-desc">El repositorio vivo del Área de Operaciones. Manuales, procedimientos, ANS y descriptores de cargo — centralizados, trazables y siempre a la mano.</p>
-          <div className="row gap-16 mt-24 login-areas">
-            {['Fábrica de Contenidos', 'Prácticas', 'Homologaciones', 'Op. Pregrado', 'Op. Posgrado', 'Pruebas Saber'].map(a => <span key={a} className="login-area-chip">{a}</span>)}
-          </div>
-        </div>
-        <div className="login-footer">© 2026 · Plataforma institucional de gestión documental</div>
-      </div>
-      <div className="login-form-wrap">
-        <form className="login-form" onSubmit={handleLogin}>
-          <h2 className="login-form-title">Iniciar sesión</h2>
-          <p className="muted login-form-sub">Ingresa con tu cuenta institucional</p>
-          {error && <div className="login-error"><Icon name="alert" size={16} />{error}</div>}
-          <div className="form-row"><label>Correo institucional</label><div className="field" style={{ padding: '11px 13px' }}><Icon name="mail" size={16} /><input type="email" value={email} onChange={e => setEmail(e.target.value)} placeholder="usuario@institucion.edu.co" style={{ width: '100%' }} required /></div></div>
-          <div className="form-row"><label>Contraseña</label><div className="field" style={{ padding: '11px 13px' }}><Icon name="lock" size={16} /><input type="password" value={password} onChange={e => setPassword(e.target.value)} placeholder="Mínimo 4 caracteres" style={{ width: '100%' }} /></div></div>
-          <div className="row between mb-16 login-options"><label className="filter-opt" style={{ padding: 0 }}><input type="checkbox" checked={remember} onChange={e => setRemember(e.target.checked)} /><span className="text-sm">Recordarme</span></label><span className="link text-sm">¿Olvidaste tu contraseña?</span></div>
-          <button className="btn btn-primary login-submit" type="submit" disabled={loading}>{loading ? 'Ingresando…' : 'Ingresar'}<Icon name="arrowRight" size={17} /></button>
-          <div className="row gap-10 mt-24 login-divider"><div className="login-divider-line"></div><span className="text-xs muted">o</span><div className="login-divider-line"></div></div>
-          <button className="btn btn-ghost mt-16 login-ms" type="button" disabled={msLoading} onClick={handleMicrosoft}><Icon name="building" size={17} />{msLoading ? 'Conectando con Microsoft 365…' : 'Continuar con Microsoft 365'}</button>
-          <p className="text-xs muted mt-20" style={{ textAlign: 'center', lineHeight: 1.5 }}>Ingresa con un usuario registrado en la base de datos.</p>
-        </form>
-      </div>
-    </div>
-  );
-}
-

@@ -1,86 +1,119 @@
-# Despliegue en GCP: Cloud Run + Cloud SQL + Cloud Storage
+# Despliegue GCP
 
-Este proyecto puede correr como monolito en Cloud Run:
+Arquitectura objetivo:
 
-- Express sirve la API en `/api`.
-- Express sirve el frontend compilado de Vite desde `dist`.
-- PostgreSQL vive en Cloud SQL.
-- Los archivos de documentos viven en Cloud Storage.
+- Un monolito en Cloud Run: Express sirve `/api` y el frontend compilado de Vite.
+- Cloud SQL for PostgreSQL 18 para la base de datos.
+- Cloud Storage para documentos.
+- Secret Manager para valores sensibles.
+- GitHub Actions construye, escanea, versiona y despliega.
 
-## Recursos requeridos
+## 1. Service account unica
 
-1. Cloud SQL para PostgreSQL.
-2. Base de datos, por ejemplo `manuales-operaciones`.
-3. Bucket de Cloud Storage para documentos.
-4. Service account para Cloud Run con permisos:
-   - `roles/cloudsql.client`
-   - `roles/storage.objectAdmin` sobre el bucket.
+El workflow usa `GCP_SERVICE_ACCOUNT_KEY` para autenticarse y `GCP_SERVICE_ACCOUNT_EMAIL` como service account runtime de Cloud Run.
 
-## Variables de entorno
+Esa cuenta necesita permisos:
 
-Usa como referencia `server/.env.gcp.example`.
+- `roles/run.admin`
+- `roles/iam.serviceAccountUser` sobre ella misma
+- `roles/artifactregistry.admin` para crear el repositorio si no existe y subir imagenes
+- `roles/cloudsql.client`
+- `roles/storage.objectAdmin` sobre el bucket de documentos
+- `roles/secretmanager.secretAccessor` sobre los secretos runtime
+- `roles/secretmanager.viewer` o acceso puntual suficiente para leer secretos por nombre
 
-Variables principales:
+## 2. Secretos en Secret Manager
 
-```env
-NODE_ENV=production
-PORT=8080
-JWT_SECRET=un-secreto-largo-y-seguro
-GCS_BUCKET=tu-bucket-documentos
-CLOUD_SQL_CONNECTION_NAME=tu-proyecto:us-central1:tu-instancia
-DB_USER=postgres
-DB_PASSWORD=tu-password
-DB_NAME=manuales-operaciones
-```
+Crea estos secretos en GCP Secret Manager:
 
-`DATABASE_URL` sigue funcionando para desarrollo local de PostgreSQL. Los archivos siempre requieren `GCS_BUCKET`.
+- `acervo-db-password`
+- `acervo-jwt-secret`
+- `acervo-google-oauth-client-id`
+- `acervo-smtp-user`
+- `acervo-smtp-pass`
+- `acervo-smtp-from`
 
-## Desarrollo local con Cloud Storage
+Puedes usar otros nombres. Lo importante es guardar esos nombres en GitHub Actions.
 
-Para probar subida y descarga de documentos desde tu maquina local, usa una cuenta de servicio con permisos sobre el bucket.
+## 3. Secrets en GitHub Actions
 
-1. En Google Cloud crea una service account, por ejemplo `acervo-storage-local`.
-2. Dale permisos sobre el bucket de documentos:
-   - `roles/storage.objectAdmin`
-3. Crea una llave JSON para esa cuenta.
-4. Guarda el JSON fuera del repo o en `./secrets`, carpeta ignorada por Git.
-5. Configura `server/.env`:
+Repository Settings -> Secrets and variables -> Actions -> Secrets:
 
-```env
-GCS_BUCKET=tu-bucket-documentos
-GOOGLE_APPLICATION_CREDENTIALS=./secrets/acervo-storage-sa.json
-```
+- `GCP_SERVICE_ACCOUNT_KEY`: JSON completo de la service account.
+- `GCP_SERVICE_ACCOUNT_EMAIL`: correo de la service account.
+- `DB_PASSWORD_SECRET_NAME`: nombre del secreto de Secret Manager que guarda `DB_PASSWORD`.
+- `JWT_SECRET_NAME`: nombre del secreto de Secret Manager que guarda `JWT_SECRET`.
+- `GOOGLE_OAUTH_CLIENT_ID_SECRET_NAME`: nombre del secreto de Secret Manager que guarda el OAuth Client ID.
+- `SMTP_USER_SECRET_NAME`: nombre del secreto de Secret Manager que guarda `SMTP_USER`.
+- `SMTP_PASS_SECRET_NAME`: nombre del secreto de Secret Manager que guarda `SMTP_PASS`.
+- `SMTP_FROM_SECRET_NAME`: nombre del secreto de Secret Manager que guarda `SMTP_FROM`.
 
-En Windows tambien puedes usar ruta absoluta:
+Ejemplo: si en Secret Manager el secreto se llama `acervo-db-password`, entonces el valor de `DB_PASSWORD_SECRET_NAME` en GitHub debe ser `acervo-db-password`.
 
-```env
-GOOGLE_APPLICATION_CREDENTIALS=C:\Users\tu_usuario\Documents\gcp\acervo-storage-sa.json
-```
+## 4. Variables en GitHub Actions
 
-No subas el JSON de la cuenta de servicio al repositorio.
+Repository Settings -> Secrets and variables -> Actions -> Variables:
 
-## Build local de imagen
+- `GCP_PROJECT_ID`: id del proyecto GCP.
+- `GCP_REGION`: region del Artifact Registry, por ejemplo `us-central1`.
+- `ARTIFACT_REGISTRY_REPOSITORY`: repositorio Docker en Artifact Registry.
+- `IMAGE_NAME`: nombre de imagen, por ejemplo `acervo-operaciones`.
+- `CLOUD_RUN_SERVICE`: nombre del servicio Cloud Run.
+- `CLOUD_RUN_REGION`: region de Cloud Run, por ejemplo `us-central1`.
+- `CLOUD_SQL_CONNECTION_NAME`: formato `proyecto:region:instancia`.
+- `DB_USER`: usuario de PostgreSQL.
+- `DB_NAME`: base de datos, por ejemplo `manuales-operaciones`.
+- `GCS_BUCKET`: bucket de documentos.
+- `CORS_ORIGIN`: URL publica del frontend/Cloud Run.
+- `APP_URL`: URL publica de la aplicacion.
+- `GOOGLE_ALLOWED_DOMAINS`: normalmente `cun.edu.co`.
+- `GOOGLE_DEFAULT_ROLE_ID`: normalmente `7`.
+- `SMTP_HOST`: para Gmail, `smtp.gmail.com`.
+- `SMTP_PORT`: para Gmail, `587`.
+- `SMTP_SECURE`: para Gmail con 587, `false`.
 
-```bash
-docker build -t acervo-operaciones .
-```
+No debes crear variables manualmente en Cloud Run. El workflow hace `gcloud run deploy` con `--set-env-vars` y `--set-secrets`.
 
-## Deploy con gcloud
+## 5. Base de datos
 
-```bash
-gcloud run deploy acervo-operaciones \
-  --source . \
-  --region us-central1 \
-  --allow-unauthenticated \
-  --add-cloudsql-instances TU_PROYECTO:us-central1:TU_INSTANCIA \
-  --set-env-vars NODE_ENV=production,PORT=8080,GCS_BUCKET=TU_BUCKET,CLOUD_SQL_CONNECTION_NAME=TU_PROYECTO:us-central1:TU_INSTANCIA,DB_USER=postgres,DB_NAME=manuales-operaciones \
-  --set-secrets DB_PASSWORD=DB_PASSWORD:latest,JWT_SECRET=JWT_SECRET:latest
-```
+Usa `server/sql/schema.sql` para crear una base nueva. Ese archivo crea tablas, indices, relaciones y datos base:
 
-Recomendado: guarda `DB_PASSWORD` y `JWT_SECRET` en Secret Manager.
+- Areas
+- Tipos documentales
+- Roles y permisos
+- Personas/responsables base
 
-## Notas importantes
+No inserta usuarios ni documentos. Los usuarios nacen con Google Login y rol minimo.
 
-- Si la base está vacía, la app ejecuta la migración del esquema al arrancar, pero no carga datos demo.
-- Los archivos siempre se guardan en Cloud Storage. Si `GCS_BUCKET` no está configurado, las operaciones de archivo fallan con un error explícito.
-- Para trabajar local, usa preferiblemente `GOOGLE_APPLICATION_CREDENTIALS` apuntando al JSON de una cuenta de servicio con permisos sobre el bucket.
+## 6. Versionamiento
+
+El workflow calcula SemVer con tags `vX.Y.Z`.
+
+Prioridad:
+
+1. Si el PR asociado al commit tiene label `major`, sube major.
+2. Si tiene label `minor`, sube minor.
+3. Si tiene label `patch`, sube patch.
+4. Si no hay PR o no hay label, sube patch.
+
+La imagen queda con tres tags:
+
+- `vX.Y.Z`
+- SHA del commit
+- `latest`
+
+## 7. Escaneo
+
+El workflow ejecuta:
+
+- `npm audit --audit-level=high` para frontend.
+- `npm audit --prefix server --audit-level=high` para backend.
+- Trivy sobre la imagen Docker, fallando en `HIGH` o `CRITICAL`.
+
+## 8. Flujo normal
+
+1. Hacer PR a `main`.
+2. Poner label `major`, `minor` o `patch`.
+3. Al hacer merge a `main`, GitHub Actions despliega.
+
+Para commit directo a `main`, el workflow despliega con `patch`.

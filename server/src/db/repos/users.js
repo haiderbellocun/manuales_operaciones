@@ -1,5 +1,8 @@
 import { query } from '../pool.js';
 import { mapUser } from '../mapper.js';
+import { assertAllowedGoogleEmail } from '../../services/googleIdentity.js';
+
+const DEFAULT_GOOGLE_ROLE_ID = Number(process.env.GOOGLE_DEFAULT_ROLE_ID || 7);
 
 export async function findByEmail(email) {
   const { rows } = await query(
@@ -41,8 +44,7 @@ export async function getAuthContext(userId) {
 
 export async function sanitizeUser(user) {
   const role = await getRole(user.role_id);
-  const { password, ...rest } = user;
-  return mapUser(rest, role?.name || user.role_id, role?.perms || {});
+  return mapUser(user, role?.name || user.role_id, role?.perms || {});
 }
 
 export async function listUsers() {
@@ -62,7 +64,6 @@ function normalizeUserPayload(payload = {}, { partial = false } = {}) {
     data.areaId = null;
   }
   if (!partial || payload.status !== undefined) data.status = payload.status || 'Activo';
-  if (payload.password !== undefined) data.password = String(payload.password || '');
   return data;
 }
 
@@ -77,6 +78,7 @@ function validateUserPayload(data, { creating = false } = {}) {
     err.statusCode = 400;
     throw err;
   }
+  if ('email' in data) assertAllowedGoogleEmail(data.email);
   if ('roleId' in data && (!Number.isInteger(data.roleId) || data.roleId <= 0)) {
     const err = new Error('Selecciona un rol valido.');
     err.statusCode = 400;
@@ -89,16 +91,6 @@ function validateUserPayload(data, { creating = false } = {}) {
   }
   if ('status' in data && !['Activo', 'Inactivo'].includes(data.status)) {
     const err = new Error('Estado de usuario invalido.');
-    err.statusCode = 400;
-    throw err;
-  }
-  if (creating && (!data.password || data.password.length < 4)) {
-    const err = new Error('La contrasena inicial debe tener minimo 4 caracteres.');
-    err.statusCode = 400;
-    throw err;
-  }
-  if (!creating && 'password' in data && data.password && data.password.length < 4) {
-    const err = new Error('La nueva contrasena debe tener minimo 4 caracteres.');
     err.statusCode = 400;
     throw err;
   }
@@ -131,16 +123,44 @@ export async function createUser(payload) {
 
   try {
     const { rows } = await query(`
-      INSERT INTO users (name, email, password, role_id, area_id, status, last_access)
-      VALUES ($1,$2,$3,$4,$5,$6,NULL)
+      INSERT INTO users (name, email, role_id, area_id, status, last_access)
+      VALUES ($1,$2,$3,$4,$5,NULL)
       RETURNING *
-    `, [data.name, data.email, data.password, data.roleId, data.areaId, data.status]);
+    `, [data.name, data.email, data.roleId, data.areaId, data.status]);
     return sanitizeUser(rows[0]);
   } catch (err) {
     if (err.code === '23505') {
       const dup = new Error('Ya existe un usuario con ese correo.');
       dup.statusCode = 409;
       throw dup;
+    }
+    throw err;
+  }
+}
+
+function defaultNameFromEmail(email) {
+  return String(email || '')
+    .split('@')[0]
+    .replace(/[._-]+/g, ' ')
+    .trim()
+    .replace(/\b\w/g, letter => letter.toUpperCase()) || 'Usuario CUN';
+}
+
+export async function createGoogleUser({ email, name }) {
+  const normalizedEmail = String(email || '').trim().toLowerCase();
+  assertAllowedGoogleEmail(normalizedEmail);
+  await assertRoleExists(DEFAULT_GOOGLE_ROLE_ID);
+
+  try {
+    const { rows } = await query(`
+      INSERT INTO users (name, email, role_id, area_id, status, last_access)
+      VALUES ($1,$2,$3,NULL,'Activo',NULL)
+      RETURNING *
+    `, [String(name || '').trim() || defaultNameFromEmail(normalizedEmail), normalizedEmail, DEFAULT_GOOGLE_ROLE_ID]);
+    return rows[0];
+  } catch (err) {
+    if (err.code === '23505') {
+      return findByEmail(normalizedEmail);
     }
     throw err;
   }
@@ -166,7 +186,6 @@ export async function updateUser(id, payload) {
     roleId: data.roleId ?? current.role_id,
     areaId: ('areaId' in data) ? data.areaId : current.area_id,
     status: data.status ?? current.status,
-    password: data.password || current.password,
   };
 
   try {
@@ -176,11 +195,10 @@ export async function updateUser(id, payload) {
           email = $3,
           role_id = $4,
           area_id = $5,
-          status = $6,
-          password = $7
+          status = $6
       WHERE id = $1
       RETURNING *
-    `, [userId, next.name, next.email, next.roleId, next.areaId, next.status, next.password]);
+    `, [userId, next.name, next.email, next.roleId, next.areaId, next.status]);
     return sanitizeUser(rows[0]);
   } catch (err) {
     if (err.code === '23505') {

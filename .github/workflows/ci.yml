@@ -17,17 +17,20 @@ jobs:
       - name: Setup Node.js
         uses: actions/setup-node@v4
         with:
-          node-version: 20
+          node-version: 22
           cache: npm
 
       - name: Install dependencies
         run: npm ci
 
+      - name: Audit dependencies
+        run: npm audit --audit-level=high
+
       - name: Build
         run: npm run build
         env:
           VITE_API_URL: /api
-          VITE_USE_MOCK: false
+          VITE_GOOGLE_CLIENT_ID: ci-placeholder.apps.googleusercontent.com
 
   server:
     name: Server — Lint & Check
@@ -39,15 +42,15 @@ jobs:
       - name: Setup Node.js
         uses: actions/setup-node@v4
         with:
-          node-version: 20
+          node-version: 22
           cache: npm
           cache-dependency-path: server/package-lock.json
 
       - name: Install server dependencies
         run: npm ci --prefix server
 
+      - name: Audit server dependencies
+        run: npm audit --prefix server --audit-level=high
+
       - name: Check syntax (node --check)
-        run: |
-          for f in server/src/**/*.js server/src/*.js; do
-            node --input-type=module --check < "$f" 2>&1 && echo "OK: $f" || exit 1
-          done
+        run: find server/src -name "*.js" -print0 | xargs -0 -n1 node --check
