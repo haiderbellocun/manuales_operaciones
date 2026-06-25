@@ -46,7 +46,12 @@ export function LoginView() {
         if (cancelled || !googleButtonRef.current) return;
         window.google.accounts.id.initialize({
           client_id: clientId,
+          cancel_on_tap_outside: false,
           callback: async ({ credential }) => {
+            if (!credential) {
+              setGoogleError('Google no devolvio una credencial valida. Revisa el Client ID y los origenes autorizados.');
+              return;
+            }
             try {
               await loginWithGoogle(credential);
             } catch {

@@ -81,6 +81,12 @@ jobs:
           if [[ "$missing" -ne 0 ]]; then
             exit 1
           fi
+          for name in CORS_ORIGIN APP_URL; do
+            if [[ "${!name}" == *"URL-DE-CLOUD-RUN"* || "${!name}" == *"tu-"* || "${!name}" == *"TU_"* ]]; then
+              echo "::error::$name tiene un placeholder (${!name}). Configura la URL real del servicio Cloud Run."
+              exit 1
+            fi
+          done
           echo "IMAGE_URI=${IMAGE_URI}"
 
       - name: Setup Node.js
