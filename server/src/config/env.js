@@ -25,7 +25,6 @@ function requireEnv(name) {
 
 if (process.env.NODE_ENV === 'production') {
   [
-    'PORT',
     'JWT_SECRET',
     'CORS_ORIGIN',
     'APP_URL',
