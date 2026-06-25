@@ -19,6 +19,9 @@ FROM node:22-slim AS runtime
 ENV NODE_ENV=production
 WORKDIR /app
 
+RUN rm -rf /usr/local/lib/node_modules/npm \
+    && rm -f /usr/local/bin/npm /usr/local/bin/npx
+
 COPY --from=server-deps /app/server/node_modules ./server/node_modules
 COPY server ./server
 COPY --from=client-build /app/dist ./dist
