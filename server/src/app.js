@@ -24,6 +24,7 @@ export async function createApp() {
   const allowedOrigins = new Set(corsOrigin.split(',').map(origin => origin.trim()).filter(Boolean));
 
   app.use(helmet({
+    crossOriginOpenerPolicy: { policy: 'same-origin-allow-popups' },
     crossOriginResourcePolicy: { policy: 'same-site' },
     contentSecurityPolicy: false,
   }));
