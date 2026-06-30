@@ -202,14 +202,16 @@ export function StateBadge({ state }) {
   return <span className={'badge badge-' + s.cls}><span className="b-dot"></span>{s.label}</span>;
 }
 
-export function AreaTag({ areaId, dot = true }) {
-  const { areaById } = useCatalogs();
+export function AreaTag({ areaId, coordinationId, dot = true }) {
+  const { areaById, coordinationById } = useCatalogs();
   const a = areaById(areaId);
+  const c = coordinationId ? coordinationById(coordinationId) : null;
   if (!a) return null;
+  const label = c ? `${a.abbreviation} · ${c.abbreviation}` : a.abbreviation;
   return (
     <span className="tag">
       {dot && <span className="area-dot" style={{ background: a.color }}></span>}
-      {a.abbreviation}
+      {label}
     </span>
   );
 }
@@ -280,11 +282,15 @@ export function KpiCard({ icon, value, label, tone = 'brand', trend }) {
 }
 
 export function DocCard({ doc, onOpen, onFav }) {
-  const { areaById, typeById } = useCatalogs();
+  const { areaById, coordinationById, typeById } = useCatalogs();
   const area = areaById(doc.area);
+  const coordination = doc.coordination ? coordinationById(doc.coordination) : null;
   const type = typeById(doc.type);
   const areaColor = area?.color || 'var(--brand-700)';
   const typeIcon = type?.icon || 'doc';
+  const areaLabel = coordination
+    ? `${area?.abbreviation || 'N/D'} · ${coordination.abbreviation}`
+    : (area?.abbreviation || 'N/D');
   return (
     <div className="doc-card" onClick={() => onOpen(doc.id)} role="button" tabIndex={0} onKeyDown={e => e.key === 'Enter' && onOpen(doc.id)}>
       <div className="doc-card-top" style={{ background: areaColor }}></div>
@@ -305,7 +311,7 @@ export function DocCard({ doc, onOpen, onFav }) {
         <div className="doc-card-foot">
           <span className="row gap-6" style={{ fontSize: 12.5 }}>
             <span className="area-dot" style={{ background: areaColor }}></span>
-            <span className="muted">{area?.abbreviation || 'N/D'}</span>
+            <span className="muted">{areaLabel}</span>
           </span>
           <StateBadge state={doc.state} />
         </div>

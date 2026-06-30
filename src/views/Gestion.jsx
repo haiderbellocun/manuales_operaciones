@@ -7,6 +7,8 @@ import { useCatalogs } from '../context/CatalogContext';
 import { STATES, fmtDate } from '../utils/display';
 import { Icon, StateBadge, AreaTag, KpiCard, Avatar, FilterToggleButton, SelectField } from '../components';
 import { FileDropzone } from '../components/DocumentPreview';
+import { AreaCoordinationFields } from '../components/AreaCoordinationFields';
+import { areaAssignmentValid, documentCodePrefix } from '../utils/areas';
 
 export function SearchView({ nav, docs, initial }) {
   const { areas, types, typeById } = useCatalogs();
@@ -130,7 +132,7 @@ export function SearchView({ nav, docs, initial }) {
                       <div key={d.id} className="card search-result" onClick={() => { storage.addSearchQuery(q); setRecentSearches(storage.getSearchHistory()); nav('detail', { id: d.id }); }} role="button" tabIndex={0}>
                         <span className="kpi-ico" style={{ width: 38, height: 38, borderRadius: 9, background: 'var(--brand-50)', color: 'var(--brand-700)', flexShrink: 0 }}><Icon name={t?.icon || 'doc'} size={18} /></span>
                         <div className="grow" style={{ minWidth: 0 }}>
-                          <div className="row gap-8 wrap" style={{ marginBottom: 4 }}><span className="search-result-title">{highlight(d.name)}</span><AreaTag areaId={d.area} /><StateBadge state={d.state} /></div>
+                          <div className="row gap-8 wrap" style={{ marginBottom: 4 }}><span className="search-result-title">{highlight(d.name)}</span><AreaTag areaId={d.area} coordinationId={d.coordination} /><StateBadge state={d.state} /></div>
                           <p className="search-result-desc">{highlight(d.desc.slice(0, 130))}…</p>
                           <div className="row gap-8 wrap text-xs muted mono"><span>{d.documentNumber} · v{d.version}</span>{(d.tags || []).slice(0, 3).map(tg => <span key={tg} className="tag" style={{ padding: '0 7px' }}>{tg}</span>)}</div>
                         </div>
@@ -151,26 +153,33 @@ export function SearchView({ nav, docs, initial }) {
 export function UploadFlow({ nav, showToast, onUploaded }) {
   const { addDocument } = useDocs();
   const { user, hasPermission } = useAuth();
+  const { coordinations } = useCatalogs();
   const [step, setStep] = useState(0);
   const [file, setFile] = useState(null);
   const [submitting, setSubmitting] = useState(false);
   const [catalogs, setCatalogs] = useState({ areas: [], types: [], people: [], users: [] });
   const [catalogLoading, setCatalogLoading] = useState(true);
   const [catalogErrors, setCatalogErrors] = useState([]);
-  const [f, setF] = useState({ type: '', area: '', name: '', desc: '', owner: '', vigencia: '', tags: '', version: '1.0', revisor: '', aprobador: '', versionNote: '' });
+  const [f, setF] = useState({ type: '', area: '', coordination: '', name: '', desc: '', owner: '', vigencia: '', tags: '', version: '1.0', revisor: '', aprobador: '', versionNote: '' });
   const set = (k, v) => setF(prev => ({ ...prev, [k]: v }));
+  const setArea = (value) => setF(prev => ({ ...prev, area: value, coordination: '' }));
   const canAdmin = hasPermission('administrar');
   const visibleAreas = canAdmin || !user?.area
     ? catalogs.areas
     : catalogs.areas.filter(a => Number(a.id) === Number(user.area));
-  const visiblePeople = canAdmin || !user?.area
+  const targetArea = f.area || user?.area;
+  const visiblePeople = canAdmin || !targetArea
     ? catalogs.people
-    : catalogs.people.filter(p => Number(p.area) === Number(user.area));
+    : catalogs.people.filter(p => !p.area || Number(p.area) === Number(targetArea));
   const steps = ['Tipo y datos', 'Archivo y versión', 'Flujo de aprobación'];
   const typeCode = catalogs.types.find(t => String(t.id) === String(f.type));
   const areaCode = catalogs.areas.find(a => String(a.id) === String(f.area));
-  const autoCode = (areaCode && typeCode) ? `${areaCode.abbreviation}-${typeCode.abbreviation}-XXX` : '— — —';
-  const canNext = step === 0 ? (f.type && f.area && f.name) : step === 1 ? !!file : true;
+  const coordinationCode = coordinations.find(c => String(c.id) === String(f.coordination));
+  const autoCode = (areaCode && typeCode)
+    ? `${documentCodePrefix(areaCode, coordinationCode)}-${typeCode.abbreviation}-XXX`
+    : '— — —';
+  const areaReady = areaAssignmentValid(areaCode, f.coordination);
+  const canNext = step === 0 ? (f.type && f.area && f.name && areaReady) : step === 1 ? !!file : true;
 
   useEffect(() => {
     setCatalogLoading(true);
@@ -194,9 +203,13 @@ export function UploadFlow({ nav, showToast, onUploaded }) {
 
   useEffect(() => {
     if (!canAdmin && user?.area && catalogs.areas.length > 0) {
-      set('area', String(user.area));
+      setF(prev => ({
+        ...prev,
+        area: String(user.area),
+        coordination: user.coordination ? String(user.coordination) : '',
+      }));
     }
-  }, [canAdmin, user?.area, catalogs.areas.length]);
+  }, [canAdmin, user?.area, user?.coordination, catalogs.areas.length]);
 
   const handleSubmit = async () => {
     setSubmitting(true);
@@ -238,7 +251,17 @@ export function UploadFlow({ nav, showToast, onUploaded }) {
             )}
             <div className="form-grid">
               <div className="form-row"><label>Tipo documental *</label><SelectField value={f.type} disabled={catalogLoading || catalogs.types.length === 0} onChange={value => set('type', value)} placeholder={catalogLoading ? 'Cargando...' : 'Seleccionar...'} options={catalogs.types.map(t => ({ value: t.id, label: t.name }))} /></div>
-              <div className="form-row"><label>Área responsable *</label><SelectField value={f.area} disabled={catalogLoading || visibleAreas.length === 0 || (!canAdmin && !!user?.area)} onChange={value => set('area', value)} placeholder={catalogLoading ? 'Cargando...' : 'Seleccionar...'} options={visibleAreas.map(a => ({ value: a.id, label: a.name }))} /></div>
+              <AreaCoordinationFields
+                areas={visibleAreas}
+                coordinations={coordinations}
+                areaValue={f.area}
+                coordinationValue={f.coordination}
+                onAreaChange={setArea}
+                onCoordinationChange={value => set('coordination', value)}
+                areaDisabled={catalogLoading || visibleAreas.length === 0 || (!canAdmin && !!user?.area)}
+                coordinationDisabled={catalogLoading || (!canAdmin && !!user?.coordination)}
+                areaPlaceholder={catalogLoading ? 'Cargando...' : 'Seleccionar...'}
+              />
             </div>
             <div className="form-row"><label>Nombre del documento *</label><input className="input" value={f.name} onChange={e => set('name', e.target.value)} placeholder="Ej. Procedimiento de matrícula de pregrado" /></div>
             <div className="form-row"><label>Descripción corta</label><textarea className="input" value={f.desc} onChange={e => set('desc', e.target.value)} placeholder="Resumen del propósito y alcance del documento…"></textarea></div>
@@ -280,7 +303,7 @@ export function UploadFlow({ nav, showToast, onUploaded }) {
               <div className="spec-list">
                 <div className="spec-row"><span className="k">Nombre</span><span className="v">{f.name || '—'}</span></div>
                 <div className="spec-row"><span className="k">Tipo</span><span className="v">{typeCode ? typeCode.name : '—'}</span></div>
-                <div className="spec-row"><span className="k">Área</span><span className="v">{areaCode ? areaCode.name : '—'}</span></div>
+                <div className="spec-row"><span className="k">Área</span><span className="v">{areaCode ? areaCode.name : '—'}{coordinationCode ? ` · ${coordinationCode.name}` : ''}</span></div>
                 <div className="spec-row"><span className="k">Número documental</span><span className="v mono">{autoCode}</span></div>
                 <div className="spec-row"><span className="k">Versión</span><span className="v">v{f.version}</span></div>
               </div>
@@ -404,7 +427,7 @@ export function WorkflowView({ nav, showToast }) {
                 {loading ? <div className="text-xs muted kanban-empty">Cargando flujo...</div> : col.length === 0 ? <div className="text-xs muted kanban-empty">Sin documentos</div> : visibleItems.map(it => (
                   <div key={it.id} className="card kanban-card" onClick={() => nav('detail', { id: it.doc.id })} role="button" tabIndex={0}>
                     <div className="kanban-card-main">
-                      <div className="row between mb-12"><AreaTag areaId={it.doc.area} /><span className="priority-label" style={{ color: prioColor[it.priority] }}>{it.priority}</span></div>
+                      <div className="row between mb-12"><AreaTag areaId={it.doc.area} coordinationId={it.doc.coordination} /><span className="priority-label" style={{ color: prioColor[it.priority] }}>{it.priority}</span></div>
                       <div className="text-sm kanban-card-title">{it.doc.name}</div>
                       <div className="mono text-xs muted" style={{ marginTop: 5 }}>{it.doc.documentNumber} - v{it.doc.version}</div>
                     </div>
@@ -439,7 +462,7 @@ export function WorkflowView({ nav, showToast }) {
 }
 
 export function UsersView({ nav }) {
-  const { areaById } = useCatalogs();
+  const { coordinations } = useCatalogs();
   const [tab, setTab] = useState('users');
   const [users, setUsers] = useState([]);
   const [roles, setRoles] = useState([]);
@@ -451,7 +474,7 @@ export function UsersView({ nav }) {
   const [error, setError] = useState('');
   const permLabels = { crear: 'Crear', editar: 'Editar', aprobar: 'Aprobar', publicar: 'Publicar', archivar: 'Archivar', consultar: 'Consultar', descargar: 'Descargar', administrar: 'Administrar' };
   const permKeys = Object.keys(permLabels);
-  const emptyForm = { name: '', email: '', role: '', area: '', status: 'Activo' };
+  const emptyForm = { name: '', email: '', role: '', area: '', coordination: '', status: 'Activo' };
 
   const loadUsers = () => {
     setLoading(true);
@@ -486,12 +509,18 @@ export function UsersView({ nav }) {
         email: user.email || '',
         role: user.role || '',
         area: user.area || '',
+        coordination: user.coordination || '',
         status: user.status || 'Activo',
       },
     });
   };
 
-  const setForm = (key, value) => setModal(prev => ({ ...prev, form: { ...prev.form, [key]: value } }));
+  const setForm = (key, value) => setModal(prev => {
+    if (key === 'area') {
+      return { ...prev, form: { ...prev.form, area: value, coordination: '' } };
+    }
+    return { ...prev, form: { ...prev.form, [key]: value } };
+  });
 
   const submitUser = async () => {
     if (!modal) return;
@@ -503,6 +532,7 @@ export function UsersView({ nav }) {
         email: modal.form.email,
         role: modal.form.role,
         area: modal.form.area,
+        coordination: modal.form.coordination,
         status: modal.form.status,
       };
       if (modal.mode === 'create') {
@@ -572,7 +602,7 @@ export function UsersView({ nav }) {
             <tbody>
               {users.map(u => {
                 const role = roles.find(r => Number(r.id) === Number(u.role));
-                const ar = u.area ? areaById(u.area) : null;
+                const ar = u.area ? areas.find(a => Number(a.id) === Number(u.area)) : null;
                 const googleEnabled = String(u.email || '').toLowerCase().endsWith('@cun.edu.co');
                 return (
                   <tr key={u.id}>
@@ -580,7 +610,7 @@ export function UsersView({ nav }) {
                     <td className="text-sm muted">{u.email}</td>
                     <td><span className={'badge badge-' + (googleEnabled ? 'aprobado' : 'vencido')}><span className="b-dot"></span>{googleEnabled ? 'Google CUN' : 'Fuera de dominio'}</span></td>
                     <td><span className="tag tag-type">{role?.name || u.roleName || u.role}</span></td>
-                    <td>{ar ? <AreaTag areaId={u.area} /> : <span className="tag tag-muted">Sin área</span>}</td>
+                    <td>{ar ? <AreaTag areaId={u.area} coordinationId={u.coordination} /> : <span className="tag tag-muted">Sin área</span>}</td>
                     <td className="text-sm muted">{fmtDate(u.last)}</td>
                     <td><span className={'badge badge-' + (u.status === 'Activo' ? 'aprobado' : 'archivado')}><span className="b-dot"></span>{u.status}</span></td>
                     <td><button className="tbar-icon-btn" style={{ color: 'var(--ink-500)', width: 32, height: 32 }} type="button" title="Editar usuario" onClick={() => openEdit(u)}><Icon name="edit" size={16} /></button></td>
@@ -634,7 +664,17 @@ export function UsersView({ nav }) {
                 <div className="form-row"><label>Nombre *</label><input className="input" value={modal.form.name} onChange={e => setForm('name', e.target.value)} /></div>
                 <div className="form-row"><label>Correo CUN *</label><input className="input" type="email" value={modal.form.email} onChange={e => setForm('email', e.target.value)} placeholder="usuario@cun.edu.co" /></div>
                 <div className="form-row"><label>Rol *</label><SelectField value={modal.form.role} onChange={value => setForm('role', value)} placeholder="Seleccionar..." options={roles.map(r => ({ value: r.id, label: r.name }))} /></div>
-                <div className="form-row"><label>Área</label><SelectField value={modal.form.area || ''} onChange={value => setForm('area', value)} placeholder="Sin área" options={[{ value: '', label: 'Sin área' }, ...areas.map(a => ({ value: a.id, label: a.name }))]} /></div>
+                <AreaCoordinationFields
+                  areas={areas}
+                  coordinations={coordinations}
+                  areaValue={modal.form.area || ''}
+                  coordinationValue={modal.form.coordination || ''}
+                  onAreaChange={value => setForm('area', value)}
+                  onCoordinationChange={value => setForm('coordination', value)}
+                  areaLabel="Área"
+                  allowEmptyArea
+                  areaPlaceholder="Sin área"
+                />
                 <div className="form-row"><label>Estado</label><SelectField value={modal.form.status} onChange={value => setForm('status', value)} options={['Activo', 'Inactivo']} /></div>
               </div>
             </div>

@@ -100,7 +100,7 @@ function HybridRow({ doc, nav, toggleFav }) {
           </div>
         </div>
         <div className="row gap-12 hybrid-actions">
-          <AreaTag areaId={doc.area} />
+          <AreaTag areaId={doc.area} coordinationId={doc.coordination} />
           <StateBadge state={doc.state} />
           <button className={'doc-fav' + (doc.fav ? ' on' : '')} onClick={(e) => { e.stopPropagation(); toggleFav(doc.id); }} aria-label="Favorito"><Icon name="star" size={18} /></button>
         </div>
@@ -241,7 +241,7 @@ export function Library({ nav, docs, toggleFav, initParams }) {
                       <td className="col-name">{d.name}</td>
                       <td className="col-number">{d.documentNumber}</td>
                       <td>{typeById(d.type)?.name || 'Tipo no disponible'}</td>
-                      <td><AreaTag areaId={d.area} /></td>
+                      <td><AreaTag areaId={d.area} coordinationId={d.coordination} /></td>
                       <td className="mono text-xs">v{d.version}</td>
                       <td className="text-sm">{personById(d.owner)?.name || 'No disponible'}</td>
                       <td className="text-sm muted">{fmtDate(d.updated)}</td>
@@ -271,7 +271,7 @@ function nextVersion(current) {
 
 export function DocDetail({ nav, docId, docs, toggleFav, requestUpdate, showToast, onVersionCreated }) {
   const { hasPermission } = useAuth();
-  const { people, areaById, typeById, personById } = useCatalogs();
+  const { people, areaById, coordinationById, typeById, personById } = useCatalogs();
   const numericDocId = Number(docId);
   const localDoc = docs.find(d => Number(d.id) === numericDocId);
   const [remoteDoc, setRemoteDoc] = useState(null);
@@ -419,6 +419,7 @@ export function DocDetail({ nav, docId, docs, toggleFav, requestUpdate, showToas
   }
 
   const area = areaById(doc.area);
+  const coordination = doc.coordination ? coordinationById(doc.coordination) : null;
   const type = typeById(doc.type);
   const owner = personById(doc.owner);
   const areaColor = area?.color || 'var(--brand-700)';
@@ -449,7 +450,7 @@ export function DocDetail({ nav, docId, docs, toggleFav, requestUpdate, showToas
               <div>
                 <div className="row gap-8 wrap" style={{ marginBottom: 8 }}>
                   <span className="tag tag-type">{type?.name || 'Tipo no disponible'}</span>
-                  <AreaTag areaId={doc.area} />
+                  <AreaTag areaId={doc.area} coordinationId={doc.coordination} />
                   <StateBadge state={doc.state} />
                 </div>
                 <h1 className="doc-header-title">{doc.name}</h1>
@@ -524,7 +525,7 @@ export function DocDetail({ nav, docId, docs, toggleFav, requestUpdate, showToas
             <div className="spec-list">
               <div className="spec-row"><span className="k">Número documental</span><span className="v mono">{doc.documentNumber}</span></div>
               <div className="spec-row"><span className="k">Tipo documental</span><span className="v">{type?.name || 'Tipo no disponible'}</span></div>
-              <div className="spec-row"><span className="k">Área responsable</span><span className="v">{area?.name || 'No disponible'}</span></div>
+              <div className="spec-row"><span className="k">Área responsable</span><span className="v">{area?.name || 'No disponible'}{coordination ? ` · ${coordination.name}` : ''}</span></div>
               <div className="spec-row"><span className="k">Versión vigente</span><span className="v">v{doc.version}</span></div>
               <div className="spec-row"><span className="k">Estado</span><span className="v"><StateBadge state={doc.state} /></span></div>
               <div className="spec-row"><span className="k">Creación</span><span className="v">{fmtDate(doc.created)}</span></div>

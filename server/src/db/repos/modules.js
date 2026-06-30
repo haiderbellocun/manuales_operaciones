@@ -24,6 +24,7 @@ function moduleBase(doc) {
     name: cleanTitle(doc.name),
     fullName: doc.name,
     area: doc.area,
+    coordination: doc.coordination,
     type: doc.type,
     state: doc.state,
     version: doc.version,

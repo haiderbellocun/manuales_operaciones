@@ -125,6 +125,7 @@ export function requirePermission(...permissions) {
         email: authUser.email,
         role: authUser.role_id,
         area: authUser.area_id,
+        coordination: authUser.coordination_id,
         roleName: authUser.role_name,
         perms,
       };

@@ -4,6 +4,7 @@ import path from 'path';
 import { fileStorage } from '../store/files.js';
 import { authRequired, requirePermission } from '../middleware/auth.js';
 import { getArea, getType } from '../db/repos/catalog.js';
+import { validateAreaCoordination } from '../db/areaRules.js';
 import { logActivity } from '../db/repos/catalog.js';
 import { notifyUsers } from '../db/repos/notifications.js';
 import { findDocumentOwnerRecipient } from '../db/repos/users.js';
@@ -168,20 +169,21 @@ router.put('/:id', requirePermission('editar'), async (req, res, next) => {
 router.post('/', requirePermission('crear'), async (req, res, next) => {
   try {
     const payload = req.body || {};
-    const { type, area, name, owner } = payload;
+    const { type, area, coordination, name, owner } = payload;
     if (!type || !area || !name || !owner) {
       return res.status(400).json({ message: 'Tipo, area, nombre y responsable son obligatorios.' });
     }
-    assertCanCreateInArea(req.auth, area);
-    const areaObj = await getArea(area);
+    const { area: areaObj, coordination: coordinationObj } = await validateAreaCoordination(area, coordination || null);
+    assertCanCreateInArea(req.auth, area, coordinationObj?.id || null);
     const typeObj = await getType(type);
-    if (!areaObj || !typeObj) {
-      return res.status(400).json({ message: 'Area o tipo documental invalido.' });
+    if (!typeObj) {
+      return res.status(400).json({ message: 'Tipo documental invalido.' });
     }
     const newDoc = await createDocument(
       { ...payload, userId: req.user.sub },
       areaObj,
       typeObj,
+      coordinationObj,
     );
     const revisorName = await resolveRevisorName(payload.revisor);
     await addWorkflowItem(newDoc.id, revisorName, payload.revisor, payload.aprobador);

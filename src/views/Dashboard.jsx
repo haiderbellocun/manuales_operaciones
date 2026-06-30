@@ -138,7 +138,7 @@ export function Dashboard({ nav, docs, userName = 'Usuario' }) {
                     <div className="doc-list-title">{d.name}</div>
                     <div className="row gap-8 text-xs muted mono">{d.documentNumber}<span style={{ color: 'var(--line)' }}>•</span>{fmtDate(d.updated)}</div>
                   </div>
-                  <AreaTag areaId={d.area} />
+                  <AreaTag areaId={d.area} coordinationId={d.coordination} />
                   <StateBadge state={d.state} />
                 </div>
               );

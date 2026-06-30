@@ -1,7 +1,7 @@
 import { Router } from 'express';
 import { authRequired, requirePermission } from '../middleware/auth.js';
 import {
-  listAreas, listTypes, listRoles, updateRole, listPeople, getStats, getReportSummary, listActivity,
+  listAreas, listCoordinations, listTypes, listRoles, updateRole, listPeople, getStats, getReportSummary, listActivity,
 } from '../db/repos/catalog.js';
 import { createUser, listAssignableUsers, listUsers, updateUser } from '../db/repos/users.js';
 
@@ -11,12 +11,38 @@ function scopedByArea(auth, items) {
   const role = Number(auth.role);
   if (auth.perms?.administrar === true || [5, 6, 7].includes(role)) return items;
   if (!auth.area) return [];
-  return items.filter(item => Number(item.id ?? item.area) === Number(auth.area));
+  return items.filter((item) => {
+    const itemArea = Number(item.id ?? item.area);
+    if (itemArea !== Number(auth.area)) return false;
+    if (auth.coordination && item.coordination) {
+      return Number(item.coordination) === Number(auth.coordination);
+    }
+    return true;
+  });
 }
 
 router.get('/areas', authRequired, requirePermission('consultar'), async (req, res, next) => {
   try {
     res.json(scopedByArea(req.auth, await listAreas()));
+  } catch (err) {
+    next(err);
+  }
+});
+
+router.get('/coordinations', authRequired, requirePermission('consultar'), async (req, res, next) => {
+  try {
+    const areaId = req.query.areaId || req.query.area;
+    const items = await listCoordinations(areaId || null);
+    if (req.auth.perms?.administrar === true || !req.auth.area) {
+      return res.json(items);
+    }
+    if (areaId && Number(areaId) !== Number(req.auth.area)) {
+      return res.json([]);
+    }
+    if (req.auth.coordination) {
+      return res.json(items.filter(item => Number(item.id) === Number(req.auth.coordination)));
+    }
+    res.json(items);
   } catch (err) {
     next(err);
   }

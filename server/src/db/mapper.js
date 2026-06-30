@@ -8,6 +8,7 @@ export function mapDocument(row, history = [], fav = false, versions = [], activ
   return {
     id: row.id,
     area: row.area_id,
+    coordination: row.coordination_id || undefined,
     type: row.type_id,
     documentNumber: row.document_number,
     name: row.name,
@@ -62,6 +63,7 @@ export function mapUser(row, roleName, perms = {}) {
     email: row.email,
     role: row.role_id,
     area: row.area_id,
+    coordination: row.coordination_id || undefined,
     status: row.status,
     last: fmtDate(row.last_access),
     roleName,

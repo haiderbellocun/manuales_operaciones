@@ -1,6 +1,7 @@
 import { createContext, useContext, useState, useEffect, useCallback } from 'react';
 import { api } from '../services/api';
 import { useAuth } from './AuthContext';
+import { coordinationsForArea } from '../utils/areas';
 
 const CatalogContext = createContext(null);
 
@@ -11,6 +12,7 @@ function byId(items, id) {
 export function CatalogProvider({ children }) {
   const { isAuthenticated } = useAuth();
   const [areas, setAreas] = useState([]);
+  const [coordinations, setCoordinations] = useState([]);
   const [types, setTypes] = useState([]);
   const [people, setPeople] = useState([]);
   const [loading, setLoading] = useState(true);
@@ -18,6 +20,7 @@ export function CatalogProvider({ children }) {
   const refreshCatalogs = useCallback(async () => {
     if (!isAuthenticated) {
       setAreas([]);
+      setCoordinations([]);
       setTypes([]);
       setPeople([]);
       setLoading(false);
@@ -26,12 +29,14 @@ export function CatalogProvider({ children }) {
 
     setLoading(true);
     try {
-      const [nextAreas, nextTypes, nextPeople] = await Promise.all([
+      const [nextAreas, nextCoordinations, nextTypes, nextPeople] = await Promise.all([
         api.getAreas(),
+        api.getCoordinations(),
         api.getTypes(),
         api.getPeople(),
       ]);
       setAreas(nextAreas || []);
+      setCoordinations(nextCoordinations || []);
       setTypes(nextTypes || []);
       setPeople(nextPeople || []);
     } finally {
@@ -44,11 +49,14 @@ export function CatalogProvider({ children }) {
   return (
     <CatalogContext.Provider value={{
       areas,
+      coordinations,
       types,
       people,
       loading,
       refreshCatalogs,
       areaById: (id) => byId(areas, id),
+      coordinationById: (id) => byId(coordinations, id),
+      coordinationsForArea: (areaId) => coordinationsForArea(coordinations, areaId),
       typeById: (id) => byId(types, id),
       personById: (id) => byId(people, id),
     }}>

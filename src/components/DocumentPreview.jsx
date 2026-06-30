@@ -6,8 +6,9 @@ import { useCatalogs } from '../context/CatalogContext';
 import { STATES, fmtDate } from '../utils/display';
 
 function FallbackDocumentPreview({ doc, height = 420 }) {
-  const { areaById, typeById, personById } = useCatalogs();
+  const { areaById, coordinationById, typeById, personById } = useCatalogs();
   const area = areaById(doc.area);
+  const coordination = doc.coordination ? coordinationById(doc.coordination) : null;
   const type = typeById(doc.type);
   const owner = personById(doc.owner);
   return (
@@ -24,7 +25,7 @@ function FallbackDocumentPreview({ doc, height = 420 }) {
         <h2 className="fallback-doc-title">{doc.name}</h2>
         <p className="fallback-doc-desc">{doc.desc}</p>
         <div className="fallback-doc-meta">
-          <div><strong>Área:</strong> {area?.name || 'No disponible'}</div>
+          <div><strong>Área:</strong> {area?.name || 'No disponible'}{coordination ? ` · ${coordination.name}` : ''}</div>
           <div><strong>Responsable:</strong> {owner?.name || 'No disponible'}</div>
           <div><strong>Estado:</strong> {STATES[doc.state]?.label}</div>
           <div><strong>Vigencia:</strong> {fmtDate(doc.vigencia)}</div>

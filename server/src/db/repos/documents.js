@@ -1,6 +1,7 @@
 import { pool, query } from '../pool.js';
 import { mapDocument, mapFile, today } from '../mapper.js';
 import { logActivity } from './catalog.js';
+import { documentCodePrefix, validateAreaCoordination } from '../areaRules.js';
 
 async function getHistory(docId) {
   const { rows } = await query(
@@ -43,6 +44,7 @@ function addDocumentScope(conditions, params, auth, alias = 'documents') {
   const role = Number(auth.role ?? auth.role_id);
   const userId = Number(auth.id);
   const areaId = (auth.area ?? auth.area_id) ? Number(auth.area ?? auth.area_id) : null;
+  const coordinationId = (auth.coordination ?? auth.coordination_id) ? Number(auth.coordination ?? auth.coordination_id) : null;
   const col = (name) => `${alias}.${name}`;
 
   if (auth.perms?.administrar === true || role === 7) return;
@@ -54,6 +56,10 @@ function addDocumentScope(conditions, params, auth, alias = 'documents') {
     }
     params.push(areaId);
     conditions.push(`${col('area_id')} = $${params.length}`);
+    if (coordinationId) {
+      params.push(coordinationId);
+      conditions.push(`${col('coordination_id')} = $${params.length}`);
+    }
     return;
   }
 
@@ -107,12 +113,14 @@ function addDocumentScope(conditions, params, auth, alias = 'documents') {
   conditions.push(`${col('state')} = $${params.length}`);
 }
 
-function canCreateInArea(auth, areaId) {
+function canCreateInArea(auth, areaId, coordinationId = null) {
   if (auth.perms?.administrar === true) return true;
   if (!auth.perms?.crear) return false;
   const authArea = auth.area ?? auth.area_id;
-  if (!authArea) return false;
-  return Number(authArea) === Number(areaId);
+  if (!authArea || Number(authArea) !== Number(areaId)) return false;
+  const authCoordination = auth.coordination ?? auth.coordination_id;
+  if (authCoordination && Number(authCoordination) !== Number(coordinationId || 0)) return false;
+  return true;
 }
 
 async function mapDocumentById(id, userId) {
@@ -128,8 +136,8 @@ async function mapDocumentById(id, userId) {
   return mapDocument(rows[0], history, favRows.length > 0, versions, activity);
 }
 
-export function assertCanCreateInArea(auth, areaId) {
-  if (!canCreateInArea(auth, areaId)) {
+export function assertCanCreateInArea(auth, areaId, coordinationId = null) {
+  if (!canCreateInArea(auth, areaId, coordinationId)) {
     const err = new Error('No tienes permisos para crear documentos en esta area.');
     err.statusCode = 403;
     throw err;
@@ -137,7 +145,7 @@ export function assertCanCreateInArea(auth, areaId) {
 }
 
 export async function listDocuments(auth, filters = {}) {
-  const { area, type, state, search } = filters;
+  const { area, coordination, type, state, search } = filters;
   const pageNum = Math.max(1, parseInt(filters.page, 10) || 1);
   const limitNum = Math.min(100, Math.max(1, parseInt(filters.limit, 10) || 50));
 
@@ -149,6 +157,11 @@ export async function listDocuments(auth, filters = {}) {
     const n = Number(area);
     params.push(n);
     conditions.push(`area_id = $${params.length}`);
+  }
+  if (coordination) {
+    const n = Number(coordination);
+    params.push(n);
+    conditions.push(`coordination_id = $${params.length}`);
   }
   if (type) {
     const n = Number(type);
@@ -215,24 +228,32 @@ export async function getDocument(id, auth) {
   return mapDocument(rows[0], history, favRows.length > 0, versions, activity);
 }
 
-export async function createDocument(payload, areaObj, typeObj) {
-  const { rows: countRows } = await query(
-    'SELECT COUNT(*)::int AS n FROM documents WHERE area_id = $1',
-    [Number(payload.area)],
-  );
+export async function createDocument(payload, areaObj, typeObj, coordinationObj = null) {
+  const coordinationId = coordinationObj?.id || null;
+  const codePrefix = documentCodePrefix(areaObj, coordinationObj);
+  const countParams = [Number(payload.area)];
+  let countSql = 'SELECT COUNT(*)::int AS n FROM documents WHERE area_id = $1';
+  if (coordinationId) {
+    countParams.push(coordinationId);
+    countSql += ' AND coordination_id = $2';
+  } else {
+    countSql += ' AND coordination_id IS NULL';
+  }
+  const { rows: countRows } = await query(countSql, countParams);
   const seq = String(countRows[0].n + 1).padStart(3, '0');
   const now = today();
 
   const { rows } = await query(`
     INSERT INTO documents (
-      area_id, type_id, document_number, name, version, state, owner_id,
+      area_id, coordination_id, type_id, document_number, name, version, state, owner_id,
       vigencia, views, description, tags, related, created, updated
-    ) VALUES ($1,$2,$3,$4,$5,$6,$7,$8,0,$9,$10,$11,$12,$12)
+    ) VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,0,$10,$11,$12,$13,$13)
     RETURNING id
   `, [
     Number(payload.area),
+    coordinationId,
     Number(payload.type),
-    `${areaObj.abbreviation}-${typeObj.abbreviation}-${seq}`,
+    `${codePrefix}-${typeObj.abbreviation}-${seq}`,
     payload.name,
     payload.version || '1.0',
     'revision',
@@ -263,6 +284,7 @@ export async function createDocument(payload, areaObj, typeObj) {
     details: {
       name: payload.name,
       area: Number(payload.area),
+      coordination: coordinationId,
       type: Number(payload.type),
       owner: Number(payload.owner),
       version: payload.version || '1.0',

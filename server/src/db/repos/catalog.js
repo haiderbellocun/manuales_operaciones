@@ -8,6 +8,28 @@ export async function listAreas() {
     abbreviation: r.abbreviation,
     color: r.color,
     lead: r.lead_name,
+    requiresCoordination: r.requires_coordination === true,
+  }));
+}
+
+export async function listCoordinations(areaId = null) {
+  const params = [];
+  let where = '';
+  if (areaId) {
+    params.push(Number(areaId));
+    where = `WHERE area_id = $${params.length}`;
+  }
+  const { rows } = await query(`
+    SELECT * FROM coordinations
+    ${where}
+    ORDER BY sort_order, name
+  `, params);
+  return rows.map(r => ({
+    id: r.id,
+    areaId: r.area_id,
+    name: r.name,
+    abbreviation: r.abbreviation,
+    sortOrder: r.sort_order,
   }));
 }
 
@@ -77,12 +99,36 @@ export async function updateRole(id, payload = {}) {
 }
 
 export async function listPeople() {
+  await query(`
+    INSERT INTO people (name, role_title, area_id, coordination_id)
+    SELECT u.name, r.name, u.area_id, u.coordination_id
+    FROM users u
+    LEFT JOIN roles r ON r.id = u.role_id
+    WHERE u.status = 'Activo'
+      AND NOT EXISTS (
+        SELECT 1
+        FROM people p
+        WHERE LOWER(p.name) = LOWER(u.name)
+      )
+  `);
+  await query(`
+    UPDATE people p
+    SET role_title = r.name,
+        area_id = u.area_id,
+        coordination_id = u.coordination_id
+    FROM users u
+    LEFT JOIN roles r ON r.id = u.role_id
+    WHERE LOWER(p.name) = LOWER(u.name)
+      AND u.status = 'Activo'
+  `);
+
   const { rows } = await query('SELECT * FROM people ORDER BY name');
   return rows.map(r => ({
     id: r.id,
     name: r.name,
     role: r.role_title,
     area: r.area_id,
+    coordination: r.coordination_id,
   }));
 }
 
@@ -90,6 +136,7 @@ function addDocumentScope(conditions, params, auth, alias = 'd') {
   if (!auth) return;
   const role = Number(auth.role ?? auth.role_id);
   const areaId = (auth.area ?? auth.area_id) ? Number(auth.area ?? auth.area_id) : null;
+  const coordinationId = (auth.coordination ?? auth.coordination_id) ? Number(auth.coordination ?? auth.coordination_id) : null;
   const userId = Number(auth.id);
   const col = (name) => `${alias}.${name}`;
 
@@ -101,6 +148,10 @@ function addDocumentScope(conditions, params, auth, alias = 'd') {
     }
     params.push(areaId);
     conditions.push(`${col('area_id')} = $${params.length}`);
+    if (coordinationId) {
+      params.push(coordinationId);
+      conditions.push(`${col('coordination_id')} = $${params.length}`);
+    }
     return;
   }
   if (role === 4) {
@@ -275,7 +326,28 @@ export async function getArea(id) {
   const { rows } = await query('SELECT * FROM areas WHERE id = $1', [n]);
   const r = rows[0];
   if (!r) return null;
-  return { id: r.id, name: r.name, abbreviation: r.abbreviation, color: r.color, lead: r.lead_name };
+  return {
+    id: r.id,
+    name: r.name,
+    abbreviation: r.abbreviation,
+    color: r.color,
+    lead: r.lead_name,
+    requiresCoordination: r.requires_coordination === true,
+  };
+}
+
+export async function getCoordination(id) {
+  const n = Number(id);
+  const { rows } = await query('SELECT * FROM coordinations WHERE id = $1', [n]);
+  const r = rows[0];
+  if (!r) return null;
+  return {
+    id: r.id,
+    areaId: r.area_id,
+    name: r.name,
+    abbreviation: r.abbreviation,
+    sortOrder: r.sort_order,
+  };
 }
 
 export async function getType(id) {
@@ -290,5 +362,11 @@ export async function getPerson(id) {
   const { rows } = await query('SELECT * FROM people WHERE id = $1', [id]);
   const r = rows[0];
   if (!r) return null;
-  return { id: r.id, name: r.name, role: r.role_title, area: r.area_id };
+  return {
+    id: r.id,
+    name: r.name,
+    role: r.role_title,
+    area: r.area_id,
+    coordination: r.coordination_id,
+  };
 }

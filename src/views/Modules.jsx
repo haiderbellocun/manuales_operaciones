@@ -132,7 +132,7 @@ export function AnsDetail({ nav, ansId }) {
             <div className="row gap-16 doc-header-info">
               <span className="kpi-ico doc-header-icon"><Icon name="handshake" size={28} /></span>
               <div>
-                <div className="row gap-8 mb-12"><span className="tag tag-type">ANS</span><AreaTag areaId={item.area} /><StateBadge state={item.state} /></div>
+                <div className="row gap-8 mb-12"><span className="tag tag-type">ANS</span><AreaTag areaId={item.area} coordinationId={item.coordination} /><StateBadge state={item.state} /></div>
                 <h1 className="doc-header-title">{item.name}</h1>
                 <div className="mono text-sm muted" style={{ marginTop: 8 }}>{item.documentNumber} · Versión {item.version} · Vigencia {fmtDate(item.vigencia)}</div>
               </div>
@@ -208,7 +208,7 @@ export function CargoDetail({ nav, cargoId }) {
             <div className="row gap-16 doc-header-info">
               <span className="kpi-ico doc-header-icon"><Icon name="idcard" size={28} /></span>
               <div>
-                <div className="row gap-8 mb-12"><span className="tag tag-type">{typeById(item.type)?.name || 'Tipo no disponible'}</span><AreaTag areaId={item.area} /><StateBadge state={item.state} /></div>
+                <div className="row gap-8 mb-12"><span className="tag tag-type">{typeById(item.type)?.name || 'Tipo no disponible'}</span><AreaTag areaId={item.area} coordinationId={item.coordination} /><StateBadge state={item.state} /></div>
                 <h1 className="doc-header-title">{item.name}</h1>
                 <div className="text-sm muted" style={{ marginTop: 8 }}>{item.documentNumber} · v{item.version}</div>
               </div>
@@ -243,7 +243,7 @@ export function AppsModule({ nav }) {
               </div>
               <div className="app-card-foot">
                 <div className="row gap-12 text-xs muted"><span className="mono">v{item.version}</span><span className="row gap-6"><Icon name="eye" size={13} />{item.views}</span></div>
-                <AreaTag areaId={item.area} />
+                <AreaTag areaId={item.area} coordinationId={item.coordination} />
               </div>
             </div>
           ))}
@@ -268,7 +268,7 @@ export function AppDetail({ nav, appId }) {
           <div className="row gap-16 doc-header-info">
             <span className="kpi-ico app-icon-lg"><Icon name="app" size={28} /></span>
             <div>
-              <div className="row gap-8 mb-12"><AreaTag areaId={item.area} /><StateBadge state={item.state} /><span className="tag mono">v{item.version}</span></div>
+              <div className="row gap-8 mb-12"><AreaTag areaId={item.area} coordinationId={item.coordination} /><StateBadge state={item.state} /><span className="tag mono">v{item.version}</span></div>
               <h1 className="doc-header-title">{item.name}</h1>
               <p className="app-detail-desc">{item.description}</p>
             </div>

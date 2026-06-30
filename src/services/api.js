@@ -111,6 +111,11 @@ export const api = {
     return request('/areas');
   },
 
+  async getCoordinations(areaId) {
+    const qs = areaId ? `?areaId=${encodeURIComponent(areaId)}` : '';
+    return request(`/coordinations${qs}`);
+  },
+
   async getTypes() {
     return request('/types');
   },
