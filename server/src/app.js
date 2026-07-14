@@ -31,7 +31,9 @@ export async function createApp() {
   app.use(cors({
     origin(origin, callback) {
       if (!origin || allowedOrigins.has(origin)) return callback(null, true);
-      return callback(new Error('Origen no permitido por CORS.'));
+      const err = new Error('Origen no permitido por CORS.');
+      err.statusCode = 403;
+      return callback(err);
     },
     credentials: true,
   }));

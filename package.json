@@ -10,7 +10,8 @@
     "dev:all": "concurrently -n web,api -c green,blue \"npm run dev\" \"npm run dev:server\"",
     "build": "vite build",
     "preview": "vite preview",
-    "server:start": "npm run start --prefix server"
+    "server:start": "npm run start --prefix server",
+    "test:e2e": "playwright test"
   },
   "dependencies": {
     "dompurify": "^3.4.11",
@@ -20,6 +21,7 @@
     "react-router-dom": "^7.18.0"
   },
   "devDependencies": {
+    "@playwright/test": "^1.61.1",
     "@vitejs/plugin-react": "^4.3.4",
     "concurrently": "^10.0.3",
     "vite": "^6.0.3"
