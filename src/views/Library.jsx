@@ -8,33 +8,76 @@ import { Icon, StateBadge, AreaTag, DocCard, Avatar, FilterToggleButton, SelectF
 import { DocumentPreview, FileDropzone } from '../components/DocumentPreview';
 
 function FilterRail({ docs, filt, setFilt, className }) {
-  const { areas, types } = useCatalogs();
+  const { areas, coordinations, types } = useCatalogs();
   const countBy = (key, val) => docs.filter(d => Number(d[key]) === Number(val)).length;
+  const countByAreaCoordination = (areaId, coordinationId) => docs.filter(d => (
+    Number(d.area) === Number(areaId) && Number(d.coordination) === Number(coordinationId)
+  )).length;
   const toggle = (key, val) => {
     const arr = filt[key].includes(val) ? filt[key].filter(x => x !== val) : [...filt[key], val];
     setFilt({ ...filt, [key]: arr });
   };
-  const activeCount = filt.areas.length + filt.types.length + filt.states.length + (filt.fav ? 1 : 0);
+  const toggleArea = (area) => {
+    const childIds = coordinations
+      .filter(coordination => Number(coordination.areaId) === Number(area.id))
+      .map(coordination => Number(coordination.id));
+    const nextAreas = filt.areas.includes(area.id)
+      ? filt.areas.filter(id => Number(id) !== Number(area.id))
+      : [...filt.areas, area.id];
+    setFilt({
+      ...filt,
+      areas: nextAreas,
+      coordinations: filt.coordinations.filter(id => !childIds.includes(Number(id))),
+    });
+  };
+  const activeCount = filt.areas.length + filt.coordinations.length + filt.types.length + filt.states.length + (filt.fav ? 1 : 0);
 
   return (
     <aside className={'filter-rail ' + (className || '')}>
       <div className="row between mb-16">
         <h4 style={{ margin: 0, fontSize: 13, fontWeight: 700 }}>Filtros</h4>
         {activeCount > 0 ?
-          <span className="link" style={{ fontSize: 12 }} onClick={() => setFilt({ ...filt, areas: [], types: [], states: [], fav: false })}>Limpiar</span> : null}
+          <span className="link" style={{ fontSize: 12 }} onClick={() => setFilt({ ...filt, areas: [], coordinations: [], types: [], states: [], fav: false })}>Limpiar</span> : null}
       </div>
       <div className="filter-group">
         <h4>Área</h4>
         {areas.map(a => {
           const c = countBy('area', a.id);
-          if (!c && !filt.areas.includes(a.id)) return null;
+          const childCoordinations = a.requiresCoordination
+            ? coordinations.filter(coordination => Number(coordination.areaId) === Number(a.id))
+            : [];
+          if (!c && !filt.areas.includes(a.id) && !childCoordinations.some(coordination => filt.coordinations.includes(coordination.id))) return null;
           return (
-            <label key={a.id} className="filter-opt">
-              <input type="checkbox" checked={filt.areas.includes(a.id)} onChange={() => toggle('areas', a.id)} />
-              <span className="area-dot" style={{ background: a.color }}></span>
-              <span className="grow" style={{ fontSize: 12.5 }}>{a.abbreviation}</span>
-              <span className="cnt">{c}</span>
-            </label>
+            <div key={a.id} className="filter-area-block">
+              <label className="filter-opt">
+                <input type="checkbox" checked={filt.areas.includes(a.id)} onChange={() => toggleArea(a)} />
+                <span className="area-dot" style={{ background: a.color }}></span>
+                <span className="grow" style={{ fontSize: 12.5 }}>{a.abbreviation}</span>
+                <span className="cnt">{c}</span>
+              </label>
+              {childCoordinations.map(coordination => {
+                const cc = countByAreaCoordination(a.id, coordination.id);
+                if (!cc && !filt.coordinations.includes(coordination.id)) return null;
+                return (
+                  <label key={coordination.id} className="filter-opt filter-opt-child">
+                    <input
+                      type="checkbox"
+                      checked={filt.coordinations.includes(coordination.id)}
+                      onChange={() => setFilt({
+                        ...filt,
+                        areas: filt.areas.filter(id => Number(id) !== Number(a.id)),
+                        coordinations: filt.coordinations.includes(coordination.id)
+                          ? filt.coordinations.filter(id => Number(id) !== Number(coordination.id))
+                          : [...filt.coordinations, coordination.id],
+                      })}
+                    />
+                    <span className="area-dot" style={{ background: a.color }}></span>
+                    <span className="grow" style={{ fontSize: 12.5 }}>{coordination.abbreviation}</span>
+                    <span className="cnt">{cc}</span>
+                  </label>
+                );
+              })}
+            </div>
           );
         })}
       </div>
@@ -111,13 +154,14 @@ function HybridRow({ doc, nav, toggleFav }) {
 
 export function Library({ nav, docs, toggleFav, initParams }) {
   const { hasPermission } = useAuth();
-  const { areaById, typeById, personById } = useCatalogs();
+  const { areaById, coordinationById, typeById, personById } = useCatalogs();
   const canCreate = hasPermission('crear');
   const savedPrefs = storage.getLibraryPrefs();
   const toNumberList = (values = []) => values.map(v => Number(v)).filter(Number.isFinite);
   const [filt, setFilt] = useState({
     q: '',
     areas: initParams?.area ? [Number(initParams.area)] : toNumberList(savedPrefs.filt?.areas || []),
+    coordinations: initParams?.coordination ? [Number(initParams.coordination)] : (initParams?.area ? [] : toNumberList(savedPrefs.filt?.coordinations || [])),
     types: initParams?.type ? [Number(initParams.type)] : toNumberList(savedPrefs.filt?.types || []),
     states: savedPrefs.filt?.states || [],
     fav: initParams?.fav ?? savedPrefs.filt?.fav ?? false,
@@ -128,21 +172,28 @@ export function Library({ nav, docs, toggleFav, initParams }) {
   const saveTimer = useRef(null);
 
   useEffect(() => {
-    if (initParams?.area) setFilt(f => ({ ...f, areas: [Number(initParams.area)] }));
+    if (initParams?.area || initParams?.coordination) {
+      setFilt(f => ({
+        ...f,
+        areas: initParams?.coordination ? [] : (initParams?.area ? [Number(initParams.area)] : f.areas),
+        coordinations: initParams?.coordination ? [Number(initParams.coordination)] : [],
+      }));
+    }
     if (initParams?.fav) setFilt(f => ({ ...f, fav: true }));
-  }, [initParams?.area, initParams?.fav]);
+  }, [initParams?.area, initParams?.coordination, initParams?.fav]);
 
   useEffect(() => {
     clearTimeout(saveTimer.current);
     saveTimer.current = setTimeout(() => {
-      storage.saveLibraryPrefs({ view, sort: filt.sort, filt: { areas: filt.areas, types: filt.types, states: filt.states, fav: filt.fav } });
+      storage.saveLibraryPrefs({ view, sort: filt.sort, filt: { areas: filt.areas, coordinations: filt.coordinations, types: filt.types, states: filt.states, fav: filt.fav } });
     }, 400);
     return () => clearTimeout(saveTimer.current);
-  }, [view, filt.sort, filt.areas, filt.types, filt.states, filt.fav]);
+  }, [view, filt.sort, filt.areas, filt.coordinations, filt.types, filt.states, filt.fav]);
 
   const filtered = useMemo(() => {
     let r = docs.filter(d => {
       if (filt.areas.length && !filt.areas.includes(d.area)) return false;
+      if (filt.coordinations.length && !filt.coordinations.includes(d.coordination)) return false;
       if (filt.types.length && !filt.types.includes(d.type)) return false;
       if (filt.states.length && !filt.states.includes(d.state)) return false;
       if (filt.fav && !d.fav) return false;
@@ -163,14 +214,16 @@ export function Library({ nav, docs, toggleFav, initParams }) {
   }, [docs, filt]);
 
   const areaName = initParams?.area ? areaById(initParams.area)?.name : null;
-  const activeFilterCount = filt.areas.length + filt.types.length + filt.states.length + (filt.fav ? 1 : 0);
+  const coordinationName = initParams?.coordination ? coordinationById(initParams.coordination)?.name : null;
+  const libraryName = coordinationName || areaName;
+  const activeFilterCount = filt.areas.length + filt.coordinations.length + filt.types.length + filt.states.length + (filt.fav ? 1 : 0);
 
   return (
     <div className="page fade-in">
       <div className="page-head">
         <div className="breadcrumb">
           <a onClick={() => nav('dashboard')}>Inicio</a><span className="sep">/</span>
-          <span>Biblioteca documental{areaName ? ' / ' + areaName : ''}</span>
+          <span>Biblioteca documental{libraryName ? ' / ' + libraryName : ''}</span>
         </div>
         <div className="row between wrap gap-12">
           <div>
@@ -216,6 +269,7 @@ export function Library({ nav, docs, toggleFav, initParams }) {
           {activeFilterCount > 0 && (
             <div className="row gap-8 wrap mb-16">
               {filt.areas.map(a => <span key={a} className="chip active" onClick={() => setFilt({ ...filt, areas: filt.areas.filter(x => x !== a) })}>{areaById(a)?.abbreviation || a} <Icon name="x" size={12} /></span>)}
+              {filt.coordinations.map(c => <span key={c} className="chip active" onClick={() => setFilt({ ...filt, coordinations: filt.coordinations.filter(x => x !== c) })}>{coordinationById(c)?.abbreviation || c} <Icon name="x" size={12} /></span>)}
               {filt.types.map(t => <span key={t} className="chip active" onClick={() => setFilt({ ...filt, types: filt.types.filter(x => x !== t) })}>{typeById(t)?.name || t} <Icon name="x" size={12} /></span>)}
               {filt.states.map(s => <span key={s} className="chip active" onClick={() => setFilt({ ...filt, states: filt.states.filter(x => x !== s) })}>{STATES[s].label} <Icon name="x" size={12} /></span>)}
               {filt.fav && <span className="chip active" onClick={() => setFilt({ ...filt, fav: false })}>Favoritos <Icon name="x" size={12} /></span>}
@@ -438,6 +492,7 @@ export function DocDetail({ nav, docId, docs, toggleFav, requestUpdate, showToas
         <a onClick={() => nav('dashboard')}>Inicio</a><span className="sep">/</span>
         <a onClick={() => nav('library')}>Biblioteca</a><span className="sep">/</span>
         <a onClick={() => nav('library', { area: doc.area })}>{area?.name || 'Área'}</a><span className="sep">/</span>
+        {coordination && <><a onClick={() => nav('library', { area: doc.area, coordination: doc.coordination })}>{coordination.name}</a><span className="sep">/</span></>}
         <span style={{ color: 'var(--ink-700)' }}>{doc.documentNumber}</span>
       </div>
 

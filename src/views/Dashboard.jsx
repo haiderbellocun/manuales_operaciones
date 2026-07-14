@@ -4,11 +4,33 @@ import { Icon, StateBadge, AreaTag, KpiCard } from '../components';
 import { useCatalogs } from '../context/CatalogContext';
 import { STATES, fmtDate } from '../utils/display';
 
+const AREA_ICON_COLORS = ['#b91c1c', '#f59e0b', '#8b5e3c', '#2563eb', '#7c2d12', '#a78bfa', '#9333ea', '#ea580c'];
+const COORDINATION_ICON_COLORS = ['#2563eb', '#0891b2', '#7c3aed', '#0f766e', '#4f46e5', '#be185d', '#ea580c'];
+
+function softColor(hex, alpha = 0.12) {
+  const clean = String(hex || '#0f5132').replace('#', '');
+  const n = parseInt(clean.length === 3 ? clean.split('').map(ch => ch + ch).join('') : clean, 16);
+  if (Number.isNaN(n)) return `rgba(15,81,50,${alpha})`;
+  const r = (n >> 16) & 255;
+  const g = (n >> 8) & 255;
+  const b = n & 255;
+  return `rgba(${r},${g},${b},${alpha})`;
+}
+
+function iconTone(color) {
+  return {
+    color,
+    background: softColor(color, 0.12),
+    borderColor: softColor(color, 0.4),
+  };
+}
+
 export function Dashboard({ nav, docs, userName = 'Usuario' }) {
   const [activity, setActivity] = useState([]);
   const [recentPage, setRecentPage] = useState(1);
   const [activityPage, setActivityPage] = useState(1);
-  const { areas, typeById } = useCatalogs();
+  const [openAreaIds, setOpenAreaIds] = useState({});
+  const { areas, coordinations, typeById } = useCatalogs();
   const pageSize = 6;
 
   useEffect(() => {
@@ -29,7 +51,22 @@ export function Dashboard({ nav, docs, userName = 'Usuario' }) {
   const recientes = useMemo(() => allRecientes.slice((recentPage - 1) * pageSize, recentPage * pageSize), [allRecientes, recentPage]);
   const masConsultados = useMemo(() => [...docs].sort((a, b) => b.views - a.views).slice(0, 5), [docs]);
   const pendientes = useMemo(() => docs.filter(d => d.state === 'vencido' || d.state === 'revision').sort((a, b) => a.vigencia.localeCompare(b.vigencia)).slice(0, 5), [docs]);
-  const areaCounts = areas.map(a => ({ ...a, count: docs.filter(d => Number(d.area) === Number(a.id)).length, vencidos: docs.filter(d => Number(d.area) === Number(a.id) && d.state === 'vencido').length }));
+  const areaCounts = areas.map((a, areaIndex) => ({
+    ...a,
+    iconColor: AREA_ICON_COLORS[areaIndex % AREA_ICON_COLORS.length] || a.color,
+    count: docs.filter(d => Number(d.area) === Number(a.id)).length,
+    vencidos: docs.filter(d => Number(d.area) === Number(a.id) && d.state === 'vencido').length,
+    coordinations: a.requiresCoordination
+      ? coordinations
+        .filter(coordination => Number(coordination.areaId) === Number(a.id))
+        .map((coordination, coordinationIndex) => ({
+          ...coordination,
+          iconColor: COORDINATION_ICON_COLORS[coordinationIndex % COORDINATION_ICON_COLORS.length],
+          count: docs.filter(d => Number(d.area) === Number(a.id) && Number(d.coordination) === Number(coordination.id)).length,
+          vencidos: docs.filter(d => Number(d.area) === Number(a.id) && Number(d.coordination) === Number(coordination.id) && d.state === 'vencido').length,
+        }))
+      : [],
+  }));
   const activityPages = Math.max(1, Math.ceil(activity.length / pageSize));
   const visibleActivity = useMemo(() => activity.slice((activityPage - 1) * pageSize, activityPage * pageSize), [activity, activityPage]);
 
@@ -108,19 +145,67 @@ export function Dashboard({ nav, docs, userName = 'Usuario' }) {
       </h3>
       <div className="area-grid">
         {areaCounts.map(a => (
-          <div key={a.id} className="card area-card" onClick={() => nav('library', { area: a.id })} role="button" tabIndex={0}>
-            <div className="row between">
-              <span className="kpi-ico area-icon" style={{ background: a.color, color: '#fff' }}><Icon name="building" size={19} /></span>
+          <div key={a.id} className={'card area-card' + (a.coordinations.length ? ' area-card-with-action' : '')} onClick={() => nav('library', { area: a.id })} role="button" tabIndex={0}>
+            <div className="area-card-top">
+              <span className="kpi-ico area-icon" style={iconTone(a.iconColor)}><Icon name="building" size={19} /></span>
               {a.vencidos > 0 && <span className="badge badge-vencido" style={{ fontSize: 11 }}>{a.vencidos} vencido{a.vencidos > 1 ? 's' : ''}</span>}
             </div>
             <div className="area-name">{a.name}</div>
-            <div className="row between mt-8">
-              <span className="mono text-xs muted">{a.abbreviation}</span>
-              <span className="area-count">{a.count} documentos</span>
+            <div className="area-card-foot" onClick={event => event.stopPropagation()}>
+              <div className="row between">
+                <span className="mono text-xs muted">{a.abbreviation}</span>
+                <span className="area-count">{a.count} documentos</span>
+              </div>
+              {a.coordinations.length > 0 && (
+                <button
+                  type="button"
+                  className="sub-library-toggle"
+                  onClick={() => setOpenAreaIds(prev => ({ ...prev, [a.id]: !prev[a.id] }))}
+                  aria-expanded={Boolean(openAreaIds[a.id])}
+                >
+                  <span>{openAreaIds[a.id] ? 'Ocultar sub-bibliotecas' : 'Ver sub-bibliotecas'}</span>
+                  <Icon name="chevDown" size={14} className={openAreaIds[a.id] ? 'open' : ''} />
+                </button>
+              )}
             </div>
           </div>
         ))}
       </div>
+
+      {areaCounts.filter(a => a.coordinations.length > 0 && openAreaIds[a.id]).map(a => (
+        <div key={`sub-${a.id}`} className="sub-library-panel">
+          <div className="row between wrap gap-12 sub-library-panel-head">
+            <div>
+              <div className="section-title" style={{ margin: 0 }}>Sub-bibliotecas de {a.name}</div>
+              <div className="text-sm muted">Documentos separados por coordinación hija.</div>
+            </div>
+            <button className="btn btn-ghost btn-sm" type="button" onClick={() => setOpenAreaIds(prev => ({ ...prev, [a.id]: false }))}>
+              Ocultar <Icon name="chevDown" size={14} className="open" />
+            </button>
+          </div>
+          <div className="sub-library-grid">
+            {a.coordinations.map(coordination => (
+              <button
+                key={coordination.id}
+                type="button"
+                className="card area-card sub-library-card"
+                onClick={() => nav('library', { area: a.id, coordination: coordination.id })}
+              >
+                <div className="area-card-top">
+                  <span className="kpi-ico area-icon" style={iconTone(coordination.iconColor)}><Icon name="building" size={19} /></span>
+                </div>
+                <span className="area-name sub-library-name">{coordination.name}</span>
+                <div className="area-card-foot">
+                  <div className="row between">
+                    <span className="mono text-xs muted">{a.abbreviation} / {coordination.abbreviation}</span>
+                    <span className="area-count">{coordination.count} documentos</span>
+                  </div>
+                </div>
+              </button>
+            ))}
+          </div>
+        </div>
+      ))}
 
       <div className="dashboard-columns">
         <div className="card" style={{ padding: '20px 22px' }}>

@@ -326,6 +326,12 @@ test.describe.serial('Acervo Operaciones - suite integral', () => {
     createdDocIds.push(Number(document.id));
     const { rows } = await query('SELECT coordination_id FROM documents WHERE id = $1', [document.id]);
     expect(Number(rows[0].coordination_id)).toBe(Number(coordinationId));
+
+    const filtered = await api.get(`/api/documents?area=${coordinationAreaId}&coordination=${coordinationId}`);
+    await expectStatus(filtered, 200);
+    const payload = await filtered.json();
+    expect(payload.data.some(item => Number(item.id) === Number(document.id))).toBeTruthy();
+    expect(payload.data.every(item => Number(item.coordination) === Number(coordinationId))).toBeTruthy();
   });
 
   test('crea documento y archivo de forma atómica en PostgreSQL y Cloud Storage', async () => {

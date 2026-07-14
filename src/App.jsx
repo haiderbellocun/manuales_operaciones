@@ -23,6 +23,27 @@ const ReportsView = lazy(() => import('./views/Gestion').then(m => ({ default: m
 const HelpView = lazy(() => import('./views/Gestion').then(m => ({ default: m.HelpView })));
 const LoginView = lazy(() => import('./views/Login').then(m => ({ default: m.LoginView })));
 
+const LIBRARY_ICON_COLORS = ['#b91c1c', '#f59e0b', '#8b5e3c', '#2563eb', '#7c2d12', '#a78bfa', '#9333ea', '#ea580c'];
+const COORDINATION_ICON_COLORS = ['#2563eb', '#0891b2', '#7c3aed', '#0f766e', '#4f46e5', '#be185d', '#ea580c'];
+
+function softColor(hex, alpha = 0.12) {
+  const clean = String(hex || '#0f5132').replace('#', '');
+  const n = parseInt(clean.length === 3 ? clean.split('').map(ch => ch + ch).join('') : clean, 16);
+  if (Number.isNaN(n)) return `rgba(15,81,50,${alpha})`;
+  const r = (n >> 16) & 255;
+  const g = (n >> 8) & 255;
+  const b = n & 255;
+  return `rgba(${r},${g},${b},${alpha})`;
+}
+
+function iconTone(color) {
+  return {
+    color,
+    background: softColor(color, 0.12),
+    borderColor: softColor(color, 0.38),
+  };
+}
+
 function ProfileAvatar({ user, initials }) {
   const [imageFailed, setImageFailed] = useState(false);
 
@@ -43,17 +64,50 @@ function ProfileAvatar({ user, initials }) {
   return <span className="avatar">{initials}</span>;
 }
 
-function buildNav(areas = []) {
+function buildLibraryLinks(areas = [], coordinations = []) {
+  const links = [
+    { label: 'Todos los documentos', desc: 'Repositorio completo', icon: 'library', view: 'library' },
+    { label: 'Favoritos', desc: 'Tus documentos frecuentes', icon: 'star', view: 'library', params: { fav: true } },
+    { section: 'Areas' },
+  ];
+
+  areas.forEach((area, areaIndex) => {
+    const areaColor = LIBRARY_ICON_COLORS[areaIndex % LIBRARY_ICON_COLORS.length] || area.color;
+    links.push({
+      label: area.name,
+      desc: area.abbreviation,
+      icon: 'building',
+      view: 'library',
+      params: { area: area.id },
+      color: areaColor,
+    });
+
+    if (area.requiresCoordination) {
+      coordinations
+        .filter(coordination => Number(coordination.areaId) === Number(area.id))
+        .forEach((coordination, coordinationIndex) => {
+          const coordinationColor = COORDINATION_ICON_COLORS[coordinationIndex % COORDINATION_ICON_COLORS.length];
+          links.push({
+            label: coordination.name,
+            desc: `${area.abbreviation} / ${coordination.abbreviation}`,
+            icon: 'building',
+            view: 'library',
+            params: { area: area.id, coordination: coordination.id },
+            color: coordinationColor,
+            child: true,
+            parentId: area.id,
+          });
+        });
+    }
+  });
+
+  return links;
+}
+
+function buildNav(areas = [], coordinations = []) {
   return [
   { id: 'dashboard', label: 'Inicio', view: 'dashboard' },
-  {
-    id: 'biblioteca', label: 'Biblioteca', dd: [
-      { label: 'Todos los documentos', desc: 'Repositorio completo', icon: 'library', view: 'library' },
-      { label: 'Favoritos', desc: 'Tus documentos frecuentes', icon: 'star', view: 'library', params: { fav: true } },
-      { section: 'Áreas' },
-      ...areas.map(a => ({ label: a.name, desc: a.abbreviation, icon: 'building', view: 'library', params: { area: a.id }, color: a.color })),
-    ],
-  },
+  { id: 'biblioteca', label: 'Biblioteca', dd: buildLibraryLinks(areas, coordinations) },
   {
     id: 'modulos', label: 'Módulos', dd: [
       { label: 'Acuerdos de Nivel de Servicio', desc: 'Consulta y administra los ANS', icon: 'handshake', view: 'ans' },
@@ -122,7 +176,10 @@ function filterNav(nav, access) {
         if (link.permission && !access.hasPermission(link.permission)) return false;
         if (link.role && !access.hasRole(link.role)) return false;
         if (link.params?.area && [2, 3, 4].includes(Number(access.user?.role))) {
-          return Number(access.user?.area) === Number(link.params.area);
+          if (Number(access.user?.area) !== Number(link.params.area)) return false;
+          if (link.params?.coordination && access.user?.coordination) {
+            return Number(access.user.coordination) === Number(link.params.coordination);
+          }
         }
         return canAccessView(link.view, access);
       });
@@ -137,6 +194,7 @@ function urlForView(view, params = {}) {
     case 'dashboard': return '/';
     case 'library':
       if (params.area) qs.set('area', params.area);
+      if (params.coordination) qs.set('coordination', params.coordination);
       if (params.type) qs.set('type', params.type);
       if (params.fav) qs.set('fav', 'true');
       return `/biblioteca${qs.toString() ? '?' + qs.toString() : ''}`;
@@ -173,6 +231,7 @@ function routeFromLocation(location) {
       view: 'library',
       params: {
         area: search.get('area') ? Number(search.get('area')) : undefined,
+        coordination: search.get('coordination') ? Number(search.get('coordination')) : undefined,
         type: search.get('type') ? Number(search.get('type')) : undefined,
         fav: search.get('fav') === 'true',
       },
@@ -199,12 +258,18 @@ function routeFromLocation(location) {
 function NavDropdown({ item, onNav, active, onCloseMobile }) {
   const ref = useRef(null);
   const [open, setOpen] = useState(false);
+  const [expandedGroups, setExpandedGroups] = useState({});
   useClickOutside(ref, () => setOpen(false));
 
   const handleNav = (view, params) => {
     onNav(view, params);
     setOpen(false);
     onCloseMobile?.();
+  };
+
+  const toggleGroup = (event, id) => {
+    event.stopPropagation();
+    setExpandedGroups(prev => ({ ...prev, [id]: !prev[id] }));
   };
 
   if (!item.dd) {
@@ -222,16 +287,33 @@ function NavDropdown({ item, onNav, active, onCloseMobile }) {
         <Icon name="chevDown" size={14} className="chev" />
       </button>
       {open && (
-        <div className="dropdown" onClick={() => setOpen(false)}>
+        <div className="dropdown">
           <div className="dd-grid">
-            {item.dd.map((l, i) => l.section ? (
-              <div key={i} className="dd-section-label">{l.section}</div>
-            ) : (
-              <button key={i} type="button" className="dd-link" onClick={() => handleNav(l.view, l.params)}>
-                <span className="dd-ico" style={l.color ? { background: l.color, color: '#fff' } : null}><Icon name={l.icon} size={17} /></span>
-                <span><span className="dd-t">{l.label}</span><span className="dd-d">{l.desc}</span></span>
-              </button>
-            ))}
+            {item.dd.map((l, i) => {
+              if (l.section) return <div key={i} className="dd-section-label">{l.section}</div>;
+              if (l.child && !expandedGroups[l.parentId]) return null;
+              const hasChildren = item.dd.some(child => child.child && Number(child.parentId) === Number(l.params?.area));
+              return (
+                <button key={i} type="button" className={'dd-link' + (l.child ? ' dd-link-child' : '')} onClick={() => handleNav(l.view, l.params)}>
+                  <span className="dd-ico" style={l.color ? iconTone(l.color) : null}><Icon name={l.icon} size={17} /></span>
+                  <span className="dd-copy"><span className="dd-t">{l.label}</span><span className="dd-d">{l.desc}</span></span>
+                  {hasChildren && (
+                    <span
+                      role="button"
+                      tabIndex={0}
+                      className={'dd-expand' + (expandedGroups[l.params.area] ? ' open' : '')}
+                      onClick={(event) => toggleGroup(event, l.params.area)}
+                      onKeyDown={(event) => {
+                        if (event.key === 'Enter' || event.key === ' ') toggleGroup(event, l.params.area);
+                      }}
+                      aria-label={expandedGroups[l.params.area] ? 'Ocultar coordinaciones' : 'Mostrar coordinaciones'}
+                    >
+                      <Icon name="chevDown" size={14} />
+                    </span>
+                  )}
+                </button>
+              );
+            })}
           </div>
         </div>
       )}
@@ -376,7 +458,7 @@ function ViewLoading() {
 export default function App() {
   const { isAuthenticated, loading: authLoading, user, initials, roleName, logout, hasPermission, hasRole } = useAuth();
   const { docs, loading: docsLoading, toggleFav, refresh } = useDocs();
-  const { areas, personById } = useCatalogs();
+  const { areas, coordinations, personById } = useCatalogs();
   const location = useLocation();
   const navigate = useNavigate();
   const route = routeFromLocation(location);
@@ -390,7 +472,7 @@ export default function App() {
   const mainRef = useRef(null);
   const toastTimerRef = useRef(null);
   const access = { hasPermission, hasRole, user };
-  const navItems = filterNav(buildNav(areas), access);
+  const navItems = filterNav(buildNav(areas, coordinations), access);
 
   const nav = (view, params = {}) => {
     navigate(urlForView(view, params));

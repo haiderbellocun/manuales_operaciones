@@ -53,8 +53,8 @@ const upload = multer({
 
 router.get('/', requirePermission('consultar'), async (req, res, next) => {
   try {
-    const { area, type, state, search, page, limit } = req.query;
-    res.json(await listDocuments(req.auth, { area, type, state, search, page, limit }));
+    const { area, coordination, type, state, search, page, limit } = req.query;
+    res.json(await listDocuments(req.auth, { area, coordination, type, state, search, page, limit }));
   } catch (err) {
     next(err);
   }
