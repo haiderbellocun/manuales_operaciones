@@ -149,6 +149,7 @@ a { color: inherit; text-decoration: none; }
 .user-chip { display: flex; align-items: center; gap: 10px; padding: 5px 9px 5px 5px; border-radius: 10px; transition: background .15s; min-width: 0; }
 .user-chip:hover { background: rgba(255,255,255,.1); }
 .avatar { width: 32px; height: 32px; border-radius: 8px; background: #cfe6d8; color: var(--brand-700); display: grid; place-items: center; font-weight: 700; font-size: 13px; flex-shrink: 0; }
+.avatar-image { display: block; object-fit: cover; color: transparent; }
 .user-meta { display: flex; flex-direction: column; gap: 2px; min-width: 0; max-width: 168px; line-height: 1.15; text-align: left; }
 .user-name, .user-role { display: block; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
 .user-name { font-size: 13px; font-weight: 600; color: #fff; }

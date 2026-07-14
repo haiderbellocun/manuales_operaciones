@@ -1,4 +1,5 @@
 import path from 'path';
+import crypto from 'crypto';
 import { Storage } from '@google-cloud/storage';
 import '../config/env.js';
 
@@ -87,6 +88,15 @@ export const fileStorage = {
       },
     }));
     return storedName;
+  },
+
+  async savePending(version, file) {
+    return fileStorage.save(
+      `pending-${crypto.randomUUID()}`,
+      'documento',
+      version,
+      file,
+    );
   },
 
   async remove(storedName) {

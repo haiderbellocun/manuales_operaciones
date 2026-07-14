@@ -61,6 +61,7 @@ export function mapUser(row, roleName, perms = {}) {
     id: row.id,
     name: row.name,
     email: row.email,
+    picture: row.profile_picture_url || null,
     role: row.role_id,
     area: row.area_id,
     coordination: row.coordination_id || undefined,

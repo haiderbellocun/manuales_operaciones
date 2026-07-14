@@ -1,6 +1,7 @@
 import { Router } from 'express';
 import {
-  createGoogleUser, findByEmail, findById, updateLastAccess, sanitizeUser, userForToken,
+  createGoogleUser, findByEmail, findById, updateGoogleProfilePicture,
+  updateLastAccess, sanitizeUser, userForToken,
 } from '../db/repos/users.js';
 import {
   SESSION_COOKIE_NAME, authRequired, sessionCookieOptions, signToken,
@@ -13,7 +14,10 @@ router.post('/google', async (req, res, next) => {
   try {
     const { credential } = req.body || {};
     const identity = await verifyGoogleCredential(credential);
-    const user = (await findByEmail(identity.email)) || await createGoogleUser(identity);
+    const existingUser = await findByEmail(identity.email);
+    const user = existingUser
+      ? await updateGoogleProfilePicture(existingUser.id, identity.picture)
+      : await createGoogleUser(identity);
     if (user.status !== 'Activo') {
       return res.status(403).json({ message: 'Usuario inactivo. Contacta al administrador.' });
     }

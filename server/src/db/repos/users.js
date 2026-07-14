@@ -160,17 +160,23 @@ function defaultNameFromEmail(email) {
     .replace(/\b\w/g, letter => letter.toUpperCase()) || 'Usuario CUN';
 }
 
-export async function createGoogleUser({ email, name }) {
+export async function createGoogleUser({ email, name, picture }) {
   const normalizedEmail = String(email || '').trim().toLowerCase();
+  const profilePictureUrl = String(picture || '').trim() || null;
   assertAllowedGoogleEmail(normalizedEmail);
   await assertRoleExists(DEFAULT_GOOGLE_ROLE_ID);
 
   try {
     const { rows } = await query(`
-      INSERT INTO users (name, email, role_id, area_id, status, last_access)
-      VALUES ($1,$2,$3,NULL,'Activo',NULL)
+      INSERT INTO users (name, email, profile_picture_url, role_id, area_id, status, last_access)
+      VALUES ($1,$2,$3,$4,NULL,'Activo',NULL)
       RETURNING *
-    `, [String(name || '').trim() || defaultNameFromEmail(normalizedEmail), normalizedEmail, DEFAULT_GOOGLE_ROLE_ID]);
+    `, [
+      String(name || '').trim() || defaultNameFromEmail(normalizedEmail),
+      normalizedEmail,
+      profilePictureUrl,
+      DEFAULT_GOOGLE_ROLE_ID,
+    ]);
     return rows[0];
   } catch (err) {
     if (err.code === '23505') {
@@ -178,6 +184,18 @@ export async function createGoogleUser({ email, name }) {
     }
     throw err;
   }
+}
+
+export async function updateGoogleProfilePicture(id, picture) {
+  const profilePictureUrl = String(picture || '').trim() || null;
+  const { rows } = await query(`
+    UPDATE users
+    SET profile_picture_url = $2
+    WHERE id = $1
+      AND profile_picture_url IS DISTINCT FROM $2
+    RETURNING *
+  `, [Number(id), profilePictureUrl]);
+  return rows[0] || findById(id);
 }
 
 export async function updateUser(id, payload) {

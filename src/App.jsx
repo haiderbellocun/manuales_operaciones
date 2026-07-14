@@ -23,6 +23,26 @@ const ReportsView = lazy(() => import('./views/Gestion').then(m => ({ default: m
 const HelpView = lazy(() => import('./views/Gestion').then(m => ({ default: m.HelpView })));
 const LoginView = lazy(() => import('./views/Login').then(m => ({ default: m.LoginView })));
 
+function ProfileAvatar({ user, initials }) {
+  const [imageFailed, setImageFailed] = useState(false);
+
+  useEffect(() => setImageFailed(false), [user?.picture]);
+
+  if (user?.picture && !imageFailed) {
+    return (
+      <img
+        className="avatar avatar-image"
+        src={user.picture}
+        alt={`Foto de perfil de ${user.name || 'usuario'}`}
+        referrerPolicy="no-referrer"
+        onError={() => setImageFailed(true)}
+      />
+    );
+  }
+
+  return <span className="avatar">{initials}</span>;
+}
+
 function buildNav(areas = []) {
   return [
   { id: 'dashboard', label: 'Inicio', view: 'dashboard' },
@@ -317,7 +337,7 @@ function TopBar({
 
         <div ref={userRef} className="user-wrap">
           <button type="button" className="user-chip" onClick={() => setUserOpen(o => !o)}>
-            <span className="avatar">{initials}</span>
+            <ProfileAvatar user={authUser} initials={initials} />
             <span className="user-meta desktop-only">
               <span className="user-name">{authUser?.name?.split(' ').slice(0, 2).join(' ') || 'Usuario'}</span>
               <span className="user-role">{roleName}</span>

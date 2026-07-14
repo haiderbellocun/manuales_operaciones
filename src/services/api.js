@@ -57,9 +57,13 @@ export const api = {
   },
 
   async uploadDocument(payload, file) {
-    const newDoc = await request('/documents', { method: 'POST', body: JSON.stringify(payload) });
-    if (file) await api.uploadDocumentFile(newDoc.id, file);
-    return newDoc;
+    if (!file) throw new Error('El archivo del documento es obligatorio.');
+    const form = new FormData();
+    Object.entries(payload || {}).forEach(([key, value]) => {
+      if (value !== undefined && value !== null) form.append(key, value);
+    });
+    form.append('file', file);
+    return request('/documents', { method: 'POST', body: form });
   },
 
   async updateDocument(id, payload) {

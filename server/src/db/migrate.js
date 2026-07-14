@@ -124,6 +124,7 @@ export async function migrate() {
   await addColumn('workflow_items', 'reviewed_by', 'INTEGER REFERENCES users(id)');
   await addColumn('workflow_items', 'decision', 'VARCHAR(30)');
   await addColumn('workflow_items', 'comments', 'TEXT');
+  await addColumn('users', 'profile_picture_url', 'TEXT');
   await addColumn('activity_log', 'event_type', "VARCHAR(50) NOT NULL DEFAULT 'general'");
   await addColumn('activity_log', 'details', "JSONB NOT NULL DEFAULT '{}'");
   await addColumn('activity_log', 'created_at', 'TIMESTAMPTZ NOT NULL DEFAULT NOW()');

@@ -9,10 +9,10 @@ import { logActivity } from '../db/repos/catalog.js';
 import { notifyUsers } from '../db/repos/notifications.js';
 import { findDocumentOwnerRecipient } from '../db/repos/users.js';
 import {
-  listDocuments, getDocument, createDocument, toggleFavorite,
+  listDocuments, getDocument, createDocumentWithFile, toggleFavorite,
   incrementViews, createUpdateRequest, getFileMeta, upsertFile,
   getVersionFileMeta, updateDocument,
-  addWorkflowItem, resolveRevisorName, assertCanCreateInArea,
+  resolveRevisorName, assertCanCreateInArea,
   assertCanEditInArea, createDocumentVersion,
 } from '../db/repos/documents.js';
 
@@ -166,37 +166,61 @@ router.put('/:id', requirePermission('editar'), async (req, res, next) => {
   }
 });
 
-router.post('/', requirePermission('crear'), async (req, res, next) => {
-  try {
-    const payload = req.body || {};
-    const { type, area, coordination, name, owner } = payload;
-    if (!type || !area || !name || !owner) {
-      return res.status(400).json({ message: 'Tipo, area, nombre y responsable son obligatorios.' });
+router.post('/', requirePermission('crear'), (req, res) => {
+  upload.single('file')(req, res, async (uploadError) => {
+    if (uploadError) {
+      return res.status(400).json({ message: uploadError.message || 'Error al recibir el archivo.' });
     }
-    const { area: areaObj, coordination: coordinationObj } = await validateAreaCoordination(area, coordination || null);
-    assertCanCreateInArea(req.auth, area, coordinationObj?.id || null);
-    const typeObj = await getType(type);
-    if (!typeObj) {
-      return res.status(400).json({ message: 'Tipo documental invalido.' });
+
+    let storedName;
+    try {
+      const payload = req.body || {};
+      const { type, area, coordination, name, owner } = payload;
+      if (!req.file) {
+        return res.status(400).json({ message: 'El archivo del documento es obligatorio.' });
+      }
+      if (!type || !area || !name || !owner) {
+        return res.status(400).json({ message: 'Tipo, area, nombre y responsable son obligatorios.' });
+      }
+
+      const validated = await validateAreaCoordination(area, coordination || null);
+      const areaObj = validated.area;
+      const coordinationObj = validated.coordination;
+      assertCanCreateInArea(req.auth, area, coordinationObj?.id || null);
+
+      const typeObj = await getType(type);
+      if (!typeObj) {
+        return res.status(400).json({ message: 'Tipo documental invalido.' });
+      }
+
+      const revisorName = payload.revisor
+        ? await resolveRevisorName(payload.revisor)
+        : 'Revisor asignado';
+      storedName = await fileStorage.savePending(payload.version || '1.0', req.file);
+      const newDoc = await createDocumentWithFile(
+        { ...payload, userId: req.user.sub },
+        areaObj,
+        typeObj,
+        coordinationObj,
+        req.file,
+        storedName,
+        revisorName,
+      );
+
+      await notifySafely([payload.revisor], {
+        title: 'Nuevo documento para revision',
+        message: `${req.user.email} cargo "${newDoc.name}" y te asigno la revision.`,
+        type: 'workflow',
+        docId: newDoc.id,
+      });
+      return res.status(201).json(newDoc);
+    } catch (err) {
+      if (storedName) await fileStorage.remove(storedName).catch(() => {});
+      return res.status(err.statusCode || 500).json({
+        message: err.message || 'No se pudo crear el documento con su archivo.',
+      });
     }
-    const newDoc = await createDocument(
-      { ...payload, userId: req.user.sub },
-      areaObj,
-      typeObj,
-      coordinationObj,
-    );
-    const revisorName = await resolveRevisorName(payload.revisor);
-    await addWorkflowItem(newDoc.id, revisorName, payload.revisor, payload.aprobador);
-    await notifySafely([payload.revisor], {
-      title: 'Nuevo documento para revision',
-      message: `${req.user.email} cargo "${newDoc.name}" y te asigno la revision.`,
-      type: 'workflow',
-      docId: newDoc.id,
-    });
-    res.status(201).json(newDoc);
-  } catch (err) {
-    next(err);
-  }
+  });
 });
 
 router.post('/:id/favorite', requirePermission('consultar'), async (req, res, next) => {

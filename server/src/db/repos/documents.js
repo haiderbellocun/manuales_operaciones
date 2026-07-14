@@ -293,6 +293,138 @@ export async function createDocument(payload, areaObj, typeObj, coordinationObj 
   return mapDocumentById(id, payload.userId);
 }
 
+export async function createDocumentWithFile(
+  payload,
+  areaObj,
+  typeObj,
+  coordinationObj,
+  file,
+  storedName,
+  revisorName,
+) {
+  const coordinationId = coordinationObj?.id || null;
+  const codePrefix = documentCodePrefix(areaObj, coordinationObj);
+  const now = today();
+  const version = payload.version || '1.0';
+  const client = await pool.connect();
+
+  try {
+    await client.query('BEGIN');
+
+    const countParams = [Number(payload.area)];
+    let countSql = 'SELECT COUNT(*)::int AS n FROM documents WHERE area_id = $1';
+    if (coordinationId) {
+      countParams.push(coordinationId);
+      countSql += ' AND coordination_id = $2';
+    } else {
+      countSql += ' AND coordination_id IS NULL';
+    }
+    const { rows: countRows } = await client.query(countSql, countParams);
+    const seq = String(countRows[0].n + 1).padStart(3, '0');
+    const documentNumber = `${codePrefix}-${typeObj.abbreviation}-${seq}`;
+    const tags = typeof payload.tags === 'string'
+      ? payload.tags.split(',').map(tag => tag.trim()).filter(Boolean)
+      : (payload.tags || []);
+
+    const { rows: documentRows } = await client.query(`
+      INSERT INTO documents (
+        area_id, coordination_id, type_id, document_number, name, version, state, owner_id,
+        vigencia, views, description, tags, related, created, updated
+      ) VALUES ($1,$2,$3,$4,$5,$6,'revision',$7,$8,0,$9,$10,$11,$12,$12)
+      RETURNING *
+    `, [
+      Number(payload.area),
+      coordinationId,
+      Number(payload.type),
+      documentNumber,
+      payload.name,
+      version,
+      Number(payload.owner),
+      payload.vigencia || '-',
+      payload.desc || '',
+      JSON.stringify(tags),
+      JSON.stringify([]),
+      now,
+    ]);
+    const document = documentRows[0];
+
+    const { rows: historyRows } = await client.query(`
+      INSERT INTO document_history (doc_id, version, history_date, by_person_id, note)
+      VALUES ($1, $2, $3, $4, $5)
+      RETURNING *
+    `, [
+      document.id,
+      version,
+      now,
+      Number(payload.owner),
+      payload.versionNote || 'Version inicial',
+    ]);
+
+    await client.query(`
+      INSERT INTO document_files (
+        doc_id, original_name, stored_name, mime_type, file_size, uploaded_by
+      ) VALUES ($1, $2, $3, $4, $5, $6)
+    `, [
+      document.id,
+      file.originalname,
+      storedName,
+      file.mimetype,
+      file.size,
+      Number(payload.userId),
+    ]);
+
+    await client.query(`
+      INSERT INTO workflow_items (
+        doc_id, stage, assignee, assignee_user_id, approver_user_id, since_date, priority
+      ) VALUES ($1, 'revision', $2, $3, $4, $5, 'media')
+    `, [
+      document.id,
+      revisorName,
+      payload.revisor ? Number(payload.revisor) : null,
+      payload.aprobador ? Number(payload.aprobador) : null,
+      now,
+    ]);
+
+    const when = new Date().toLocaleDateString('es-CO', {
+      day: '2-digit', month: '2-digit', year: 'numeric',
+    });
+    await client.query(`
+      INSERT INTO activity_log (
+        who_user_id, action, doc_id, when_text, event_type, details
+      ) VALUES
+        ($1, $2, $3, $4, 'document_created', $5),
+        ($1, 'Adjunto archivo al documento', $3, $4, 'file_uploaded', $6)
+    `, [
+      Number(payload.userId),
+      `Creo el documento "${payload.name}"`,
+      document.id,
+      when,
+      JSON.stringify({
+        name: payload.name,
+        area: Number(payload.area),
+        coordination: coordinationId,
+        type: Number(payload.type),
+        owner: Number(payload.owner),
+        version,
+      }),
+      JSON.stringify({
+        originalName: file.originalname,
+        storedName,
+        mimeType: file.mimetype,
+        size: file.size,
+      }),
+    ]);
+
+    await client.query('COMMIT');
+    return mapDocument(document, historyRows, false, [], []);
+  } catch (err) {
+    await client.query('ROLLBACK');
+    throw err;
+  } finally {
+    client.release();
+  }
+}
+
 function normalizeTags(value) {
   if (Array.isArray(value)) {
     return value.map(t => String(t).trim()).filter(Boolean);
