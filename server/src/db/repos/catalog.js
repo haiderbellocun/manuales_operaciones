@@ -1,5 +1,7 @@
 import { query } from '../pool.js';
 
+const OPERATION_ACADEMIC_FULL_ROLE_ID = 8;
+
 export async function listAreas() {
   const { rows } = await query('SELECT * FROM areas ORDER BY name');
   return rows.map(r => ({
@@ -141,7 +143,7 @@ function addDocumentScope(conditions, params, auth, alias = 'd') {
   const col = (name) => `${alias}.${name}`;
 
   if (auth.perms?.administrar === true || role === 7) return;
-  if (role === 2 || role === 3) {
+  if (role === 2 || role === 3 || role === OPERATION_ACADEMIC_FULL_ROLE_ID) {
     if (!areaId) {
       conditions.push('FALSE');
       return;

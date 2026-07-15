@@ -3,6 +3,8 @@ import { mapDocument, mapFile, today } from '../mapper.js';
 import { logActivity } from './catalog.js';
 import { documentCodePrefix, validateAreaCoordination } from '../areaRules.js';
 
+const OPERATION_ACADEMIC_FULL_ROLE_ID = 8;
+
 async function getHistory(docId) {
   const { rows } = await query(
     'SELECT * FROM document_history WHERE doc_id = $1 ORDER BY id',
@@ -49,7 +51,7 @@ function addDocumentScope(conditions, params, auth, alias = 'documents') {
 
   if (auth.perms?.administrar === true || role === 7) return;
 
-  if (role === 2 || role === 3) {
+  if (role === 2 || role === 3 || role === OPERATION_ACADEMIC_FULL_ROLE_ID) {
     if (!areaId) {
       conditions.push('FALSE');
       return;

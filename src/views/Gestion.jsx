@@ -10,6 +10,9 @@ import { FileDropzone } from '../components/DocumentPreview';
 import { AreaCoordinationFields } from '../components/AreaCoordinationFields';
 import { areaAssignmentValid, documentCodePrefix } from '../utils/areas';
 
+const OPERATION_ACADEMIC_AREA_ID = 1;
+const OPERATION_ACADEMIC_FULL_ROLE_ID = 8;
+
 export function SearchView({ nav, docs, initial }) {
   const { areas, types, typeById } = useCatalogs();
   const [q, setQ] = useState(initial || '');
@@ -295,8 +298,8 @@ export function UploadFlow({ nav, showToast, onUploaded }) {
             )}
             <p className="page-sub mb-24" style={{ marginTop: 0 }}>Define quién revisa y aprueba el documento antes de su publicación.</p>
             <div className="form-grid">
-              <div className="form-row"><label>Revisor</label><SelectField value={f.revisor} disabled={catalogLoading || catalogs.users.length === 0} onChange={value => set('revisor', value)} placeholder={catalogLoading ? 'Cargando...' : 'Seleccionar...'} options={catalogs.users.filter(u => [4, 2, 3].includes(Number(u.role))).map(u => ({ value: u.id, label: u.name }))} /></div>
-              <div className="form-row"><label>Aprobador</label><SelectField value={f.aprobador} disabled={catalogLoading || catalogs.users.length === 0} onChange={value => set('aprobador', value)} placeholder={catalogLoading ? 'Cargando...' : 'Seleccionar...'} options={catalogs.users.filter(u => [5, 2, 1].includes(Number(u.role))).map(u => ({ value: u.id, label: u.name }))} /></div>
+              <div className="form-row"><label>Revisor</label><SelectField value={f.revisor} disabled={catalogLoading || catalogs.users.length === 0} onChange={value => set('revisor', value)} placeholder={catalogLoading ? 'Cargando...' : 'Seleccionar...'} options={catalogs.users.filter(u => [4, 2, 3, OPERATION_ACADEMIC_FULL_ROLE_ID].includes(Number(u.role))).map(u => ({ value: u.id, label: u.name }))} /></div>
+              <div className="form-row"><label>Aprobador</label><SelectField value={f.aprobador} disabled={catalogLoading || catalogs.users.length === 0} onChange={value => set('aprobador', value)} placeholder={catalogLoading ? 'Cargando...' : 'Seleccionar...'} options={catalogs.users.filter(u => [5, 2, 1, OPERATION_ACADEMIC_FULL_ROLE_ID].includes(Number(u.role))).map(u => ({ value: u.id, label: u.name }))} /></div>
             </div>
             <div className="card summary-card">
               <h4 style={{ margin: '0 0 14px', fontSize: 13 }}>Resumen del documento</h4>
@@ -674,6 +677,8 @@ export function UsersView({ nav }) {
                   areaLabel="Área"
                   allowEmptyArea
                   areaPlaceholder="Sin área"
+                  allowEmptyCoordination={Number(modal.form.role) === OPERATION_ACADEMIC_FULL_ROLE_ID && Number(modal.form.area) === OPERATION_ACADEMIC_AREA_ID}
+                  emptyCoordinationLabel="Todas las subcoordinaciones"
                 />
                 <div className="form-row"><label>Estado</label><SelectField value={modal.form.status} onChange={value => setForm('status', value)} options={['Activo', 'Inactivo']} /></div>
               </div>

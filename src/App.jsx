@@ -175,7 +175,7 @@ function filterNav(nav, access) {
         if (link.section) return true;
         if (link.permission && !access.hasPermission(link.permission)) return false;
         if (link.role && !access.hasRole(link.role)) return false;
-        if (link.params?.area && [2, 3, 4].includes(Number(access.user?.role))) {
+        if (link.params?.area && [2, 3, 4, 8].includes(Number(access.user?.role))) {
           if (Number(access.user?.area) !== Number(link.params.area)) return false;
           if (link.params?.coordination && access.user?.coordination) {
             return Number(access.user.coordination) === Number(link.params.coordination);

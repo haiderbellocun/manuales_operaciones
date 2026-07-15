@@ -231,7 +231,8 @@ INSERT INTO roles (id, name, description, perms) VALUES
   (4, 'Revisor', 'Revisa documentos y devuelve observaciones.', '{"crear":false,"editar":false,"aprobar":false,"publicar":false,"archivar":false,"consultar":true,"descargar":true,"administrar":false}'::jsonb),
   (5, 'Aprobador', 'Aprueba documentos revisados para su publicacion.', '{"crear":false,"editar":false,"aprobar":true,"publicar":true,"archivar":false,"consultar":true,"descargar":true,"administrar":false}'::jsonb),
   (6, 'Usuario consultor', 'Consulta y descarga documentos publicados.', '{"crear":false,"editar":false,"aprobar":false,"publicar":false,"archivar":false,"consultar":true,"descargar":true,"administrar":false}'::jsonb),
-  (7, 'Auditor / lector institucional', 'Lectura y trazabilidad sin descarga.', '{"crear":false,"editar":false,"aprobar":false,"publicar":false,"archivar":false,"consultar":true,"descargar":false,"administrar":false}'::jsonb)
+  (7, 'Auditor / lector institucional', 'Lectura y trazabilidad sin descarga.', '{"crear":false,"editar":false,"aprobar":false,"publicar":false,"archivar":false,"consultar":true,"descargar":false,"administrar":false}'::jsonb),
+  (8, 'Coordinador Operacion Academica', 'Gestiona, revisa, aprueba y publica documentos de Operacion Academica y sus subcoordinaciones.', '{"crear":true,"editar":true,"aprobar":true,"publicar":true,"archivar":true,"consultar":true,"descargar":true,"administrar":false}'::jsonb)
 ON CONFLICT (id) DO UPDATE SET
   name = EXCLUDED.name,
   description = EXCLUDED.description,

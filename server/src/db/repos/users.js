@@ -4,6 +4,8 @@ import { assertAllowedGoogleEmail } from '../../services/googleIdentity.js';
 import { validateAreaCoordination, getAreaById, areaRequiresCoordination } from '../areaRules.js';
 
 const DEFAULT_GOOGLE_ROLE_ID = Number(process.env.GOOGLE_DEFAULT_ROLE_ID || 7);
+const OPERATION_ACADEMIC_AREA_ID = 1;
+const OPERATION_ACADEMIC_FULL_ROLE_ID = 8;
 
 export async function findByEmail(email) {
   const { rows } = await query(
@@ -117,13 +119,20 @@ async function assertRoleExists(roleId) {
   }
 }
 
-async function assertAreaAssignment(areaId, coordinationId) {
+async function assertAreaAssignment(areaId, coordinationId, roleId = null) {
   if (areaId === null || areaId === undefined) {
     if (coordinationId) {
       const err = new Error('La coordinacion requiere un area valida.');
       err.statusCode = 400;
       throw err;
     }
+    return;
+  }
+  if (
+    Number(roleId) === OPERATION_ACADEMIC_FULL_ROLE_ID
+    && Number(areaId) === OPERATION_ACADEMIC_AREA_ID
+    && !coordinationId
+  ) {
     return;
   }
   await validateAreaCoordination(areaId, coordinationId);
@@ -133,7 +142,7 @@ export async function createUser(payload) {
   const data = normalizeUserPayload(payload);
   validateUserPayload(data, { creating: true });
   await assertRoleExists(data.roleId);
-  await assertAreaAssignment(data.areaId, data.coordinationId ?? null);
+  await assertAreaAssignment(data.areaId, data.coordinationId ?? null, data.roleId);
 
   try {
     const { rows } = await query(`
@@ -211,6 +220,7 @@ export async function updateUser(id, payload) {
   validateUserPayload(data);
   if ('roleId' in data) await assertRoleExists(data.roleId);
 
+  const nextRoleId = data.roleId ?? current.role_id;
   const nextAreaId = ('areaId' in data) ? data.areaId : current.area_id;
   let nextCoordinationId = ('coordinationId' in data) ? data.coordinationId : current.coordination_id;
   if (nextAreaId) {
@@ -219,14 +229,14 @@ export async function updateUser(id, payload) {
   } else {
     nextCoordinationId = null;
   }
-  if ('areaId' in data || 'coordinationId' in data) {
-    await assertAreaAssignment(nextAreaId, nextCoordinationId);
+  if ('areaId' in data || 'coordinationId' in data || 'roleId' in data) {
+    await assertAreaAssignment(nextAreaId, nextCoordinationId, nextRoleId);
   }
 
   const next = {
     name: data.name ?? current.name,
     email: data.email ?? current.email,
-    roleId: data.roleId ?? current.role_id,
+    roleId: nextRoleId,
     areaId: nextAreaId,
     coordinationId: nextCoordinationId,
     status: data.status ?? current.status,
@@ -289,11 +299,14 @@ export async function findAreaLeader(areaId) {
     SELECT *
     FROM users
     WHERE area_id = $1
-      AND role_id = 2
+      AND (
+        role_id = 2
+        OR (role_id = $2 AND $1 = $3)
+      )
       AND status = 'Activo'
-    ORDER BY id
+    ORDER BY CASE WHEN role_id = 2 THEN 0 ELSE 1 END, id
     LIMIT 1
-  `, [Number(areaId)]);
+  `, [Number(areaId), OPERATION_ACADEMIC_FULL_ROLE_ID, OPERATION_ACADEMIC_AREA_ID]);
   return rows[0] || null;
 }
 

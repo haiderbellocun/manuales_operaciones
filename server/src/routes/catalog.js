@@ -42,6 +42,9 @@ router.get('/coordinations', authRequired, requirePermission('consultar'), async
     if (req.auth.coordination) {
       return res.json(items.filter(item => Number(item.id) === Number(req.auth.coordination)));
     }
+    if (req.auth.area) {
+      return res.json(items.filter(item => Number(item.areaId) === Number(req.auth.area)));
+    }
     res.json(items);
   } catch (err) {
     next(err);

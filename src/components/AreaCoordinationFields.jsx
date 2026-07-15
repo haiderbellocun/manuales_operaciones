@@ -15,6 +15,8 @@ export function AreaCoordinationFields({
   areaPlaceholder = 'Seleccionar...',
   coordinationPlaceholder = 'Seleccionar coordinación...',
   allowEmptyArea = false,
+  allowEmptyCoordination = false,
+  emptyCoordinationLabel = 'Todas las coordinaciones',
 }) {
   const selectedArea = areas.find(a => String(a.id) === String(areaValue));
   const needsCoordination = areaRequiresCoordination(selectedArea);
@@ -43,7 +45,10 @@ export function AreaCoordinationFields({
             disabled={coordinationDisabled || coordinationOptions.length === 0}
             onChange={onCoordinationChange}
             placeholder={coordinationPlaceholder}
-            options={coordinationOptions.map(c => ({ value: c.id, label: c.name }))}
+            options={[
+              ...(allowEmptyCoordination ? [{ value: '', label: emptyCoordinationLabel }] : []),
+              ...coordinationOptions.map(c => ({ value: c.id, label: c.name })),
+            ]}
           />
         </div>
       )}
