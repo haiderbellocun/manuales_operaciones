@@ -7,6 +7,7 @@ import {
   SESSION_COOKIE_NAME, authRequired, sessionCookieOptions, signToken,
 } from '../middleware/auth.js';
 import { isAllowedGoogleEmail, verifyGoogleCredential } from '../services/googleIdentity.js';
+import { recordAppLogin } from '../services/centralLoginLog.js';
 
 const router = Router();
 
@@ -23,6 +24,7 @@ router.post('/google', async (req, res, next) => {
     }
 
     await updateLastAccess(user.id);
+    recordAppLogin(user.email, 'acervo');
     const token = signToken(userForToken(user));
     res.cookie(SESSION_COOKIE_NAME, token, sessionCookieOptions());
     return res.json({ user: await sanitizeUser(user), provider: 'google' });
