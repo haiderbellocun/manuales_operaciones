@@ -2,6 +2,7 @@ import { useEffect, useMemo, useRef, useState } from 'react';
 import { createPortal } from 'react-dom';
 import { useCatalogs } from './context/CatalogContext';
 import { STATES } from './utils/display';
+import { OPERATION_ACADEMIC_AREA_ID } from './utils/areas';
 
 /* ---------- Íconos (line, 24x24, stroke) ---------- */
 const ICONS = {
@@ -207,7 +208,11 @@ export function AreaTag({ areaId, coordinationId, dot = true }) {
   const a = areaById(areaId);
   const c = coordinationId ? coordinationById(coordinationId) : null;
   if (!a) return null;
-  const label = c ? `${a.abbreviation} · ${c.abbreviation}` : a.abbreviation;
+  const label = c
+    ? `${a.abbreviation} · ${c.abbreviation}`
+    : Number(areaId) === OPERATION_ACADEMIC_AREA_ID
+      ? `${a.abbreviation} · General`
+      : a.abbreviation;
   return (
     <span className="tag">
       {dot && <span className="area-dot" style={{ background: a.color }}></span>}

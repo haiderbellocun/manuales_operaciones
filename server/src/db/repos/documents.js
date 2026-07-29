@@ -4,6 +4,7 @@ import { logActivity } from './catalog.js';
 import { documentCodePrefix, validateAreaCoordination } from '../areaRules.js';
 
 const OPERATION_ACADEMIC_FULL_ROLE_ID = 8;
+const OPERATION_ACADEMIC_AREA_ID = 1;
 
 async function getHistory(docId) {
   const { rows } = await query(
@@ -58,7 +59,7 @@ function addDocumentScope(conditions, params, auth, alias = 'documents') {
     }
     params.push(areaId);
     conditions.push(`${col('area_id')} = $${params.length}`);
-    if (coordinationId) {
+    if (coordinationId && areaId !== OPERATION_ACADEMIC_AREA_ID) {
       params.push(coordinationId);
       conditions.push(`${col('coordination_id')} = $${params.length}`);
     }
@@ -100,14 +101,30 @@ function addDocumentScope(conditions, params, auth, alias = 'documents') {
   if (role === 5) {
     params.push(userId);
     const userParam = params.length;
-    conditions.push(`EXISTS (
-      SELECT 1 FROM workflow_items wi
-      WHERE wi.doc_id = ${col('id')}
-        AND (
-          wi.assignee_user_id = $${userParam}
-          OR wi.completed_by = $${userParam}
+    if (areaId === OPERATION_ACADEMIC_AREA_ID) {
+      params.push(areaId);
+      const areaParam = params.length;
+      conditions.push(`(
+        ${col('area_id')} = $${areaParam}
+        OR EXISTS (
+          SELECT 1 FROM workflow_items wi
+          WHERE wi.doc_id = ${col('id')}
+            AND (
+              wi.assignee_user_id = $${userParam}
+              OR wi.completed_by = $${userParam}
+            )
         )
-    )`);
+      )`);
+    } else {
+      conditions.push(`EXISTS (
+        SELECT 1 FROM workflow_items wi
+        WHERE wi.doc_id = ${col('id')}
+          AND (
+            wi.assignee_user_id = $${userParam}
+            OR wi.completed_by = $${userParam}
+          )
+      )`);
+    }
     return;
   }
 
@@ -118,9 +135,16 @@ function addDocumentScope(conditions, params, auth, alias = 'documents') {
 function canCreateInArea(auth, areaId, coordinationId = null) {
   if (auth.perms?.administrar === true) return true;
   if (!auth.perms?.crear) return false;
+  const role = Number(auth.role ?? auth.role_id);
   const authArea = auth.area ?? auth.area_id;
   if (!authArea || Number(authArea) !== Number(areaId)) return false;
   const authCoordination = auth.coordination ?? auth.coordination_id;
+  if (Number(areaId) === OPERATION_ACADEMIC_AREA_ID) {
+    if (role === OPERATION_ACADEMIC_FULL_ROLE_ID) return true;
+    return Boolean(authCoordination)
+      && Boolean(coordinationId)
+      && Number(authCoordination) === Number(coordinationId);
+  }
   if (authCoordination && Number(authCoordination) !== Number(coordinationId || 0)) return false;
   return true;
 }
@@ -163,7 +187,9 @@ export async function listDocuments(auth, filters = {}) {
   if (coordination) {
     const n = Number(coordination);
     params.push(n);
-    conditions.push(`coordination_id = $${params.length}`);
+    conditions.push(Number(area) === OPERATION_ACADEMIC_AREA_ID
+      ? `(coordination_id = $${params.length} OR coordination_id IS NULL)`
+      : `coordination_id = $${params.length}`);
   }
   if (type) {
     const n = Number(type);
@@ -438,7 +464,7 @@ function normalizeTags(value) {
 }
 
 export async function updateDocument(doc, payload, auth) {
-  assertCanEditInArea(auth, doc.area);
+  assertCanEditInArea(auth, doc.area, doc.coordination);
   const name = String(payload.name ?? doc.name ?? '').trim();
   const ownerId = Number(payload.owner ?? doc.owner);
   if (!name) {
@@ -614,7 +640,7 @@ export async function upsertFile(docId, file, uploadedBy, storedName) {
   return getFileMeta(docId);
 }
 
-export function assertCanEditInArea(auth, areaId) {
+export function assertCanEditInArea(auth, areaId, coordinationId = null) {
   if (auth.perms?.administrar === true) return;
   if (!auth.perms?.editar) {
     const err = new Error('No tienes permisos para editar documentos.');
@@ -624,6 +650,33 @@ export function assertCanEditInArea(auth, areaId) {
   const authArea = auth.area ?? auth.area_id;
   if (!authArea || Number(authArea) !== Number(areaId)) {
     const err = new Error('No tienes permisos para editar documentos de esta area.');
+    err.statusCode = 403;
+    throw err;
+  }
+
+  const role = Number(auth.role ?? auth.role_id);
+  if (
+    Number(areaId) === OPERATION_ACADEMIC_AREA_ID
+    && role === OPERATION_ACADEMIC_FULL_ROLE_ID
+  ) {
+    return;
+  }
+
+  const authCoordination = auth.coordination ?? auth.coordination_id;
+  if (Number(areaId) === OPERATION_ACADEMIC_AREA_ID) {
+    if (
+      !authCoordination
+      || Number(authCoordination) !== Number(coordinationId || 0)
+    ) {
+      const err = new Error('Solo puedes editar documentos de tu subcoordinacion.');
+      err.statusCode = 403;
+      throw err;
+    }
+    return;
+  }
+
+  if (authCoordination && Number(authCoordination) !== Number(coordinationId || 0)) {
+    const err = new Error('No tienes permisos para editar documentos de esta coordinacion.');
     err.statusCode = 403;
     throw err;
   }

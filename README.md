@@ -20,7 +20,10 @@ La aplicación centraliza consulta, carga, versionamiento, trazabilidad, aprobac
 
 - Login con cuenta institucional de Google.
 - Foto de perfil tomada desde el perfil de Google del usuario.
+- Inicio interactivo “Mapa vivo de Acervo” con ruta documental, mapa de áreas, responsabilidades por rol y recorrido guiado.
 - Biblioteca documental con filtros por área, coordinación, tipo, estado y búsqueda.
+- Consulta compartida en Operación Académica: los usuarios asignados a una escuela pueden ver los documentos de todas sus subcoordinaciones.
+- Escritura segmentada por escuela y documentos generales de Operación Académica, disponibles para todas las subcoordinaciones.
 - Carga obligatoria de archivo al crear documentos.
 - Almacenamiento de documentos en Google Cloud Storage.
 - Creación atómica de documento + archivo: si el archivo no sube, el documento no se crea.
@@ -209,12 +212,15 @@ Los usuarios se crean desde Google Login o desde la administración de usuarios.
 | Rol | Alcance general |
 |---|---|
 | Administrador general | Control total de plataforma, usuarios, documentos y flujo. |
+| Coordinador de Operación Académica | Gestiona todas las escuelas y puede crear documentos generales para toda Operación Académica. |
 | Líder de área | Gestión y aprobación documental de su área. |
 | Editor documental | Creación y edición documental. |
 | Revisor | Revisión y observaciones. |
 | Aprobador | Aprobación y publicación. |
 | Usuario consultor | Consulta y descarga de documentos publicados. |
 | Auditor / lector institucional | Consulta y trazabilidad sin descarga. |
+
+En Operación Académica, un usuario asignado a una escuela conserva la creación y edición únicamente sobre esa escuela, pero puede consultar los documentos de las demás. Los documentos generales pueden ser creados por el coordinador de Operación Académica o un administrador y se muestran dentro de todas las escuelas.
 
 ## Pruebas E2E
 

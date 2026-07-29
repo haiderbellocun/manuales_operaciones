@@ -8,10 +8,12 @@ import { STATES, fmtDate } from '../utils/display';
 import { Icon, StateBadge, AreaTag, KpiCard, Avatar, FilterToggleButton, SelectField } from '../components';
 import { FileDropzone } from '../components/DocumentPreview';
 import { AreaCoordinationFields } from '../components/AreaCoordinationFields';
-import { areaAssignmentValid, documentCodePrefix } from '../utils/areas';
-
-const OPERATION_ACADEMIC_AREA_ID = 1;
-const OPERATION_ACADEMIC_FULL_ROLE_ID = 8;
+import {
+  areaAssignmentValid,
+  documentCodePrefix,
+  OPERATION_ACADEMIC_AREA_ID,
+  OPERATION_ACADEMIC_FULL_ROLE_ID,
+} from '../utils/areas';
 
 export function SearchView({ nav, docs, initial }) {
   const { areas, types, typeById } = useCatalogs();
@@ -178,10 +180,19 @@ export function UploadFlow({ nav, showToast, onUploaded }) {
   const typeCode = catalogs.types.find(t => String(t.id) === String(f.type));
   const areaCode = catalogs.areas.find(a => String(a.id) === String(f.area));
   const coordinationCode = coordinations.find(c => String(c.id) === String(f.coordination));
+  const canCreateGeneralOperationAcademic = (
+    Number(f.area) === OPERATION_ACADEMIC_AREA_ID
+    && (
+      canAdmin
+      || Number(user?.role) === OPERATION_ACADEMIC_FULL_ROLE_ID
+    )
+  );
   const autoCode = (areaCode && typeCode)
     ? `${documentCodePrefix(areaCode, coordinationCode)}-${typeCode.abbreviation}-XXX`
     : '— — —';
-  const areaReady = areaAssignmentValid(areaCode, f.coordination);
+  const areaReady = areaAssignmentValid(areaCode, f.coordination, {
+    allowGeneral: canCreateGeneralOperationAcademic,
+  });
   const canNext = step === 0 ? (f.type && f.area && f.name && areaReady) : step === 1 ? !!file : true;
 
   useEffect(() => {
@@ -264,8 +275,17 @@ export function UploadFlow({ nav, showToast, onUploaded }) {
                 areaDisabled={catalogLoading || visibleAreas.length === 0 || (!canAdmin && !!user?.area)}
                 coordinationDisabled={catalogLoading || (!canAdmin && !!user?.coordination)}
                 areaPlaceholder={catalogLoading ? 'Cargando...' : 'Seleccionar...'}
+                coordinationLabel="Alcance dentro de Operación Académica *"
+                allowEmptyCoordination={canCreateGeneralOperationAcademic}
+                emptyCoordinationLabel="General · Todas las subcoordinaciones"
               />
             </div>
+            {canCreateGeneralOperationAcademic && !f.coordination && (
+              <div className="form-note" style={{ marginBottom: 18 }}>
+                <Icon name="building" size={15} />
+                El documento será general de Operación Académica y estará disponible en todas sus subcoordinaciones.
+              </div>
+            )}
             <div className="form-row"><label>Nombre del documento *</label><input className="input" value={f.name} onChange={e => set('name', e.target.value)} placeholder="Ej. Procedimiento de matrícula de pregrado" /></div>
             <div className="form-row"><label>Descripción corta</label><textarea className="input" value={f.desc} onChange={e => set('desc', e.target.value)} placeholder="Resumen del propósito y alcance del documento…"></textarea></div>
             <div className="form-grid">
@@ -306,7 +326,7 @@ export function UploadFlow({ nav, showToast, onUploaded }) {
               <div className="spec-list">
                 <div className="spec-row"><span className="k">Nombre</span><span className="v">{f.name || '—'}</span></div>
                 <div className="spec-row"><span className="k">Tipo</span><span className="v">{typeCode ? typeCode.name : '—'}</span></div>
-                <div className="spec-row"><span className="k">Área</span><span className="v">{areaCode ? areaCode.name : '—'}{coordinationCode ? ` · ${coordinationCode.name}` : ''}</span></div>
+                <div className="spec-row"><span className="k">Área</span><span className="v">{areaCode ? areaCode.name : '—'}{coordinationCode ? ` · ${coordinationCode.name}` : canCreateGeneralOperationAcademic ? ' · General' : ''}</span></div>
                 <div className="spec-row"><span className="k">Número documental</span><span className="v mono">{autoCode}</span></div>
                 <div className="spec-row"><span className="k">Versión</span><span className="v">v{f.version}</span></div>
               </div>

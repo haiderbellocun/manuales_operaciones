@@ -1,6 +1,7 @@
 import { query } from '../pool.js';
 
 const OPERATION_ACADEMIC_FULL_ROLE_ID = 8;
+const OPERATION_ACADEMIC_AREA_ID = 1;
 
 export async function listAreas() {
   const { rows } = await query('SELECT * FROM areas ORDER BY name');
@@ -150,7 +151,7 @@ function addDocumentScope(conditions, params, auth, alias = 'd') {
     }
     params.push(areaId);
     conditions.push(`${col('area_id')} = $${params.length}`);
-    if (coordinationId) {
+    if (coordinationId && areaId !== OPERATION_ACADEMIC_AREA_ID) {
       params.push(coordinationId);
       conditions.push(`${col('coordination_id')} = $${params.length}`);
     }
@@ -179,11 +180,24 @@ function addDocumentScope(conditions, params, auth, alias = 'd') {
   if (role === 5) {
     params.push(userId);
     const userParam = params.length;
-    conditions.push(`EXISTS (
-      SELECT 1 FROM workflow_items wi
-      WHERE wi.doc_id = ${col('id')}
-        AND (wi.assignee_user_id = $${userParam} OR wi.completed_by = $${userParam})
-    )`);
+    if (areaId === OPERATION_ACADEMIC_AREA_ID) {
+      params.push(areaId);
+      const areaParam = params.length;
+      conditions.push(`(
+        ${col('area_id')} = $${areaParam}
+        OR EXISTS (
+          SELECT 1 FROM workflow_items wi
+          WHERE wi.doc_id = ${col('id')}
+            AND (wi.assignee_user_id = $${userParam} OR wi.completed_by = $${userParam})
+        )
+      )`);
+    } else {
+      conditions.push(`EXISTS (
+        SELECT 1 FROM workflow_items wi
+        WHERE wi.doc_id = ${col('id')}
+          AND (wi.assignee_user_id = $${userParam} OR wi.completed_by = $${userParam})
+      )`);
+    }
     return;
   }
   params.push('publicado');

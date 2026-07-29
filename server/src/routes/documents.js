@@ -18,6 +18,8 @@ import {
 
 const router = Router();
 router.use(authRequired);
+const OPERATION_ACADEMIC_AREA_ID = 1;
+const OPERATION_ACADEMIC_FULL_ROLE_ID = 8;
 
 async function notifySafely(recipients, payload) {
   try {
@@ -135,7 +137,7 @@ router.post('/:id/versions', requirePermission('editar'), (req, res) => {
     try {
       const doc = await getDocument(req.params.id, req.auth);
       if (!doc) return res.status(404).json({ message: 'Documento no encontrado.' });
-      assertCanEditInArea(req.auth, doc.area);
+      assertCanEditInArea(req.auth, doc.area, doc.coordination);
       if (!req.file) return res.status(400).json({ message: 'El archivo de la nueva version es obligatorio.' });
 
       const version = String(req.body?.version || '').trim();
@@ -183,10 +185,20 @@ router.post('/', requirePermission('crear'), (req, res) => {
         return res.status(400).json({ message: 'Tipo, area, nombre y responsable son obligatorios.' });
       }
 
-      const validated = await validateAreaCoordination(area, coordination || null);
+      assertCanCreateInArea(req.auth, area, coordination || null);
+      const canCreateGeneralOperationAcademic = (
+        Number(area) === OPERATION_ACADEMIC_AREA_ID
+        && !coordination
+        && (
+          req.auth.perms?.administrar === true
+          || Number(req.auth.role) === OPERATION_ACADEMIC_FULL_ROLE_ID
+        )
+      );
+      const validated = await validateAreaCoordination(area, coordination || null, {
+        allowGeneral: canCreateGeneralOperationAcademic,
+      });
       const areaObj = validated.area;
       const coordinationObj = validated.coordination;
-      assertCanCreateInArea(req.auth, area, coordinationObj?.id || null);
 
       const typeObj = await getType(type);
       if (!typeObj) {
@@ -274,7 +286,7 @@ router.post('/:id/file', requirePermission('crear'), (req, res) => {
       const routeDocId = Number(req.params.id);
       const doc = await getDocument(routeDocId, req.auth);
       if (!doc) return res.status(404).json({ message: 'Documento no encontrado.' });
-      assertCanCreateInArea(req.auth, doc.area);
+      assertCanCreateInArea(req.auth, doc.area, doc.coordination);
       if (Number(doc.id) !== routeDocId) {
         return res.status(409).json({ message: 'El documento consultado no coincide con el id de la ruta.' });
       }

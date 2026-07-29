@@ -39,6 +39,7 @@ const fileStorage = {
 };
 
 const apiBase = 'http://127.0.0.1:3100';
+const OPERATION_ACADEMIC_AREA_ID = 1;
 const fixtureBuffer = Buffer.concat([
   Buffer.from('%PDF-1.4\n% Acervo Operaciones E2E\n', 'utf8'),
   Buffer.alloc(4096, 0x20),
@@ -55,6 +56,7 @@ test.describe.serial('Acervo Operaciones - suite integral', () => {
   let areaId;
   let coordinationAreaId;
   let coordinationId;
+  let secondCoordinationId;
   let unrelatedCoordinationId;
   let typeId;
   let api;
@@ -114,6 +116,14 @@ test.describe.serial('Acervo Operaciones - suite integral', () => {
     `);
     coordinationAreaId = coordinationAreaRows[0]?.area_id || null;
     coordinationId = coordinationAreaRows[0]?.coordination_id || null;
+    const { rows: secondCoordinationRows } = await query(`
+      SELECT id
+      FROM coordinations
+      WHERE area_id = $1 AND id <> $2
+      ORDER BY sort_order, id
+      LIMIT 1
+    `, [coordinationAreaId, coordinationId]);
+    secondCoordinationId = secondCoordinationRows[0]?.id || null;
     const { rows: unrelatedCoordinationRows } = await query(`
       SELECT id FROM coordinations
       WHERE area_id <> $1
@@ -259,19 +269,6 @@ test.describe.serial('Acervo Operaciones - suite integral', () => {
     await expectStatus(missingData, 400);
     expect(await countDocuments(missingDataName)).toBe(0);
 
-    if (coordinationAreaId) {
-      const missingCoordinationName = `${runId}-SIN-COORDINACION`;
-      const missingCoordination = await api.post('/api/documents', {
-        multipart: {
-          type: String(typeId), area: String(coordinationAreaId), name: missingCoordinationName,
-          owner: String(ownerId), version: '1.0', revisor: String(admin.id), aprobador: String(admin.id),
-          file: { name: 'sin-coordinacion.pdf', mimeType: 'application/pdf', buffer: fixtureBuffer },
-        },
-      });
-      await expectStatus(missingCoordination, 400);
-      expect(await countDocuments(missingCoordinationName)).toBe(0);
-    }
-
     if (unrelatedCoordinationId) {
       const wrongCoordinationName = `${runId}-COORDINACION-INVALIDA`;
       const wrongCoordination = await api.post('/api/documents', {
@@ -331,7 +328,154 @@ test.describe.serial('Acervo Operaciones - suite integral', () => {
     await expectStatus(filtered, 200);
     const payload = await filtered.json();
     expect(payload.data.some(item => Number(item.id) === Number(document.id))).toBeTruthy();
-    expect(payload.data.every(item => Number(item.coordination) === Number(coordinationId))).toBeTruthy();
+    expect(payload.data.every(item => (
+      !item.coordination || Number(item.coordination) === Number(coordinationId)
+    ))).toBeTruthy();
+  });
+
+  test('comparte la lectura de Operacion Academica y conserva la escritura por subcoordinacion', async () => {
+    test.skip(
+      Number(coordinationAreaId) !== OPERATION_ACADEMIC_AREA_ID
+        || !coordinationId
+        || !secondCoordinationId,
+      'Se requieren al menos dos subcoordinaciones de Operacion Academica.',
+    );
+
+    const suffix = Date.now();
+    const { rows: scopedUsers } = await query(`
+      INSERT INTO users (name, email, role_id, area_id, coordination_id, status)
+      VALUES
+        ($1, $2, 8, $3, NULL, 'Activo'),
+        ($4, $5, 3, $3, $6, 'Activo')
+      RETURNING *
+    `, [
+      `Coordinador OA ${runId}`,
+      `coordinador.oa.e2e.${suffix}@cun.edu.co`,
+      OPERATION_ACADEMIC_AREA_ID,
+      `Editor escuela ${runId}`,
+      `editor.escuela.e2e.${suffix}@cun.edu.co`,
+      coordinationId,
+    ]);
+    createdUserIds.push(...scopedUsers.map(user => user.id));
+
+    const coordinator = scopedUsers.find(user => Number(user.role_id) === 8);
+    const schoolEditor = scopedUsers.find(user => Number(user.role_id) === 3);
+    const coordinatorApi = await makeApiFor(coordinator);
+    const schoolEditorApi = await makeApiFor(schoolEditor);
+
+    try {
+      const generalName = `${runId}-OA-GENERAL`;
+      const generalResponse = await coordinatorApi.post('/api/documents', {
+        multipart: {
+          type: String(typeId),
+          area: String(OPERATION_ACADEMIC_AREA_ID),
+          name: generalName,
+          owner: String(ownerId),
+          version: '1.0',
+          revisor: String(coordinator.id),
+          aprobador: String(coordinator.id),
+          file: { name: 'operacion-academica-general.pdf', mimeType: 'application/pdf', buffer: fixtureBuffer },
+        },
+      });
+      await expectStatus(generalResponse, 201);
+      const generalDocument = await generalResponse.json();
+      createdDocIds.push(Number(generalDocument.id));
+      expect(generalDocument.coordination).toBeUndefined();
+
+      const visibleGeneral = await schoolEditorApi.get(`/api/documents/${generalDocument.id}`);
+      await expectStatus(visibleGeneral, 200);
+      const deniedGeneralEdit = await schoolEditorApi.put(`/api/documents/${generalDocument.id}`, {
+        data: { name: `${generalName}-EDITADO` },
+      });
+      await expectStatus(deniedGeneralEdit, 403);
+
+      const otherSchoolName = `${runId}-OTRA-ESCUELA`;
+      const otherSchoolResponse = await coordinatorApi.post('/api/documents', {
+        multipart: {
+          type: String(typeId),
+          area: String(OPERATION_ACADEMIC_AREA_ID),
+          coordination: String(secondCoordinationId),
+          name: otherSchoolName,
+          owner: String(ownerId),
+          version: '1.0',
+          revisor: String(coordinator.id),
+          aprobador: String(coordinator.id),
+          file: { name: 'otra-escuela.pdf', mimeType: 'application/pdf', buffer: fixtureBuffer },
+        },
+      });
+      await expectStatus(otherSchoolResponse, 201);
+      const otherSchoolDocument = await otherSchoolResponse.json();
+      createdDocIds.push(Number(otherSchoolDocument.id));
+
+      const visibleOtherSchool = await schoolEditorApi.get(`/api/documents/${otherSchoolDocument.id}`);
+      await expectStatus(visibleOtherSchool, 200);
+
+      const deniedEdit = await schoolEditorApi.put(`/api/documents/${otherSchoolDocument.id}`, {
+        data: { name: `${otherSchoolName}-EDITADO` },
+      });
+      await expectStatus(deniedEdit, 403);
+
+      const ownSchoolName = `${runId}-ESCUELA-ASIGNADA`;
+      const ownSchoolResponse = await schoolEditorApi.post('/api/documents', {
+        multipart: {
+          type: String(typeId),
+          area: String(OPERATION_ACADEMIC_AREA_ID),
+          coordination: String(coordinationId),
+          name: ownSchoolName,
+          owner: String(ownerId),
+          version: '1.0',
+          revisor: String(coordinator.id),
+          aprobador: String(coordinator.id),
+          file: { name: 'escuela-asignada.pdf', mimeType: 'application/pdf', buffer: fixtureBuffer },
+        },
+      });
+      await expectStatus(ownSchoolResponse, 201);
+      const ownSchoolDocument = await ownSchoolResponse.json();
+      createdDocIds.push(Number(ownSchoolDocument.id));
+
+      const allowedEdit = await schoolEditorApi.put(`/api/documents/${ownSchoolDocument.id}`, {
+        data: { name: `${ownSchoolName}-EDITADO` },
+      });
+      await expectStatus(allowedEdit, 200);
+
+      const visibleCoordinations = await schoolEditorApi.get(
+        `/api/coordinations?areaId=${OPERATION_ACADEMIC_AREA_ID}`,
+      );
+      await expectStatus(visibleCoordinations, 200);
+      const coordinationPayload = await visibleCoordinations.json();
+      expect(coordinationPayload.some(item => Number(item.id) === Number(coordinationId))).toBeTruthy();
+      expect(coordinationPayload.some(item => Number(item.id) === Number(secondCoordinationId))).toBeTruthy();
+
+      const schoolLibrary = await schoolEditorApi.get(
+        `/api/documents?area=${OPERATION_ACADEMIC_AREA_ID}`
+          + `&coordination=${coordinationId}`
+          + `&search=${encodeURIComponent(generalName)}`,
+      );
+      await expectStatus(schoolLibrary, 200);
+      const schoolLibraryPayload = await schoolLibrary.json();
+      expect(
+        schoolLibraryPayload.data.some(item => Number(item.id) === Number(generalDocument.id)),
+      ).toBeTruthy();
+
+      const deniedGeneralName = `${runId}-GENERAL-NO-AUTORIZADO`;
+      const deniedGeneral = await schoolEditorApi.post('/api/documents', {
+        multipart: {
+          type: String(typeId),
+          area: String(OPERATION_ACADEMIC_AREA_ID),
+          name: deniedGeneralName,
+          owner: String(ownerId),
+          version: '1.0',
+          revisor: String(coordinator.id),
+          aprobador: String(coordinator.id),
+          file: { name: 'general-no-autorizado.pdf', mimeType: 'application/pdf', buffer: fixtureBuffer },
+        },
+      });
+      await expectStatus(deniedGeneral, 403);
+      expect(await countDocuments(deniedGeneralName)).toBe(0);
+    } finally {
+      await coordinatorApi.dispose();
+      await schoolEditorApi.dispose();
+    }
   });
 
   test('crea documento y archivo de forma atómica en PostgreSQL y Cloud Storage', async () => {
@@ -501,7 +645,23 @@ test.describe.serial('Acervo Operaciones - suite integral', () => {
 
     await page.goto('/');
     await expect(page.getByText('Acervo', { exact: true })).toBeVisible();
-    await expect(page.getByText(/Buenos días|Buenos tardes|Buenos noches/)).toBeVisible();
+    await expect(page.getByRole('heading', { name: /¿Qué necesitas hacer hoy\?/ })).toBeVisible();
+    await expect(page.getByRole('tab', { name: 'Mapa de áreas' })).toBeVisible();
+    const skipTour = page.getByRole('button', { name: 'Omitir recorrido' });
+    if (await skipTour.isVisible()) {
+      await expect(page.locator('.map-tour-spotlight')).toBeVisible();
+      await expect(page.locator('.map-home-hero')).toHaveAttribute('data-map-tour-target', 'true');
+      await skipTour.click();
+    }
+    await page.getByRole('tab', { name: 'Mapa de áreas' }).click();
+    await expect(page.getByText('Repositorio central')).toBeVisible();
+    await page.getByRole('button', { name: /Coordinación de Operación Académica/ }).click();
+    await expect(page.getByText('Área seleccionada')).toBeVisible();
+    await expect(page.getByRole('button', { name: /General de Operación Académica/ })).toBeVisible();
+    await page.getByRole('button', { name: /Todas las áreas/ }).click();
+    await expect(page.getByText('Repositorio central')).toBeVisible();
+    await page.getByRole('tab', { name: 'Roles y responsabilidades' }).click();
+    await expect(page.getByRole('heading', { name: 'Selecciona un rol para conocer su participación' })).toBeVisible();
 
     await page.goto('/biblioteca');
     await expect(page.getByRole('heading', { name: 'Biblioteca documental' })).toBeVisible();

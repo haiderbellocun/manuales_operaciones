@@ -2,6 +2,7 @@ const KEYS = {
   favorites: 'acervo_favorites',
   libraryPrefs: 'acervo_library_prefs',
   searchHistory: 'acervo_search_history',
+  homeTourSeen: 'acervo_home_tour_seen',
 };
 
 function read(key, fallback) {
@@ -62,6 +63,14 @@ export const storage = {
 
   clearSearchHistory() {
     write(KEYS.searchHistory, []);
+  },
+
+  hasSeenHomeTour() {
+    return read(KEYS.homeTourSeen, false) === true;
+  },
+
+  markHomeTourSeen(seen = true) {
+    write(KEYS.homeTourSeen, Boolean(seen));
   },
 };
 

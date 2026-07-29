@@ -6,12 +6,23 @@ import { useCatalogs } from '../context/CatalogContext';
 import { STATES, fmtDate } from '../utils/display';
 import { Icon, StateBadge, AreaTag, DocCard, Avatar, FilterToggleButton, SelectField } from '../components';
 import { DocumentPreview, FileDropzone } from '../components/DocumentPreview';
+import {
+  OPERATION_ACADEMIC_AREA_ID,
+  OPERATION_ACADEMIC_FULL_ROLE_ID,
+} from '../utils/areas';
 
 function FilterRail({ docs, filt, setFilt, className }) {
   const { areas, coordinations, types } = useCatalogs();
   const countBy = (key, val) => docs.filter(d => Number(d[key]) === Number(val)).length;
   const countByAreaCoordination = (areaId, coordinationId) => docs.filter(d => (
-    Number(d.area) === Number(areaId) && Number(d.coordination) === Number(coordinationId)
+    Number(d.area) === Number(areaId)
+    && (
+      Number(d.coordination) === Number(coordinationId)
+      || (
+        Number(areaId) === OPERATION_ACADEMIC_AREA_ID
+        && !d.coordination
+      )
+    )
   )).length;
   const toggle = (key, val) => {
     const arr = filt[key].includes(val) ? filt[key].filter(x => x !== val) : [...filt[key], val];
@@ -193,7 +204,14 @@ export function Library({ nav, docs, toggleFav, initParams }) {
   const filtered = useMemo(() => {
     let r = docs.filter(d => {
       if (filt.areas.length && !filt.areas.includes(d.area)) return false;
-      if (filt.coordinations.length && !filt.coordinations.includes(d.coordination)) return false;
+      if (
+        filt.coordinations.length
+        && !filt.coordinations.includes(d.coordination)
+        && !(
+          Number(d.area) === OPERATION_ACADEMIC_AREA_ID
+          && !d.coordination
+        )
+      ) return false;
       if (filt.types.length && !filt.types.includes(d.type)) return false;
       if (filt.states.length && !filt.states.includes(d.state)) return false;
       if (filt.fav && !d.fav) return false;
@@ -323,8 +341,24 @@ function nextVersion(current) {
   return `${major}.${minor + 1}`;
 }
 
+function canEditDocumentScope(user, doc, canAdmin) {
+  if (canAdmin) return true;
+  if (!user || !doc || Number(user.area) !== Number(doc.area)) return false;
+
+  if (Number(doc.area) === OPERATION_ACADEMIC_AREA_ID) {
+    if (Number(user.role) === OPERATION_ACADEMIC_FULL_ROLE_ID) return true;
+    return Boolean(user.coordination)
+      && Number(user.coordination) === Number(doc.coordination || 0);
+  }
+
+  if (user.coordination) {
+    return Number(user.coordination) === Number(doc.coordination || 0);
+  }
+  return true;
+}
+
 export function DocDetail({ nav, docId, docs, toggleFav, requestUpdate, showToast, onVersionCreated }) {
-  const { hasPermission } = useAuth();
+  const { user, hasPermission } = useAuth();
   const { people, areaById, coordinationById, typeById, personById } = useCatalogs();
   const numericDocId = Number(docId);
   const localDoc = docs.find(d => Number(d.id) === numericDocId);
@@ -341,8 +375,9 @@ export function DocDetail({ nav, docId, docs, toggleFav, requestUpdate, showToas
   const [savingEdit, setSavingEdit] = useState(false);
   const viewed = useRef(false);
   const canDownload = hasPermission('descargar');
-  const canCreateVersion = hasPermission('editar');
-  const canEditDocument = hasPermission('editar');
+  const canEditScope = canEditDocumentScope(user, doc, hasPermission('administrar'));
+  const canCreateVersion = hasPermission('editar') && canEditScope;
+  const canEditDocument = hasPermission('editar') && canEditScope;
 
   const handleDownload = async () => {
     const record = await api.getDocumentFileUrl(doc.id);
@@ -580,7 +615,7 @@ export function DocDetail({ nav, docId, docs, toggleFav, requestUpdate, showToas
             <div className="spec-list">
               <div className="spec-row"><span className="k">Número documental</span><span className="v mono">{doc.documentNumber}</span></div>
               <div className="spec-row"><span className="k">Tipo documental</span><span className="v">{type?.name || 'Tipo no disponible'}</span></div>
-              <div className="spec-row"><span className="k">Área responsable</span><span className="v">{area?.name || 'No disponible'}{coordination ? ` · ${coordination.name}` : ''}</span></div>
+              <div className="spec-row"><span className="k">Área responsable</span><span className="v">{area?.name || 'No disponible'}{coordination ? ` · ${coordination.name}` : Number(doc.area) === OPERATION_ACADEMIC_AREA_ID ? ' · General' : ''}</span></div>
               <div className="spec-row"><span className="k">Versión vigente</span><span className="v">v{doc.version}</span></div>
               <div className="spec-row"><span className="k">Estado</span><span className="v"><StateBadge state={doc.state} /></span></div>
               <div className="spec-row"><span className="k">Creación</span><span className="v">{fmtDate(doc.created)}</span></div>

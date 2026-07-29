@@ -14,7 +14,11 @@ export function areaRequiresCoordination(area) {
   return Boolean(area?.requires_coordination);
 }
 
-export async function validateAreaCoordination(areaId, coordinationId) {
+export async function validateAreaCoordination(
+  areaId,
+  coordinationId,
+  { allowGeneral = false } = {},
+) {
   const area = await getAreaById(areaId);
   if (!area) {
     const err = new Error('El area seleccionada no existe.');
@@ -27,6 +31,9 @@ export async function validateAreaCoordination(areaId, coordinationId) {
 
   if (needsCoordination) {
     if (!coordination) {
+      if (allowGeneral) {
+        return { area, coordination: null };
+      }
       const err = new Error('Debes seleccionar la coordinacion correspondiente.');
       err.statusCode = 400;
       throw err;

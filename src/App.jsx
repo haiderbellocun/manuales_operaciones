@@ -5,6 +5,7 @@ import { useAuth } from './context/AuthContext';
 import { useDocs } from './context/DocsContext';
 import { useCatalogs } from './context/CatalogContext';
 import { api } from './services/api';
+import { OPERATION_ACADEMIC_AREA_ID } from './utils/areas';
 
 const Dashboard = lazy(() => import('./views/Dashboard').then(m => ({ default: m.Dashboard })));
 const Library = lazy(() => import('./views/Library').then(m => ({ default: m.Library })));
@@ -177,7 +178,11 @@ function filterNav(nav, access) {
         if (link.role && !access.hasRole(link.role)) return false;
         if (link.params?.area && [2, 3, 4, 8].includes(Number(access.user?.role))) {
           if (Number(access.user?.area) !== Number(link.params.area)) return false;
-          if (link.params?.coordination && access.user?.coordination) {
+          if (
+            link.params?.coordination
+            && access.user?.coordination
+            && Number(access.user?.area) !== OPERATION_ACADEMIC_AREA_ID
+          ) {
             return Number(access.user.coordination) === Number(link.params.coordination);
           }
         }
@@ -630,7 +635,7 @@ export default function App() {
       );
     }
     switch (v) {
-      case 'dashboard': return <Dashboard nav={nav} docs={docs} userName={userName} />;
+      case 'dashboard': return <Dashboard nav={nav} userName={userName} />;
       case 'library': return <Library nav={nav} docs={docs} toggleFav={toggleFav} initParams={p} />;
       case 'detail': return <DocDetail nav={nav} docId={p.id} docs={docs} toggleFav={toggleFav} requestUpdate={requestUpdate} showToast={showToast} onVersionCreated={refresh} />;
       case 'ans': return <AnsModule nav={nav} />;
@@ -646,7 +651,7 @@ export default function App() {
       case 'reports': return <ReportsView nav={nav} docs={docs} />;
       case 'history': return <DocDetail nav={nav} docId={p.id} docs={docs} toggleFav={toggleFav} requestUpdate={requestUpdate} showToast={showToast} onVersionCreated={refresh} />;
       case 'help': return <HelpView nav={nav} />;
-      default: return <Dashboard nav={nav} docs={docs} userName={userName} />;
+      default: return <Dashboard nav={nav} userName={userName} />;
     }
   };
 
