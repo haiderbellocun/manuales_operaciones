@@ -1,5 +1,4 @@
-import { lazy, Suspense, useState, useEffect, useRef } from 'react';
-import { useLocation, useNavigate } from 'react-router-dom';
+import { lazy, Suspense, useState, useEffect, useRef, useCallback } from 'react';
 import { Icon, Modal, SelectField, useClickOutside } from './components';
 import { useAuth } from './context/AuthContext';
 import { useDocs } from './context/DocsContext';
@@ -26,6 +25,40 @@ const LoginView = lazy(() => import('./views/Login').then(m => ({ default: m.Log
 
 const LIBRARY_ICON_COLORS = ['#b91c1c', '#f59e0b', '#8b5e3c', '#2563eb', '#7c2d12', '#a78bfa', '#9333ea', '#ea580c'];
 const COORDINATION_ICON_COLORS = ['#2563eb', '#0891b2', '#7c3aed', '#0f766e', '#4f46e5', '#be185d', '#ea580c'];
+
+function readBrowserLocation() {
+  return {
+    pathname: window.location.pathname,
+    search: window.location.search,
+    hash: window.location.hash,
+    state: window.history.state,
+  };
+}
+
+function useBrowserNavigation() {
+  const [location, setLocation] = useState(readBrowserLocation);
+
+  useEffect(() => {
+    const handlePopState = () => setLocation(readBrowserLocation());
+    window.addEventListener('popstate', handlePopState);
+    return () => window.removeEventListener('popstate', handlePopState);
+  }, []);
+
+  const navigate = useCallback((to, options = {}) => {
+    const target = new URL(String(to), window.location.href);
+    if (target.origin !== window.location.origin) {
+      window.location.assign(target.href);
+      return;
+    }
+
+    const nextUrl = `${target.pathname}${target.search}${target.hash}`;
+    const method = options.replace ? 'replaceState' : 'pushState';
+    window.history[method](options.state ?? null, '', nextUrl);
+    setLocation(readBrowserLocation());
+  }, []);
+
+  return [location, navigate];
+}
 
 function softColor(hex, alpha = 0.12) {
   const clean = String(hex || '#0f5132').replace('#', '');
@@ -464,8 +497,7 @@ export default function App() {
   const { isAuthenticated, loading: authLoading, user, initials, roleName, logout, hasPermission, hasRole } = useAuth();
   const { docs, loading: docsLoading, toggleFav, refresh } = useDocs();
   const { areas, coordinations, personById } = useCatalogs();
-  const location = useLocation();
-  const navigate = useNavigate();
+  const [location, navigate] = useBrowserNavigation();
   const route = routeFromLocation(location);
   const [notifOpen, setNotifOpen] = useState(false);
   const [userOpen, setUserOpen] = useState(false);
