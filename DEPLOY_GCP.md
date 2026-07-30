@@ -32,6 +32,7 @@ Crea estos secretos en GCP Secret Manager:
 - `acervo-smtp-user`
 - `acervo-smtp-pass`
 - `acervo-smtp-from`
+- `acervo-login-logs-db-password` (password de la DB Orbit/core para `logs.login_apps`)
 
 Puedes usar otros nombres. Lo importante es guardar esos nombres en GitHub Actions.
 
@@ -47,6 +48,7 @@ Repository Settings -> Secrets and variables -> Actions -> Secrets:
 - `SMTP_USER_SECRET_NAME`: nombre del secreto de Secret Manager que guarda `SMTP_USER`.
 - `SMTP_PASS_SECRET_NAME`: nombre del secreto de Secret Manager que guarda `SMTP_PASS`.
 - `SMTP_FROM_SECRET_NAME`: nombre del secreto de Secret Manager que guarda `SMTP_FROM`.
+- `LOGIN_LOGS_DB_PASSWORD_SECRET_NAME`: nombre del secreto de Secret Manager que guarda `LOGIN_LOGS_DB_PASSWORD`.
 
 Ejemplo: si en Secret Manager el secreto se llama `acervo-db-password`, entonces el valor de `DB_PASSWORD_SECRET_NAME` en GitHub debe ser `acervo-db-password`.
 
@@ -71,6 +73,11 @@ Repository Settings -> Secrets and variables -> Actions -> Variables:
 - `SMTP_HOST`: para Gmail, `smtp.gmail.com`.
 - `SMTP_PORT`: para Gmail, `587`.
 - `SMTP_SECURE`: para Gmail con 587, `false`.
+- `LOGIN_LOGS_DB_HOST`: host de la DB Orbit/core (auditoría de logins).
+- `LOGIN_LOGS_DB_PORT`: puerto, normalmente `5432`.
+- `LOGIN_LOGS_DB_NAME`: nombre de la DB, normalmente `core`.
+- `LOGIN_LOGS_DB_USER`: usuario de la DB Orbit/core.
+- `LOGIN_LOGS_DB_SSL`: normalmente `true`.
 
 No debes crear variables manualmente en Cloud Run. El workflow hace `gcloud run deploy` con `--set-env-vars` y `--set-secrets`.
 

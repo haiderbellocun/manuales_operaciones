@@ -54,6 +54,11 @@ jobs:
           SMTP_HOST: ${{ vars.SMTP_HOST }}
           SMTP_PORT: ${{ vars.SMTP_PORT }}
           SMTP_SECURE: ${{ vars.SMTP_SECURE }}
+          LOGIN_LOGS_DB_HOST: ${{ vars.LOGIN_LOGS_DB_HOST }}
+          LOGIN_LOGS_DB_PORT: ${{ vars.LOGIN_LOGS_DB_PORT }}
+          LOGIN_LOGS_DB_NAME: ${{ vars.LOGIN_LOGS_DB_NAME }}
+          LOGIN_LOGS_DB_USER: ${{ vars.LOGIN_LOGS_DB_USER }}
+          LOGIN_LOGS_DB_SSL: ${{ vars.LOGIN_LOGS_DB_SSL }}
           GCP_SERVICE_ACCOUNT_KEY: ${{ secrets.GCP_SERVICE_ACCOUNT_KEY }}
           GCP_SERVICE_ACCOUNT_EMAIL: ${{ secrets.GCP_SERVICE_ACCOUNT_EMAIL }}
           DB_PASSWORD_SECRET_NAME: ${{ secrets.DB_PASSWORD_SECRET_NAME }}
@@ -62,6 +67,7 @@ jobs:
           SMTP_USER_SECRET_NAME: ${{ secrets.SMTP_USER_SECRET_NAME }}
           SMTP_PASS_SECRET_NAME: ${{ secrets.SMTP_PASS_SECRET_NAME }}
           SMTP_FROM_SECRET_NAME: ${{ secrets.SMTP_FROM_SECRET_NAME }}
+          LOGIN_LOGS_DB_PASSWORD_SECRET_NAME: ${{ secrets.LOGIN_LOGS_DB_PASSWORD_SECRET_NAME }}
         run: |
           missing=0
           for name in \
@@ -69,9 +75,12 @@ jobs:
             CLOUD_RUN_SERVICE CLOUD_RUN_REGION CLOUD_SQL_CONNECTION_NAME \
             DB_USER DB_NAME GCS_BUCKET CORS_ORIGIN APP_URL GOOGLE_ALLOWED_DOMAINS \
             GOOGLE_DEFAULT_ROLE_ID SMTP_HOST SMTP_PORT SMTP_SECURE \
+            LOGIN_LOGS_DB_HOST LOGIN_LOGS_DB_PORT LOGIN_LOGS_DB_NAME \
+            LOGIN_LOGS_DB_USER LOGIN_LOGS_DB_SSL \
             GCP_SERVICE_ACCOUNT_KEY GCP_SERVICE_ACCOUNT_EMAIL \
             DB_PASSWORD_SECRET_NAME JWT_SECRET_NAME GOOGLE_OAUTH_CLIENT_ID_SECRET_NAME \
-            SMTP_USER_SECRET_NAME SMTP_PASS_SECRET_NAME SMTP_FROM_SECRET_NAME
+            SMTP_USER_SECRET_NAME SMTP_PASS_SECRET_NAME SMTP_FROM_SECRET_NAME \
+            LOGIN_LOGS_DB_PASSWORD_SECRET_NAME
           do
             if [[ -z "${!name}" ]]; then
               echo "::error::$name no esta configurado en GitHub Actions."
@@ -219,8 +228,8 @@ jobs:
             --service-account="${{ secrets.GCP_SERVICE_ACCOUNT_EMAIL }}" \
             --allow-unauthenticated \
             --add-cloudsql-instances="${{ vars.CLOUD_SQL_CONNECTION_NAME }}" \
-            --set-env-vars="NODE_ENV=production,CLOUD_SQL_CONNECTION_NAME=${{ vars.CLOUD_SQL_CONNECTION_NAME }},DB_USER=${{ vars.DB_USER }},DB_NAME=${{ vars.DB_NAME }},GCS_BUCKET=${{ vars.GCS_BUCKET }},CORS_ORIGIN=${{ vars.CORS_ORIGIN }},APP_URL=${{ vars.APP_URL }},GOOGLE_ALLOWED_DOMAINS=${{ vars.GOOGLE_ALLOWED_DOMAINS }},GOOGLE_DEFAULT_ROLE_ID=${{ vars.GOOGLE_DEFAULT_ROLE_ID }},SMTP_HOST=${{ vars.SMTP_HOST }},SMTP_PORT=${{ vars.SMTP_PORT }},SMTP_SECURE=${{ vars.SMTP_SECURE }}" \
-            --set-secrets="DB_PASSWORD=${{ secrets.DB_PASSWORD_SECRET_NAME }}:latest,JWT_SECRET=${{ secrets.JWT_SECRET_NAME }}:latest,GOOGLE_OAUTH_CLIENT_ID=${{ secrets.GOOGLE_OAUTH_CLIENT_ID_SECRET_NAME }}:latest,SMTP_USER=${{ secrets.SMTP_USER_SECRET_NAME }}:latest,SMTP_PASS=${{ secrets.SMTP_PASS_SECRET_NAME }}:latest,SMTP_FROM=${{ secrets.SMTP_FROM_SECRET_NAME }}:latest"
+            --set-env-vars="NODE_ENV=production,CLOUD_SQL_CONNECTION_NAME=${{ vars.CLOUD_SQL_CONNECTION_NAME }},DB_USER=${{ vars.DB_USER }},DB_NAME=${{ vars.DB_NAME }},GCS_BUCKET=${{ vars.GCS_BUCKET }},CORS_ORIGIN=${{ vars.CORS_ORIGIN }},APP_URL=${{ vars.APP_URL }},GOOGLE_ALLOWED_DOMAINS=${{ vars.GOOGLE_ALLOWED_DOMAINS }},GOOGLE_DEFAULT_ROLE_ID=${{ vars.GOOGLE_DEFAULT_ROLE_ID }},SMTP_HOST=${{ vars.SMTP_HOST }},SMTP_PORT=${{ vars.SMTP_PORT }},SMTP_SECURE=${{ vars.SMTP_SECURE }},LOGIN_LOGS_DB_HOST=${{ vars.LOGIN_LOGS_DB_HOST }},LOGIN_LOGS_DB_PORT=${{ vars.LOGIN_LOGS_DB_PORT }},LOGIN_LOGS_DB_NAME=${{ vars.LOGIN_LOGS_DB_NAME }},LOGIN_LOGS_DB_USER=${{ vars.LOGIN_LOGS_DB_USER }},LOGIN_LOGS_DB_SSL=${{ vars.LOGIN_LOGS_DB_SSL }}" \
+            --set-secrets="DB_PASSWORD=${{ secrets.DB_PASSWORD_SECRET_NAME }}:latest,JWT_SECRET=${{ secrets.JWT_SECRET_NAME }}:latest,GOOGLE_OAUTH_CLIENT_ID=${{ secrets.GOOGLE_OAUTH_CLIENT_ID_SECRET_NAME }}:latest,SMTP_USER=${{ secrets.SMTP_USER_SECRET_NAME }}:latest,SMTP_PASS=${{ secrets.SMTP_PASS_SECRET_NAME }}:latest,SMTP_FROM=${{ secrets.SMTP_FROM_SECRET_NAME }}:latest,LOGIN_LOGS_DB_PASSWORD=${{ secrets.LOGIN_LOGS_DB_PASSWORD_SECRET_NAME }}:latest"
 
       - name: Create git tag
         if: github.ref == 'refs/heads/main'
