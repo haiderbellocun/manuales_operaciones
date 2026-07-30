@@ -1,42 +1,45 @@
 import pg from 'pg';
 
-const {
-  LOGIN_LOGS_DB_HOST,
-  LOGIN_LOGS_DB_PORT = '5432',
-  LOGIN_LOGS_DB_NAME = 'core',
-  LOGIN_LOGS_DB_USER,
-  LOGIN_LOGS_DB_PASSWORD = '',
-  LOGIN_LOGS_DB_SSL = 'true',
-} = process.env;
-
 let pool = null;
 
-function getPool() {
-  if (!LOGIN_LOGS_DB_HOST) return null;
-  if (pool) return pool;
+function readConfig() {
+  const host = process.env.LOGIN_LOGS_DB_HOST;
+  if (!host) return null;
 
-  pool = new pg.Pool({
-    host: LOGIN_LOGS_DB_HOST,
-    port: Number(LOGIN_LOGS_DB_PORT),
-    database: LOGIN_LOGS_DB_NAME,
-    user: LOGIN_LOGS_DB_USER,
-    password: String(LOGIN_LOGS_DB_PASSWORD).replace(/^'|'$/g, ''),
+  return {
+    host,
+    port: Number(process.env.LOGIN_LOGS_DB_PORT || 5432),
+    database: process.env.LOGIN_LOGS_DB_NAME || 'core',
+    user: process.env.LOGIN_LOGS_DB_USER,
+    password: String(process.env.LOGIN_LOGS_DB_PASSWORD || '').replace(/^'|'$/g, ''),
     ssl:
-      LOGIN_LOGS_DB_SSL === 'true'
+      (process.env.LOGIN_LOGS_DB_SSL || 'true') === 'true'
         ? { rejectUnauthorized: false }
         : undefined,
     max: 2,
     connectionTimeoutMillis: 5000,
-  });
+  };
+}
 
+function getPool() {
+  const config = readConfig();
+  if (!config) return null;
+  if (pool) return pool;
+
+  pool = new pg.Pool(config);
   return pool;
 }
 
 /** Fire-and-forget. No tumba el login si falla. */
 export function recordAppLogin(email, appLogin = 'acervo') {
   const correo = String(email ?? '').trim().toLowerCase();
+  if (!correo) return;
+
   const p = getPool();
-  if (!correo || !p) return;
+  if (!p) {
+    console.warn('[centralLoginLog] LOGIN_LOGS_DB_HOST no configurado; se omite el registro.');
+    return;
+  }
 
   void p
     .query(
@@ -44,14 +47,14 @@ export function recordAppLogin(email, appLogin = 'acervo') {
       INSERT INTO logs.login_apps (correo, fecha, hora, app_login)
       VALUES (
         $1,
-        (CURRENT_TIMESTAMP AT TIME ZONE 'America/Bogota')::date,
-        (CURRENT_TIMESTAMP AT TIME ZONE 'America/Bogota')::time,
+        to_char((CURRENT_TIMESTAMP AT TIME ZONE 'America/Bogota'), 'DD-MM-YYYY'),
+        to_char((CURRENT_TIMESTAMP AT TIME ZONE 'America/Bogota'), 'HH24:MI'),
         $2
       )
       `,
       [correo, appLogin],
     )
     .catch((error) => {
-      console.warn('[centralLoginLog] No se pudo registrar login:', error);
+      console.warn('[centralLoginLog] No se pudo registrar login:', error.message || error);
     });
 }
