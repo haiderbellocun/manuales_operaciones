@@ -159,8 +159,9 @@ export const api = {
     return request(`/users/${id}`, { method: 'PUT', body: JSON.stringify(payload) });
   },
 
-  async getAssignableUsers() {
-    return request('/assignees');
+  async getAssignableUsers(areaId = null) {
+    const query = areaId ? `?areaId=${encodeURIComponent(areaId)}` : '';
+    return request(`/assignees${query}`);
   },
 
   async getActivity() {
@@ -205,6 +206,10 @@ export const api = {
 
   async getStats() {
     return request('/stats');
+  },
+
+  async getMapDocumentCounts() {
+    return request('/map/counts');
   },
 
   async getReportSummary() {

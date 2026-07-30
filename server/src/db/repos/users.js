@@ -2,10 +2,18 @@ import { query } from '../pool.js';
 import { mapUser } from '../mapper.js';
 import { assertAllowedGoogleEmail } from '../../services/googleIdentity.js';
 import { validateAreaCoordination, getAreaById, areaRequiresCoordination } from '../areaRules.js';
+import {
+  AREA_LEADER_ROLE_ID,
+  APPROVER_ROLE_IDS,
+  OPERATION_ACADEMIC_COORDINATOR_ROLE_ID,
+  REVIEWER_ROLE_ID,
+  REVIEWER_ROLE_IDS,
+  WORKFLOW_ASSIGNABLE_ROLE_IDS,
+} from '../../config/workflowRoles.js';
 
 const DEFAULT_GOOGLE_ROLE_ID = Number(process.env.GOOGLE_DEFAULT_ROLE_ID || 7);
 const OPERATION_ACADEMIC_AREA_ID = 1;
-const OPERATION_ACADEMIC_FULL_ROLE_ID = 8;
+const OPERATION_ACADEMIC_FULL_ROLE_ID = OPERATION_ACADEMIC_COORDINATOR_ROLE_ID;
 
 export async function findByEmail(email) {
   const { rows } = await query(
@@ -120,6 +128,20 @@ async function assertRoleExists(roleId) {
 }
 
 async function assertAreaAssignment(areaId, coordinationId, roleId = null) {
+  const normalizedRoleId = Number(roleId);
+  if (WORKFLOW_ASSIGNABLE_ROLE_IDS.includes(normalizedRoleId) && !areaId) {
+    const err = new Error('Este rol debe tener un area asignada para participar en el flujo documental.');
+    err.statusCode = 400;
+    throw err;
+  }
+  if (
+    normalizedRoleId === OPERATION_ACADEMIC_COORDINATOR_ROLE_ID
+    && Number(areaId) !== OPERATION_ACADEMIC_AREA_ID
+  ) {
+    const err = new Error('El Coordinador de Operacion Academica debe pertenecer a Operacion Academica.');
+    err.statusCode = 400;
+    throw err;
+  }
   if (areaId === null || areaId === undefined) {
     if (coordinationId) {
       const err = new Error('La coordinacion requiere un area valida.');
@@ -229,9 +251,7 @@ export async function updateUser(id, payload) {
   } else {
     nextCoordinationId = null;
   }
-  if ('areaId' in data || 'coordinationId' in data || 'roleId' in data) {
-    await assertAreaAssignment(nextAreaId, nextCoordinationId, nextRoleId);
-  }
+  await assertAreaAssignment(nextAreaId, nextCoordinationId, nextRoleId);
 
   const next = {
     name: data.name ?? current.name,
@@ -265,21 +285,163 @@ export async function updateUser(id, payload) {
   }
 }
 
-export async function listAssignableUsers() {
+export async function listAssignableUsers(areaId = null) {
+  const normalizedAreaId = areaId === null || areaId === undefined || areaId === ''
+    ? null
+    : Number(areaId);
+  if (
+    normalizedAreaId !== null
+    && (!Number.isInteger(normalizedAreaId) || normalizedAreaId <= 0)
+  ) {
+    const err = new Error('Selecciona un area valida para consultar el flujo.');
+    err.statusCode = 400;
+    throw err;
+  }
+
   const { rows } = await query(`
-    SELECT u.id, u.name, u.role_id, u.area_id, u.coordination_id, u.status
+    SELECT u.id, u.name, u.role_id, u.area_id, u.coordination_id, u.status,
+           r.name AS role_name
     FROM users u
+    JOIN roles r ON r.id = u.role_id
     WHERE u.status = 'Activo'
+      AND u.role_id = ANY($1::int[])
+      AND ($2::int IS NULL OR u.area_id = $2)
     ORDER BY u.name
-  `);
+  `, [WORKFLOW_ASSIGNABLE_ROLE_IDS, normalizedAreaId]);
   return rows.map(u => ({
     id: u.id,
     name: u.name,
     role: u.role_id,
+    roleName: u.role_name,
     area: u.area_id,
     coordination: u.coordination_id,
     status: u.status,
   }));
+}
+
+function workflowAssignmentError(message) {
+  const err = new Error(message);
+  err.statusCode = 400;
+  return err;
+}
+
+export async function validateWorkflowAssignments(reviewerId, approverId, areaId) {
+  const normalizedReviewerId = Number(reviewerId);
+  const normalizedApproverId = Number(approverId);
+  const normalizedAreaId = Number(areaId);
+  if (!Number.isInteger(normalizedReviewerId) || normalizedReviewerId <= 0) {
+    throw workflowAssignmentError('Debes seleccionar un usuario activo y habilitado como revisor.');
+  }
+  if (!Number.isInteger(normalizedApproverId) || normalizedApproverId <= 0) {
+    throw workflowAssignmentError('Debes seleccionar un usuario activo y habilitado como aprobador.');
+  }
+
+  const { rows } = await query(`
+    SELECT id, name, role_id, area_id, coordination_id, status
+    FROM users
+    WHERE id = ANY($1::int[])
+  `, [[normalizedReviewerId, normalizedApproverId]]);
+  const reviewer = rows.find(user => Number(user.id) === normalizedReviewerId);
+  const approver = rows.find(user => Number(user.id) === normalizedApproverId);
+
+  if (
+    !reviewer
+    || reviewer.status !== 'Activo'
+    || !REVIEWER_ROLE_IDS.includes(Number(reviewer.role_id))
+  ) {
+    throw workflowAssignmentError('El revisor debe estar activo y tener rol Revisor, Lider de area o Coordinador de Operacion Academica.');
+  }
+  if (
+    !approver
+    || approver.status !== 'Activo'
+    || !APPROVER_ROLE_IDS.includes(Number(approver.role_id))
+  ) {
+    throw workflowAssignmentError('El aprobador debe estar activo y tener rol Aprobador, Lider de area o Coordinador de Operacion Academica.');
+  }
+  if (Number(reviewer.area_id) !== normalizedAreaId) {
+    throw workflowAssignmentError('El revisor seleccionado debe pertenecer al area responsable del documento.');
+  }
+  if (Number(approver.area_id) !== normalizedAreaId) {
+    throw workflowAssignmentError('El aprobador seleccionado debe pertenecer al area responsable del documento.');
+  }
+
+  return { reviewer, approver };
+}
+
+export async function findAreaReviewer(areaId) {
+  const { rows } = await query(`
+    SELECT *
+    FROM users
+    WHERE role_id = ANY($1::int[])
+      AND status = 'Activo'
+      AND area_id = $2
+    ORDER BY
+      CASE
+        WHEN role_id = $3 THEN 0
+        WHEN role_id = $4 THEN 1
+        ELSE 2
+      END,
+      id
+    LIMIT 1
+  `, [
+    REVIEWER_ROLE_IDS,
+    Number(areaId),
+    REVIEWER_ROLE_ID,
+    AREA_LEADER_ROLE_ID,
+  ]);
+  return rows[0] || null;
+}
+
+export async function resolveResponsiblePerson(userId) {
+  const { rows } = await query(`
+    WITH account AS (
+      SELECT u.id, u.name, u.area_id, u.coordination_id, r.name AS role_name
+      FROM users u
+      JOIN roles r ON r.id = u.role_id
+      WHERE u.id = $1
+        AND u.status = 'Activo'
+    ),
+    existing AS (
+      SELECT p.id
+      FROM people p
+      JOIN account a ON LOWER(p.name) = LOWER(a.name)
+      ORDER BY
+        CASE
+          WHEN p.area_id IS NOT DISTINCT FROM a.area_id
+            AND p.coordination_id IS NOT DISTINCT FROM a.coordination_id
+          THEN 0 ELSE 1
+        END,
+        p.id
+      LIMIT 1
+    ),
+    updated AS (
+      UPDATE people p
+      SET role_title = a.role_name,
+          area_id = a.area_id,
+          coordination_id = a.coordination_id
+      FROM account a, existing e
+      WHERE p.id = e.id
+      RETURNING p.*
+    ),
+    inserted AS (
+      INSERT INTO people (name, role_title, area_id, coordination_id)
+      SELECT a.name, a.role_name, a.area_id, a.coordination_id
+      FROM account a
+      WHERE NOT EXISTS (SELECT 1 FROM existing)
+      RETURNING *
+    )
+    SELECT * FROM updated
+    UNION ALL
+    SELECT * FROM inserted
+    LIMIT 1
+  `, [Number(userId)]);
+
+  if (!rows[0]) {
+    const err = new Error('No se pudo asignar al usuario actual como responsable del documento.');
+    err.statusCode = 409;
+    throw err;
+  }
+  return rows[0];
 }
 
 export async function findUserByPersonId(personId) {

@@ -1,7 +1,7 @@
 import { Router } from 'express';
 import { authRequired, requirePermission } from '../middleware/auth.js';
 import {
-  listAreas, listCoordinations, listTypes, listRoles, updateRole, listPeople, getStats, getReportSummary, listActivity,
+  listAreas, listCoordinations, listTypes, listRoles, updateRole, listPeople, getStats, getMapDocumentCounts, getReportSummary, listActivity,
 } from '../db/repos/catalog.js';
 import { createUser, listAssignableUsers, listUsers, updateUser } from '../db/repos/users.js';
 
@@ -122,9 +122,22 @@ router.put('/users/:id', authRequired, requirePermission('administrar'), async (
   }
 });
 
-router.get('/assignees', authRequired, requirePermission('consultar'), async (_req, res, next) => {
+router.get('/assignees', authRequired, requirePermission('consultar'), async (req, res, next) => {
   try {
-    res.json(await listAssignableUsers());
+    const requestedAreaId = req.query.areaId ?? req.query.area ?? null;
+    const isAdmin = req.auth.perms?.administrar === true;
+    if (
+      requestedAreaId
+      && !isAdmin
+      && Number(requestedAreaId) !== Number(req.auth.area)
+    ) {
+      return res.status(403).json({
+        message: 'No puedes consultar responsables de flujo de otra area.',
+      });
+    }
+    if (!requestedAreaId && !isAdmin && !req.auth.area) return res.json([]);
+    const areaId = requestedAreaId || (!isAdmin ? req.auth.area : null);
+    res.json(await listAssignableUsers(areaId));
   } catch (err) {
     next(err);
   }
@@ -133,6 +146,14 @@ router.get('/assignees', authRequired, requirePermission('consultar'), async (_r
 router.get('/stats', authRequired, requirePermission('consultar'), async (req, res, next) => {
   try {
     res.json(await getStats(req.auth));
+  } catch (err) {
+    next(err);
+  }
+});
+
+router.get('/map/counts', authRequired, requirePermission('consultar'), async (req, res, next) => {
+  try {
+    res.json(await getMapDocumentCounts(req.auth));
   } catch (err) {
     next(err);
   }

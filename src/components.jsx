@@ -73,6 +73,37 @@ export function Icon({ name, size = 18, stroke = 2, style, className }) {
   );
 }
 
+function SelectOptionMarker({ option, compact = false }) {
+  if (option?.image) {
+    return (
+      <span className={`custom-select-marker image ${compact ? 'compact' : ''}`} aria-hidden="true">
+        <img src={option.image} alt="" />
+      </span>
+    );
+  }
+  if (option?.icon) {
+    return (
+      <span
+        className={`custom-select-marker icon ${compact ? 'compact' : ''}`}
+        style={option.color ? { color: option.color } : undefined}
+        aria-hidden="true"
+      >
+        <Icon name={option.icon} size={compact ? 13 : 15} />
+      </span>
+    );
+  }
+  if (option?.color) {
+    return (
+      <span
+        className={`custom-select-marker color ${compact ? 'compact' : ''}`}
+        style={{ '--select-option-color': option.color }}
+        aria-hidden="true"
+      />
+    );
+  }
+  return null;
+}
+
 export function SelectField({
   value,
   onChange,
@@ -166,9 +197,12 @@ export function SelectField({
         onClick={() => !disabled && setOpen(prev => !prev)}
         onKeyDown={onKeyDown}
       >
-        <span className={selected ? 'custom-select-value' : 'custom-select-placeholder'}>
-          {selected?.label || placeholder}
-        </span>
+        {selected ? (
+          <span className="custom-select-value">
+            <SelectOptionMarker option={selected} compact />
+            <span className="custom-select-label">{selected.label}</span>
+          </span>
+        ) : <span className="custom-select-placeholder">{placeholder}</span>}
         <Icon name="chevDown" size={16} className="custom-select-icon" />
       </button>
       {open && createPortal(
@@ -185,7 +219,15 @@ export function SelectField({
                 aria-selected={active}
                 onClick={() => !option.disabled && choose(option.value)}
               >
-                <span>{option.label}</span>
+                <span className="custom-select-option-main">
+                  <SelectOptionMarker option={option} />
+                  <span className="custom-select-option-copy">
+                    <span className="custom-select-option-label">{option.label}</span>
+                    {option.description && (
+                      <span className="custom-select-option-description">{option.description}</span>
+                    )}
+                  </span>
+                </span>
                 {active && <Icon name="check" size={15} />}
               </button>
             );

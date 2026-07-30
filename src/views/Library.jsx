@@ -376,8 +376,10 @@ export function DocDetail({ nav, docId, docs, toggleFav, requestUpdate, showToas
   const viewed = useRef(false);
   const canDownload = hasPermission('descargar');
   const canEditScope = canEditDocumentScope(user, doc, hasPermission('administrar'));
-  const canCreateVersion = hasPermission('editar') && canEditScope;
-  const canEditDocument = hasPermission('editar') && canEditScope;
+  const canCreateVersion = hasPermission('editar')
+    && canEditScope
+    && ['publicado', 'vencido', 'archivado'].includes(doc?.state);
+  const canEditDocument = hasPermission('editar') && canEditScope && doc?.state === 'borrador';
 
   const handleDownload = async () => {
     const record = await api.getDocumentFileUrl(doc.id);

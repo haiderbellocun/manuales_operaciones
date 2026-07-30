@@ -5,7 +5,16 @@ import { useAuth } from '../context/AuthContext';
 import { useDocs } from '../context/DocsContext';
 import { useCatalogs } from '../context/CatalogContext';
 import { STATES, fmtDate } from '../utils/display';
-import { Icon, StateBadge, AreaTag, KpiCard, Avatar, FilterToggleButton, SelectField } from '../components';
+import {
+  Icon,
+  StateBadge,
+  AreaTag,
+  KpiCard,
+  Avatar,
+  FilterToggleButton,
+  SelectField,
+  Modal,
+} from '../components';
 import { FileDropzone } from '../components/DocumentPreview';
 import { AreaCoordinationFields } from '../components/AreaCoordinationFields';
 import {
@@ -14,6 +23,32 @@ import {
   OPERATION_ACADEMIC_AREA_ID,
   OPERATION_ACADEMIC_FULL_ROLE_ID,
 } from '../utils/areas';
+
+const AREA_LEADER_ROLE_ID = 2;
+const REVIEWER_ROLE_ID = 4;
+const APPROVER_ROLE_ID = 5;
+const REVIEWER_ROLE_IDS = [
+  REVIEWER_ROLE_ID,
+  AREA_LEADER_ROLE_ID,
+  OPERATION_ACADEMIC_FULL_ROLE_ID,
+];
+const APPROVER_ROLE_IDS = [
+  APPROVER_ROLE_ID,
+  AREA_LEADER_ROLE_ID,
+  OPERATION_ACADEMIC_FULL_ROLE_ID,
+];
+const WORKFLOW_AREA_REQUIRED_ROLE_IDS = [
+  AREA_LEADER_ROLE_ID,
+  REVIEWER_ROLE_ID,
+  APPROVER_ROLE_ID,
+  OPERATION_ACADEMIC_FULL_ROLE_ID,
+];
+const FLOW_ROLE_LABELS = {
+  [AREA_LEADER_ROLE_ID]: 'Líder de área',
+  [REVIEWER_ROLE_ID]: 'Revisor',
+  [APPROVER_ROLE_ID]: 'Aprobador',
+  [OPERATION_ACADEMIC_FULL_ROLE_ID]: 'Coordinador de Operación Académica',
+};
 
 export function SearchView({ nav, docs, initial }) {
   const { areas, types, typeById } = useCatalogs();
@@ -162,20 +197,59 @@ export function UploadFlow({ nav, showToast, onUploaded }) {
   const [step, setStep] = useState(0);
   const [file, setFile] = useState(null);
   const [submitting, setSubmitting] = useState(false);
-  const [catalogs, setCatalogs] = useState({ areas: [], types: [], people: [], users: [] });
+  const [catalogs, setCatalogs] = useState({ areas: [], types: [], users: [] });
   const [catalogLoading, setCatalogLoading] = useState(true);
+  const [assigneeLoading, setAssigneeLoading] = useState(false);
   const [catalogErrors, setCatalogErrors] = useState([]);
-  const [f, setF] = useState({ type: '', area: '', coordination: '', name: '', desc: '', owner: '', vigencia: '', tags: '', version: '1.0', revisor: '', aprobador: '', versionNote: '' });
+  const [f, setF] = useState({
+    type: '',
+    area: '',
+    coordination: '',
+    name: '',
+    desc: '',
+    vigencia: '',
+    tags: '',
+    version: '1.0',
+    initialState: 'borrador',
+    revisor: '',
+    aprobador: '',
+    versionNote: '',
+  });
   const set = (k, v) => setF(prev => ({ ...prev, [k]: v }));
-  const setArea = (value) => setF(prev => ({ ...prev, area: value, coordination: '' }));
+  const setArea = (value) => setF(prev => ({
+    ...prev,
+    area: value,
+    coordination: '',
+    revisor: '',
+    aprobador: '',
+  }));
   const canAdmin = hasPermission('administrar');
   const visibleAreas = canAdmin || !user?.area
     ? catalogs.areas
     : catalogs.areas.filter(a => Number(a.id) === Number(user.area));
-  const targetArea = f.area || user?.area;
-  const visiblePeople = canAdmin || !targetArea
-    ? catalogs.people
-    : catalogs.people.filter(p => !p.area || Number(p.area) === Number(targetArea));
+  const targetArea = f.area || (!canAdmin ? user?.area : '');
+  const reviewerOptions = catalogs.users
+    .filter(userOption => (
+      REVIEWER_ROLE_IDS.includes(Number(userOption.role))
+      && Boolean(targetArea)
+      && Number(userOption.area) === Number(targetArea)
+    ))
+    .map(userOption => ({
+      value: userOption.id,
+      label: userOption.name,
+      description: userOption.roleName || FLOW_ROLE_LABELS[Number(userOption.role)],
+    }));
+  const approverOptions = catalogs.users
+    .filter(userOption => (
+      APPROVER_ROLE_IDS.includes(Number(userOption.role))
+      && Boolean(targetArea)
+      && Number(userOption.area) === Number(targetArea)
+    ))
+    .map(userOption => ({
+      value: userOption.id,
+      label: userOption.name,
+      description: userOption.roleName || FLOW_ROLE_LABELS[Number(userOption.role)],
+    }));
   const steps = ['Tipo y datos', 'Archivo y versión', 'Flujo de aprobación'];
   const typeCode = catalogs.types.find(t => String(t.id) === String(f.type));
   const areaCode = catalogs.areas.find(a => String(a.id) === String(f.area));
@@ -194,26 +268,59 @@ export function UploadFlow({ nav, showToast, onUploaded }) {
     allowGeneral: canCreateGeneralOperationAcademic,
   });
   const canNext = step === 0 ? (f.type && f.area && f.name && areaReady) : step === 1 ? !!file : true;
+  const canFinish = Boolean(f.revisor && f.aprobador && !submitting);
 
   useEffect(() => {
     setCatalogLoading(true);
-    Promise.allSettled([api.getAreas(), api.getTypes(), api.getPeople(), api.getAssignableUsers()])
-      .then(([areas, types, people, users]) => {
-        setCatalogs({
+    Promise.allSettled([api.getAreas(), api.getTypes()])
+      .then(([areas, types]) => {
+        setCatalogs(prev => ({
+          ...prev,
           areas: areas.status === 'fulfilled' ? areas.value : [],
           types: types.status === 'fulfilled' ? types.value : [],
-          people: people.status === 'fulfilled' ? people.value : [],
-          users: users.status === 'fulfilled' ? users.value : [],
-        });
-        setCatalogErrors([
+        }));
+        setCatalogErrors(prev => [
+          ...prev.filter(error => !['áreas', 'tipos documentales'].includes(error)),
           areas.status === 'rejected' ? 'áreas' : null,
           types.status === 'rejected' ? 'tipos documentales' : null,
-          people.status === 'rejected' ? 'responsables' : null,
-          users.status === 'rejected' ? 'usuarios de flujo' : null,
         ].filter(Boolean));
       })
       .finally(() => setCatalogLoading(false));
   }, []);
+
+  useEffect(() => {
+    let active = true;
+    setCatalogErrors(prev => prev.filter(error => error !== 'usuarios de flujo'));
+    if (!targetArea) {
+      setCatalogs(prev => ({ ...prev, users: [] }));
+      setAssigneeLoading(false);
+      return () => {
+        active = false;
+      };
+    }
+
+    setAssigneeLoading(true);
+    api.getAssignableUsers(targetArea)
+      .then((users) => {
+        if (active) setCatalogs(prev => ({ ...prev, users }));
+      })
+      .catch(() => {
+        if (!active) return;
+        setCatalogs(prev => ({ ...prev, users: [] }));
+        setCatalogErrors(prev => (
+          prev.includes('usuarios de flujo')
+            ? prev
+            : [...prev, 'usuarios de flujo']
+        ));
+      })
+      .finally(() => {
+        if (active) setAssigneeLoading(false);
+      });
+
+    return () => {
+      active = false;
+    };
+  }, [targetArea]);
 
   useEffect(() => {
     if (!canAdmin && user?.area && catalogs.areas.length > 0) {
@@ -229,7 +336,12 @@ export function UploadFlow({ nav, showToast, onUploaded }) {
     setSubmitting(true);
     try {
       const newDoc = await addDocument({ ...f, file });
-      showToast('Documento cargado y enviado al flujo de revisión', 'success');
+      showToast(
+        f.initialState === 'revision'
+          ? 'Documento cargado y enviado a revisión.'
+          : 'Documento guardado como borrador.',
+        'success',
+      );
       onUploaded?.();
       nav('detail', { id: newDoc.id });
     } catch (err) {
@@ -289,7 +401,11 @@ export function UploadFlow({ nav, showToast, onUploaded }) {
             <div className="form-row"><label>Nombre del documento *</label><input className="input" value={f.name} onChange={e => set('name', e.target.value)} placeholder="Ej. Procedimiento de matrícula de pregrado" /></div>
             <div className="form-row"><label>Descripción corta</label><textarea className="input" value={f.desc} onChange={e => set('desc', e.target.value)} placeholder="Resumen del propósito y alcance del documento…"></textarea></div>
             <div className="form-grid">
-              <div className="form-row"><label>Responsable</label><SelectField value={f.owner} disabled={catalogLoading || visiblePeople.length === 0} onChange={value => set('owner', value)} placeholder={catalogLoading ? 'Cargando...' : 'Seleccionar...'} options={visiblePeople.map(p => ({ value: p.id, label: p.name }))} /></div>
+              <div className="form-row">
+                <label>Responsable *</label>
+                <input className="input" value={user?.name || ''} readOnly aria-readonly="true" />
+                <span className="hint">Se asigna automáticamente al usuario que carga el documento.</span>
+              </div>
               <div className="form-row"><label>Vigencia hasta</label><input className="input" type="date" value={f.vigencia} onChange={e => set('vigencia', e.target.value)} /></div>
             </div>
             <div className="form-row"><label>Palabras clave <span className="hint">— separadas por coma</span></label><input className="input" value={f.tags} onChange={e => set('tags', e.target.value)} placeholder="matrícula, pregrado, procedimiento" /></div>
@@ -303,7 +419,7 @@ export function UploadFlow({ nav, showToast, onUploaded }) {
             </div>
             <div className="form-grid">
               <div className="form-row"><label>Versión inicial</label><input className="input" value={f.version} onChange={e => set('version', e.target.value)} /></div>
-              <div className="form-row"><label>Estado inicial</label><SelectField value="Borrador" onChange={() => {}} options={['Borrador', 'En revisión']} /></div>
+              <div className="form-row"><label>Estado inicial</label><SelectField value={f.initialState} onChange={value => set('initialState', value)} options={[{ value: 'borrador', label: 'Borrador' }, { value: 'revision', label: 'Enviar a revisión' }]} /></div>
             </div>
             <div className="form-row"><label>Descripción de la versión</label><textarea className="input" value={f.versionNote} onChange={e => set('versionNote', e.target.value)} placeholder="Ej. Versión inicial del documento."></textarea></div>
           </div>
@@ -316,10 +432,16 @@ export function UploadFlow({ nav, showToast, onUploaded }) {
                 No se pudieron cargar los usuarios del flujo. Reinicia el backend y recarga la página.
               </div>
             )}
-            <p className="page-sub mb-24" style={{ marginTop: 0 }}>Define quién revisa y aprueba el documento antes de su publicación.</p>
+            <p className="page-sub mb-24" style={{ marginTop: 0 }}>Define el revisor y el aprobador responsables de este documento.</p>
             <div className="form-grid">
-              <div className="form-row"><label>Revisor</label><SelectField value={f.revisor} disabled={catalogLoading || catalogs.users.length === 0} onChange={value => set('revisor', value)} placeholder={catalogLoading ? 'Cargando...' : 'Seleccionar...'} options={catalogs.users.filter(u => [4, 2, 3, OPERATION_ACADEMIC_FULL_ROLE_ID].includes(Number(u.role))).map(u => ({ value: u.id, label: u.name }))} /></div>
-              <div className="form-row"><label>Aprobador</label><SelectField value={f.aprobador} disabled={catalogLoading || catalogs.users.length === 0} onChange={value => set('aprobador', value)} placeholder={catalogLoading ? 'Cargando...' : 'Seleccionar...'} options={catalogs.users.filter(u => [5, 2, 1, OPERATION_ACADEMIC_FULL_ROLE_ID].includes(Number(u.role))).map(u => ({ value: u.id, label: u.name }))} /></div>
+              <div className="form-row"><label>Revisor *</label><SelectField value={f.revisor} disabled={assigneeLoading || !targetArea || reviewerOptions.length === 0} onChange={value => set('revisor', value)} placeholder={assigneeLoading ? 'Cargando...' : !targetArea ? 'Selecciona un área primero' : reviewerOptions.length ? 'Seleccionar revisor...' : 'No hay revisores activos en esta área'} options={reviewerOptions} /></div>
+              <div className="form-row"><label>Aprobador *</label><SelectField value={f.aprobador} disabled={assigneeLoading || !targetArea || approverOptions.length === 0} onChange={value => set('aprobador', value)} placeholder={assigneeLoading ? 'Cargando...' : !targetArea ? 'Selecciona un área primero' : approverOptions.length ? 'Seleccionar aprobador...' : 'No hay aprobadores activos en esta área'} options={approverOptions} /></div>
+            </div>
+            <div className="form-note" style={{ marginBottom: 18 }}>
+              <Icon name={f.initialState === 'revision' ? 'send' : 'shield'} size={16} />
+              {f.initialState === 'revision'
+                ? 'Al finalizar, el revisor recibirá la tarea inmediatamente. El documento aún no será visible para todos.'
+                : 'Se conservará como borrador y solo entrará a revisión cuando su responsable lo envíe desde el flujo.'}
             </div>
             <div className="card summary-card">
               <h4 style={{ margin: '0 0 14px', fontSize: 13 }}>Resumen del documento</h4>
@@ -327,8 +449,10 @@ export function UploadFlow({ nav, showToast, onUploaded }) {
                 <div className="spec-row"><span className="k">Nombre</span><span className="v">{f.name || '—'}</span></div>
                 <div className="spec-row"><span className="k">Tipo</span><span className="v">{typeCode ? typeCode.name : '—'}</span></div>
                 <div className="spec-row"><span className="k">Área</span><span className="v">{areaCode ? areaCode.name : '—'}{coordinationCode ? ` · ${coordinationCode.name}` : canCreateGeneralOperationAcademic ? ' · General' : ''}</span></div>
+                <div className="spec-row"><span className="k">Responsable</span><span className="v">{user?.name || '—'}</span></div>
                 <div className="spec-row"><span className="k">Número documental</span><span className="v mono">{autoCode}</span></div>
                 <div className="spec-row"><span className="k">Versión</span><span className="v">v{f.version}</span></div>
+                <div className="spec-row"><span className="k">Estado inicial</span><span className="v">{f.initialState === 'revision' ? 'En revisión' : 'Borrador'}</span></div>
               </div>
             </div>
           </div>
@@ -339,7 +463,14 @@ export function UploadFlow({ nav, showToast, onUploaded }) {
         {step < 2 ? (
           <button className="btn btn-primary" disabled={!canNext} style={!canNext ? { opacity: .5, cursor: 'not-allowed' } : null} onClick={() => canNext && setStep(step + 1)}>Continuar<Icon name="arrowRight" size={16} /></button>
         ) : (
-          <button className="btn btn-primary" disabled={submitting} onClick={handleSubmit}><Icon name="send" size={16} />{submitting ? 'Cargando…' : 'Cargar y enviar a revisión'}</button>
+          <button className="btn btn-primary" disabled={!canFinish} style={!canFinish ? { opacity: .5, cursor: 'not-allowed' } : null} onClick={handleSubmit}>
+            <Icon name={f.initialState === 'revision' ? 'send' : 'doc'} size={16} />
+            {submitting
+              ? 'Guardando…'
+              : f.initialState === 'revision'
+                ? 'Cargar y enviar a revisión'
+                : 'Guardar como borrador'}
+          </button>
         )}
       </div>
     </div>
@@ -348,9 +479,11 @@ export function UploadFlow({ nav, showToast, onUploaded }) {
 
 export function WorkflowView({ nav, showToast }) {
   const { refresh } = useDocs();
+  const { user } = useAuth();
   const [items, setItems] = useState([]);
   const [loading, setLoading] = useState(true);
   const [busy, setBusy] = useState(null);
+  const [pendingPublication, setPendingPublication] = useState(null);
   const [workflowPages, setWorkflowPages] = useState({});
   const workflowPageSize = 4;
 
@@ -375,33 +508,62 @@ export function WorkflowView({ nav, showToast }) {
       await refresh();
       const messages = {
         submit: 'Borrador enviado a revisión.',
-        approve: 'Documento enviado a aprobación.',
-        publish: 'Documento publicado correctamente.',
+        review: 'Revisión finalizada. El documento quedó aprobado.',
+        approve: 'Revisión finalizada. El documento quedó aprobado.',
+        publish: 'Documento aprobado y publicado correctamente.',
         return: 'Documento devuelto para ajustes.',
       };
       showToast?.(messages[action] || 'Flujo actualizado correctamente.', action === 'return' ? 'warning' : 'success');
+      return true;
     } catch (err) {
       const type = err.status === 403 ? 'warning' : 'error';
       showToast?.(err.message || 'No se pudo actualizar el flujo.', type);
+      return false;
     } finally {
       setBusy(null);
     }
   };
 
+  const confirmPublication = async () => {
+    if (!pendingPublication) return;
+    const completed = await runTransition(pendingPublication, 'publish');
+    if (completed) setPendingPublication(null);
+  };
+
   const flowSteps = [
-    { k: 'creacion', label: 'Creación / Carga', icon: 'upload', desc: 'El editor crea o carga el documento' },
-    { k: 'revision', label: 'Revisión', icon: 'eye', desc: 'El responsable revisa y valida' },
-    { k: 'aprobacion', label: 'Aprobación', icon: 'check', desc: 'La autoridad aprueba para publicar' },
-    { k: 'publicacion', label: 'Publicación', icon: 'send', desc: 'Se publica y notifica' },
+    { k: 'creacion', label: 'Borrador', icon: 'upload', desc: 'El creador prepara y envía el documento' },
+    { k: 'revision', label: 'Revisión', icon: 'eye', desc: 'El revisor asignado lo valida o devuelve' },
+    { k: 'aprobacion', label: 'Aprobado', icon: 'check', desc: 'Queda pendiente de la decisión final' },
+    { k: 'publicacion', label: 'Publicación', icon: 'send', desc: 'El aprobador asignado lo hace visible para todos' },
   ];
   const stages = [
-    { k: 'creacion', label: 'En creación', tone: 'borrador' },
+    { k: 'creacion', label: 'Borradores', tone: 'borrador' },
     { k: 'revision', label: 'En revisión', tone: 'revision' },
-    { k: 'aprobacion', label: 'En aprobación', tone: 'publicado' },
-    { k: 'publicados', label: 'Publicados por mí', tone: 'aprobado' },
+    { k: 'aprobacion', label: 'Aprobados por publicar', tone: 'aprobado' },
+    { k: 'publicados', label: 'Publicados', tone: 'publicado' },
   ];
   const prioColor = { alta: 'var(--st-vencido-fg)', media: 'var(--st-revision-fg)', baja: 'var(--ink-400)' };
   const setStagePage = (stage, page) => setWorkflowPages(prev => ({ ...prev, [stage]: Math.max(0, page) }));
+  const isAssignedToCurrentUser = item => Number(item.assigneeUserId) === Number(user?.id);
+  const canSubmitItem = item => item.canSubmitToReview && isAssignedToCurrentUser(item);
+  const canReviewItem = item => (
+    REVIEWER_ROLE_IDS.includes(Number(user?.role))
+    && isAssignedToCurrentUser(item)
+    && (item.canMarkApproved || item.canSendToApproval)
+  );
+  const canPublishItem = item => (
+    APPROVER_ROLE_IDS.includes(Number(user?.role))
+    && isAssignedToCurrentUser(item)
+    && item.canPublish
+  );
+  const canReturnItem = item => (
+    item.canReturn
+    && isAssignedToCurrentUser(item)
+    && (
+      (item.stage === 'revision' && REVIEWER_ROLE_IDS.includes(Number(user?.role)))
+      || (item.stage === 'aprobacion' && APPROVER_ROLE_IDS.includes(Number(user?.role)))
+    )
+  );
 
   return (
     <div className="page fade-in">
@@ -457,18 +619,18 @@ export function WorkflowView({ nav, showToast }) {
                     <div className="row gap-8 kanban-assignee">
                       <Avatar name={it.assignee} size={24} /><span className="text-xs muted grow assignee-name">{it.assignee}</span><span className="text-xs muted kanban-date">{fmtDate(it.since)}</span>
                     </div>
-                    {(it.canSubmitToReview || it.canSendToApproval || it.canPublish || it.canReturn) && (
+                    {(canSubmitItem(it) || canReviewItem(it) || canPublishItem(it) || canReturnItem(it)) && (
                       <div className="kanban-actions">
-                        {it.canSubmitToReview && (
+                        {canSubmitItem(it) && (
                           <button className="btn btn-primary btn-sm kanban-action-main" disabled={busy === `${it.id}-submit`} onClick={(e) => { e.stopPropagation(); runTransition(it, 'submit'); }} type="button"><Icon name="send" size={14} />Enviar a revision</button>
                         )}
-                        {it.canSendToApproval && (
-                          <button className="btn btn-primary btn-sm kanban-action-main" disabled={busy === `${it.id}-approve`} onClick={(e) => { e.stopPropagation(); runTransition(it, 'approve'); }} type="button"><Icon name="check" size={14} />Enviar a aprobacion</button>
+                        {canReviewItem(it) && (
+                          <button className="btn btn-primary btn-sm kanban-action-main" disabled={busy === `${it.id}-approve`} onClick={(e) => { e.stopPropagation(); runTransition(it, 'approve'); }} type="button"><Icon name="check" size={14} />Marcar como aprobado</button>
                         )}
-                        {it.canPublish && (
-                          <button className="btn btn-primary btn-sm kanban-action-main" disabled={busy === `${it.id}-publish`} onClick={(e) => { e.stopPropagation(); runTransition(it, 'publish'); }} type="button"><Icon name="send" size={14} />Publicar</button>
+                        {canPublishItem(it) && (
+                          <button className="btn btn-primary btn-sm kanban-action-main" disabled={busy === `${it.id}-publish`} onClick={(e) => { e.stopPropagation(); setPendingPublication(it); }} type="button"><Icon name="send" size={14} />Aprobar y publicar</button>
                         )}
-                        {it.canReturn && (
+                        {canReturnItem(it) && (
                           <button className="btn btn-danger btn-sm btn-icon kanban-return" disabled={busy === `${it.id}-return`} onClick={(e) => { e.stopPropagation(); runTransition(it, 'return'); }} type="button" title="Devolver para ajustes"><Icon name="x" size={14} /></button>
                         )}
                       </div>
@@ -480,8 +642,62 @@ export function WorkflowView({ nav, showToast }) {
           );
         })}
       </div>
+      {pendingPublication && (
+        <Modal
+          title="Confirmar aprobación y publicación"
+          subtitle="Esta es la decisión final del flujo documental."
+          onClose={() => busy ? null : setPendingPublication(null)}
+          footer={(
+            <>
+              <button className="btn btn-ghost" type="button" disabled={Boolean(busy)} onClick={() => setPendingPublication(null)}>Cancelar</button>
+              <button className="btn btn-primary" type="button" disabled={Boolean(busy)} onClick={confirmPublication}>
+                <Icon name="send" size={15} />
+                {busy ? 'Publicando…' : 'Aprobar y publicar'}
+              </button>
+            </>
+          )}
+        >
+          <div className="form-note" style={{ marginBottom: 16 }}>
+            <Icon name="alert" size={17} />
+            Después de confirmar, el documento cambiará a Publicado y será visible para todos los usuarios con acceso de consulta.
+          </div>
+          <div className="spec-list">
+            <div className="spec-row"><span className="k">Documento</span><span className="v">{pendingPublication.doc?.name}</span></div>
+            <div className="spec-row"><span className="k">Estado actual</span><span className="v">Aprobado</span></div>
+            <div className="spec-row"><span className="k">Estado final</span><span className="v">Publicado</span></div>
+          </div>
+        </Modal>
+      )}
     </div>
   );
+}
+
+const USERS_PER_PAGE = 10;
+
+function normalizeUserSearch(value) {
+  return String(value || '')
+    .normalize('NFD')
+    .replace(/[\u0300-\u036f]/g, '')
+    .trim()
+    .toLowerCase();
+}
+
+function userPaginationItems(currentPage, totalPages) {
+  if (totalPages <= 7) {
+    return Array.from({ length: totalPages }, (_, index) => index + 1);
+  }
+
+  let start = Math.max(2, currentPage - 1);
+  let end = Math.min(totalPages - 1, currentPage + 1);
+  if (currentPage <= 3) end = 4;
+  if (currentPage >= totalPages - 2) start = totalPages - 3;
+
+  const items = [1];
+  if (start > 2) items.push('ellipsis-start');
+  for (let page = start; page <= end; page += 1) items.push(page);
+  if (end < totalPages - 1) items.push('ellipsis-end');
+  items.push(totalPages);
+  return items;
 }
 
 export function UsersView({ nav }) {
@@ -490,6 +706,9 @@ export function UsersView({ nav }) {
   const [users, setUsers] = useState([]);
   const [roles, setRoles] = useState([]);
   const [areas, setAreas] = useState([]);
+  const [userSearch, setUserSearch] = useState('');
+  const [userArea, setUserArea] = useState('all');
+  const [userPage, setUserPage] = useState(1);
   const [loading, setLoading] = useState(true);
   const [modal, setModal] = useState(null);
   const [roleModal, setRoleModal] = useState(null);
@@ -498,6 +717,56 @@ export function UsersView({ nav }) {
   const permLabels = { crear: 'Crear', editar: 'Editar', aprobar: 'Aprobar', publicar: 'Publicar', archivar: 'Archivar', consultar: 'Consultar', descargar: 'Descargar', administrar: 'Administrar' };
   const permKeys = Object.keys(permLabels);
   const emptyForm = { name: '', email: '', role: '', area: '', coordination: '', status: 'Activo' };
+  const userAreaOptions = useMemo(() => [
+    {
+      value: 'all',
+      label: 'Todas las áreas',
+      description: `${areas.length} áreas disponibles`,
+      color: 'var(--brand-700)',
+    },
+    ...areas.map(area => ({
+      value: area.id,
+      label: area.name,
+      description: area.abbreviation,
+      color: area.color,
+    })),
+    {
+      value: 'none',
+      label: 'Sin área asignada',
+      description: 'Usuarios pendientes de asignación',
+      color: '#9aa59e',
+    },
+  ], [areas]);
+  const filteredUsers = useMemo(() => {
+    const search = normalizeUserSearch(userSearch);
+    return users.filter((listedUser) => {
+      const matchesArea = userArea === 'all'
+        || (userArea === 'none' && !listedUser.area)
+        || Number(listedUser.area) === Number(userArea);
+      if (!matchesArea) return false;
+      if (!search) return true;
+
+      const role = roles.find(item => Number(item.id) === Number(listedUser.role));
+      const area = areas.find(item => Number(item.id) === Number(listedUser.area));
+      return [
+        listedUser.name,
+        listedUser.email,
+        listedUser.status,
+        role?.name,
+        listedUser.roleName,
+        area?.name,
+        area?.abbreviation,
+      ].some(value => normalizeUserSearch(value).includes(search));
+    });
+  }, [areas, roles, userArea, userSearch, users]);
+  const totalUserPages = Math.max(1, Math.ceil(filteredUsers.length / USERS_PER_PAGE));
+  const currentUserPage = Math.min(userPage, totalUserPages);
+  const firstUserIndex = (currentUserPage - 1) * USERS_PER_PAGE;
+  const paginatedUsers = filteredUsers.slice(firstUserIndex, firstUserIndex + USERS_PER_PAGE);
+  const paginationItems = userPaginationItems(currentUserPage, totalUserPages);
+  const firstVisibleUser = filteredUsers.length ? firstUserIndex + 1 : 0;
+  const lastVisibleUser = Math.min(firstUserIndex + USERS_PER_PAGE, filteredUsers.length);
+  const hasUserFilters = Boolean(userSearch.trim()) || userArea !== 'all';
 
   const loadUsers = () => {
     setLoading(true);
@@ -516,6 +785,25 @@ export function UsersView({ nav }) {
   };
 
   useEffect(() => { loadUsers(); }, []);
+  useEffect(() => {
+    setUserPage(page => Math.min(page, totalUserPages));
+  }, [totalUserPages]);
+
+  const changeUserSearch = (value) => {
+    setUserSearch(value);
+    setUserPage(1);
+  };
+
+  const changeUserArea = (value) => {
+    setUserArea(value);
+    setUserPage(1);
+  };
+
+  const clearUserFilters = () => {
+    setUserSearch('');
+    setUserArea('all');
+    setUserPage(1);
+  };
 
   const openCreate = () => {
     setError('');
@@ -541,6 +829,17 @@ export function UsersView({ nav }) {
   const setForm = (key, value) => setModal(prev => {
     if (key === 'area') {
       return { ...prev, form: { ...prev.form, area: value, coordination: '' } };
+    }
+    if (key === 'role' && Number(value) === OPERATION_ACADEMIC_FULL_ROLE_ID) {
+      return {
+        ...prev,
+        form: {
+          ...prev.form,
+          role: value,
+          area: OPERATION_ACADEMIC_AREA_ID,
+          coordination: '',
+        },
+      };
     }
     return { ...prev, form: { ...prev.form, [key]: value } };
   });
@@ -619,29 +918,127 @@ export function UsersView({ nav }) {
         <button type="button" className={tab === 'roles' ? 'active' : ''} onClick={() => setTab('roles')}><Icon name="shield" size={15} />Roles y permisos</button>
       </div>
       {tab === 'users' ? (
-        <div className="tbl-wrap">
-          <table className="tbl">
-            <thead><tr><th>Usuario</th><th>Correo</th><th>Acceso</th><th>Rol</th><th>Área</th><th>Último acceso</th><th>Estado</th><th></th></tr></thead>
-            <tbody>
-              {users.map(u => {
-                const role = roles.find(r => Number(r.id) === Number(u.role));
-                const ar = u.area ? areas.find(a => Number(a.id) === Number(u.area)) : null;
-                const googleEnabled = String(u.email || '').toLowerCase().endsWith('@cun.edu.co');
-                return (
-                  <tr key={u.id}>
-                    <td><div className="row gap-10"><Avatar name={u.name} size={32} /><span style={{ fontWeight: 600 }}>{u.name}</span></div></td>
-                    <td className="text-sm muted">{u.email}</td>
-                    <td><span className={'badge badge-' + (googleEnabled ? 'aprobado' : 'vencido')}><span className="b-dot"></span>{googleEnabled ? 'Google CUN' : 'Fuera de dominio'}</span></td>
-                    <td><span className="tag tag-type">{role?.name || u.roleName || u.role}</span></td>
-                    <td>{ar ? <AreaTag areaId={u.area} coordinationId={u.coordination} /> : <span className="tag tag-muted">Sin área</span>}</td>
-                    <td className="text-sm muted">{fmtDate(u.last)}</td>
-                    <td><span className={'badge badge-' + (u.status === 'Activo' ? 'aprobado' : 'archivado')}><span className="b-dot"></span>{u.status}</span></td>
-                    <td><button className="tbar-icon-btn" style={{ color: 'var(--ink-500)', width: 32, height: 32 }} type="button" title="Editar usuario" onClick={() => openEdit(u)}><Icon name="edit" size={16} /></button></td>
+        <div className="users-directory">
+          <div className="users-directory-toolbar">
+            <label className="field search-field users-search-control">
+              <Icon name="search" size={16} />
+              <input
+                type="search"
+                value={userSearch}
+                onChange={event => changeUserSearch(event.target.value)}
+                placeholder="Buscar por nombre, correo, rol o área..."
+                aria-label="Buscar usuarios"
+              />
+              {userSearch && (
+                <button
+                  className="users-search-clear"
+                  type="button"
+                  onClick={() => changeUserSearch('')}
+                  aria-label="Limpiar búsqueda"
+                  title="Limpiar búsqueda"
+                >
+                  <Icon name="x" size={14} />
+                </button>
+              )}
+            </label>
+            <div className="users-area-control">
+              <SelectField
+                value={userArea}
+                onChange={changeUserArea}
+                options={userAreaOptions}
+                className="users-area-select"
+                ariaLabel="Filtrar usuarios por área"
+              />
+            </div>
+            {hasUserFilters && (
+              <button className="btn btn-ghost btn-sm users-clear-filters" type="button" onClick={clearUserFilters}>
+                <Icon name="x" size={14} />Limpiar filtros
+              </button>
+            )}
+            <span className="users-filter-summary" aria-live="polite">
+              {loading ? 'Cargando…' : `${filteredUsers.length} ${filteredUsers.length === 1 ? 'resultado' : 'resultados'}`}
+            </span>
+          </div>
+
+          <div className={'tbl-wrap users-table-wrap' + (!loading && filteredUsers.length ? ' with-pagination' : '')}>
+            <table className="tbl">
+              <thead><tr><th>Usuario</th><th>Correo</th><th>Acceso</th><th>Rol</th><th>Área</th><th>Último acceso</th><th>Estado</th><th></th></tr></thead>
+              <tbody>
+                {loading ? (
+                  <tr className="users-empty-row">
+                    <td colSpan={8}><div className="users-empty-content"><Icon name="clock" size={24} /><span>Cargando usuarios…</span></div></td>
                   </tr>
-                );
-              })}
-            </tbody>
-          </table>
+                ) : paginatedUsers.length ? paginatedUsers.map(u => {
+                  const role = roles.find(r => Number(r.id) === Number(u.role));
+                  const ar = u.area ? areas.find(a => Number(a.id) === Number(u.area)) : null;
+                  const googleEnabled = String(u.email || '').toLowerCase().endsWith('@cun.edu.co');
+                  return (
+                    <tr key={u.id}>
+                      <td><div className="row gap-10"><Avatar name={u.name} size={32} /><span style={{ fontWeight: 600 }}>{u.name}</span></div></td>
+                      <td className="text-sm muted">{u.email}</td>
+                      <td><span className={'badge badge-' + (googleEnabled ? 'aprobado' : 'vencido')}><span className="b-dot"></span>{googleEnabled ? 'Google CUN' : 'Fuera de dominio'}</span></td>
+                      <td><span className="tag tag-type">{role?.name || u.roleName || u.role}</span></td>
+                      <td>{ar ? <AreaTag areaId={u.area} coordinationId={u.coordination} /> : <span className="tag tag-muted">Sin área</span>}</td>
+                      <td className="text-sm muted">{fmtDate(u.last)}</td>
+                      <td><span className={'badge badge-' + (u.status === 'Activo' ? 'aprobado' : 'archivado')}><span className="b-dot"></span>{u.status}</span></td>
+                      <td><button className="tbar-icon-btn" style={{ color: 'var(--ink-500)', width: 32, height: 32 }} type="button" title="Editar usuario" onClick={() => openEdit(u)}><Icon name="edit" size={16} /></button></td>
+                    </tr>
+                  );
+                }) : (
+                  <tr className="users-empty-row">
+                    <td colSpan={8}>
+                      <div className="users-empty-content">
+                        <Icon name="search" size={26} />
+                        <strong>No se encontraron usuarios</strong>
+                        <span>Prueba con otra búsqueda o limpia los filtros aplicados.</span>
+                        {hasUserFilters && <button className="btn btn-ghost btn-sm" type="button" onClick={clearUserFilters}>Limpiar filtros</button>}
+                      </div>
+                    </td>
+                  </tr>
+                )}
+              </tbody>
+            </table>
+          </div>
+
+          {!loading && filteredUsers.length > 0 && (
+            <div className="users-pagination">
+              <span>Mostrando {firstVisibleUser}–{lastVisibleUser} de {filteredUsers.length} usuarios</span>
+              <nav className="users-page-controls" aria-label="Paginación de usuarios">
+                <button
+                  className="users-page-button users-page-arrow"
+                  type="button"
+                  disabled={currentUserPage === 1}
+                  onClick={() => setUserPage(page => Math.max(1, page - 1))}
+                  aria-label="Página anterior"
+                >
+                  <Icon name="chevLeft" size={15} />
+                </button>
+                {paginationItems.map(item => (
+                  typeof item === 'number' ? (
+                    <button
+                      key={item}
+                      className={'users-page-button' + (item === currentUserPage ? ' active' : '')}
+                      type="button"
+                      onClick={() => setUserPage(item)}
+                      aria-current={item === currentUserPage ? 'page' : undefined}
+                      aria-label={`Ir a la página ${item}`}
+                    >
+                      {item}
+                    </button>
+                  ) : <span key={item} className="users-page-ellipsis" aria-hidden="true">…</span>
+                ))}
+                <button
+                  className="users-page-button users-page-arrow"
+                  type="button"
+                  disabled={currentUserPage === totalUserPages}
+                  onClick={() => setUserPage(page => Math.min(totalUserPages, page + 1))}
+                  aria-label="Página siguiente"
+                >
+                  <Icon name="chevRight" size={15} />
+                </button>
+              </nav>
+            </div>
+          )}
         </div>
       ) : (
         <div className="tbl-wrap">
@@ -694,9 +1091,10 @@ export function UsersView({ nav }) {
                   coordinationValue={modal.form.coordination || ''}
                   onAreaChange={value => setForm('area', value)}
                   onCoordinationChange={value => setForm('coordination', value)}
-                  areaLabel="Área"
-                  allowEmptyArea
-                  areaPlaceholder="Sin área"
+                  areaLabel={WORKFLOW_AREA_REQUIRED_ROLE_IDS.includes(Number(modal.form.role)) ? 'Área *' : 'Área'}
+                  areaDisabled={Number(modal.form.role) === OPERATION_ACADEMIC_FULL_ROLE_ID}
+                  allowEmptyArea={!WORKFLOW_AREA_REQUIRED_ROLE_IDS.includes(Number(modal.form.role))}
+                  areaPlaceholder={WORKFLOW_AREA_REQUIRED_ROLE_IDS.includes(Number(modal.form.role)) ? 'Seleccionar área...' : 'Sin área'}
                   allowEmptyCoordination={Number(modal.form.role) === OPERATION_ACADEMIC_FULL_ROLE_ID && Number(modal.form.area) === OPERATION_ACADEMIC_AREA_ID}
                   emptyCoordinationLabel="Todas las subcoordinaciones"
                 />
@@ -789,7 +1187,7 @@ export function ReportsView({ nav, docs }) {
         <div className="row between wrap gap-12"><div><h1 className="page-title">Reportes e indicadores de gestión</h1><p className="page-sub">Estado del repositorio documental según tu alcance actual</p></div><button className="btn btn-ghost"><Icon name="download" size={16} />Exportar informe</button></div>
       </div>
       <div className="grid-kpi mb-24">
-        <KpiCard icon="check" value={docs.filter(d => ['publicado', 'aprobado'].includes(d.state)).length} label="Documentos vigentes" tone="brand" />
+        <KpiCard icon="check" value={docs.filter(d => d.state === 'publicado').length} label="Documentos vigentes" tone="brand" />
         <KpiCard icon="alert" value={docs.filter(d => d.state === 'vencido').length} label="Documentos vencidos" tone="red" />
         <KpiCard icon="clock" value={docs.filter(d => d.state === 'revision').length} label="Pendientes de revisión" tone="amber" />
         <KpiCard icon="doc" value={docs.length} label="Documentos visibles" tone="blue" />
@@ -819,7 +1217,7 @@ export function HelpView({ nav }) {
     { q: '¿Cómo cargo un nuevo documento?', a: 'Ve a Gestión → Cargar documento. Completa el tipo, área y datos básicos, adjunta el archivo y define el flujo de revisión.' },
     { q: '¿Qué significan los estados de un documento?', a: 'Borrador (en construcción), En revisión, Aprobado, Publicado (vigente y visible), Vencido (superó su vigencia) y Archivado (versión obsoleta).' },
     { q: '¿Cómo solicito la actualización de un documento?', a: 'En la ficha del documento usa el botón “Solicitar actualización”. Se notificará al responsable del área.' },
-    { q: '¿Quién puede aprobar documentos?', a: 'Los roles Líder de área, Aprobador y Administrador general pueden aprobar y publicar documentos.' },
+    { q: '¿Quién puede cambiar los estados del flujo?', a: 'El revisor asignado es el único que puede marcar el documento como aprobado o devolverlo. Después, únicamente el aprobador asignado puede aprobar la decisión final y publicarlo.' },
     { q: '¿Cómo busco un documento rápidamente?', a: 'Usa el buscador inteligente (⌘K / Ctrl+K) y busca por nombre, código, cargo, ANS, aplicación o palabra clave.' },
   ];
   const [open, setOpen] = useState(0);

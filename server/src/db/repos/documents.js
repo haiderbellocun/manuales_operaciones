@@ -2,6 +2,10 @@ import { pool, query } from '../pool.js';
 import { mapDocument, mapFile, today } from '../mapper.js';
 import { logActivity } from './catalog.js';
 import { documentCodePrefix, validateAreaCoordination } from '../areaRules.js';
+import {
+  APPROVER_ROLE_IDS,
+  REVIEWER_ROLE_IDS,
+} from '../../config/workflowRoles.js';
 
 const OPERATION_ACADEMIC_FULL_ROLE_ID = 8;
 const OPERATION_ACADEMIC_AREA_ID = 1;
@@ -328,12 +332,17 @@ export async function createDocumentWithFile(
   coordinationObj,
   file,
   storedName,
-  revisorName,
+  workflowAssignments,
 ) {
   const coordinationId = coordinationObj?.id || null;
   const codePrefix = documentCodePrefix(areaObj, coordinationObj);
   const now = today();
   const version = payload.version || '1.0';
+  const initialState = payload.initialState === 'revision' ? 'revision' : 'borrador';
+  const initialStage = initialState === 'revision' ? 'revision' : 'creacion';
+  const initialAssignee = initialState === 'revision'
+    ? workflowAssignments.reviewer
+    : { id: Number(payload.userId), name: payload.userName || 'Responsable del documento' };
   const client = await pool.connect();
 
   try {
@@ -358,7 +367,7 @@ export async function createDocumentWithFile(
       INSERT INTO documents (
         area_id, coordination_id, type_id, document_number, name, version, state, owner_id,
         vigencia, views, description, tags, related, created, updated
-      ) VALUES ($1,$2,$3,$4,$5,$6,'revision',$7,$8,0,$9,$10,$11,$12,$12)
+      ) VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,0,$10,$11,$12,$13,$13)
       RETURNING *
     `, [
       Number(payload.area),
@@ -367,6 +376,7 @@ export async function createDocumentWithFile(
       documentNumber,
       payload.name,
       version,
+      initialState,
       Number(payload.owner),
       payload.vigencia || '-',
       payload.desc || '',
@@ -403,13 +413,16 @@ export async function createDocumentWithFile(
 
     await client.query(`
       INSERT INTO workflow_items (
-        doc_id, stage, assignee, assignee_user_id, approver_user_id, since_date, priority
-      ) VALUES ($1, 'revision', $2, $3, $4, $5, 'media')
+        doc_id, stage, assignee, assignee_user_id, reviewer_user_id,
+        approver_user_id, since_date, priority
+      ) VALUES ($1, $2, $3, $4, $5, $6, $7, 'media')
     `, [
       document.id,
-      revisorName,
-      payload.revisor ? Number(payload.revisor) : null,
-      payload.aprobador ? Number(payload.aprobador) : null,
+      initialStage,
+      initialAssignee.name,
+      initialAssignee.id,
+      workflowAssignments.reviewer.id,
+      workflowAssignments.approver.id,
       now,
     ]);
 
@@ -464,6 +477,11 @@ function normalizeTags(value) {
 }
 
 export async function updateDocument(doc, payload, auth) {
+  if (doc.state !== 'borrador') {
+    const err = new Error('Solo se pueden editar documentos en estado Borrador.');
+    err.statusCode = 409;
+    throw err;
+  }
   assertCanEditInArea(auth, doc.area, doc.coordination);
   const name = String(payload.name ?? doc.name ?? '').trim();
   const ownerId = Number(payload.owner ?? doc.owner);
@@ -682,7 +700,32 @@ export function assertCanEditInArea(auth, areaId, coordinationId = null) {
   }
 }
 
+async function findVersionWorkflowUser(client, roleIds, preferredUserId, areaId) {
+  const { rows } = await client.query(`
+    SELECT id, name
+    FROM users
+    WHERE role_id = ANY($1::int[])
+      AND status = 'Activo'
+      AND area_id = $3
+    ORDER BY
+      CASE WHEN id = $2 THEN 0 ELSE 1 END,
+      array_position($1::int[], role_id),
+      id
+    LIMIT 1
+  `, [
+    roleIds,
+    preferredUserId ? Number(preferredUserId) : null,
+    Number(areaId),
+  ]);
+  return rows[0] || null;
+}
+
 export async function createDocumentVersion(doc, payload, file, storedName, auth) {
+  if (!['publicado', 'vencido', 'archivado'].includes(doc.state)) {
+    const err = new Error('Solo puedes crear una nueva version desde un documento publicado, vencido o archivado.');
+    err.statusCode = 409;
+    throw err;
+  }
   const now = today();
   const version = String(payload.version || '').trim();
   if (!version) {
@@ -765,6 +808,27 @@ export async function createDocumentVersion(doc, payload, file, storedName, auth
       payload.note || 'Nueva version documental creada',
     ]);
 
+    const { rows: previousWorkflowRows } = await client.query(`
+      SELECT reviewer_user_id, approver_user_id
+      FROM workflow_items
+      WHERE doc_id = $1
+      ORDER BY id DESC
+      LIMIT 1
+    `, [doc.id]);
+    const previousWorkflow = previousWorkflowRows[0] || {};
+    const reviewer = await findVersionWorkflowUser(
+      client,
+      REVIEWER_ROLE_IDS,
+      previousWorkflow.reviewer_user_id,
+      doc.area,
+    );
+    const approver = await findVersionWorkflowUser(
+      client,
+      APPROVER_ROLE_IDS,
+      previousWorkflow.approver_user_id,
+      doc.area,
+    );
+
     const { rows: openWorkflow } = await client.query(
       'SELECT id FROM workflow_items WHERE doc_id = $1 AND completed_at IS NULL ORDER BY id DESC LIMIT 1',
       [doc.id],
@@ -773,18 +837,39 @@ export async function createDocumentVersion(doc, payload, file, storedName, auth
       await client.query(`
         UPDATE workflow_items
         SET stage = 'creacion',
-            assignee = $2,
-            assignee_user_id = $3,
-            since_date = $4,
-            decision = 'new_version',
-            comments = $5
-        WHERE id = $1
-      `, [openWorkflow[0].id, auth.name || auth.email, auth.id, now, payload.note || null]);
+             assignee = $2,
+             assignee_user_id = $3,
+             reviewer_user_id = $4,
+             approver_user_id = $5,
+             since_date = $6,
+             decision = 'new_version',
+             comments = $7
+         WHERE id = $1
+      `, [
+        openWorkflow[0].id,
+        auth.name || auth.email,
+        auth.id,
+        reviewer?.id || null,
+        approver?.id || null,
+        now,
+        payload.note || null,
+      ]);
     } else {
       await client.query(`
-        INSERT INTO workflow_items (doc_id, stage, assignee, assignee_user_id, since_date, priority, decision, comments)
-        VALUES ($1, 'creacion', $2, $3, $4, 'media', 'new_version', $5)
-      `, [doc.id, auth.name || auth.email, auth.id, now, payload.note || null]);
+        INSERT INTO workflow_items (
+          doc_id, stage, assignee, assignee_user_id, reviewer_user_id,
+          approver_user_id, since_date, priority, decision, comments
+        )
+        VALUES ($1, 'creacion', $2, $3, $4, $5, $6, 'media', 'new_version', $7)
+      `, [
+        doc.id,
+        auth.name || auth.email,
+        auth.id,
+        reviewer?.id || null,
+        approver?.id || null,
+        now,
+        payload.note || null,
+      ]);
     }
 
     await client.query('COMMIT');
@@ -807,14 +892,24 @@ export async function createDocumentVersion(doc, payload, file, storedName, auth
   }
 }
 
-export async function addWorkflowItem(docId, assignee, assigneeUserId = null, approverUserId = null) {
+export async function addWorkflowItem(
+  docId,
+  assignee,
+  assigneeUserId = null,
+  reviewerUserId = null,
+  approverUserId = null,
+) {
   await query(`
-    INSERT INTO workflow_items (doc_id, stage, assignee, assignee_user_id, approver_user_id, since_date, priority)
-    VALUES ($1, 'revision', $2, $3, $4, $5, 'media')
+    INSERT INTO workflow_items (
+      doc_id, stage, assignee, assignee_user_id, reviewer_user_id,
+      approver_user_id, since_date, priority
+    )
+    VALUES ($1, 'revision', $2, $3, $4, $5, $6, 'media')
   `, [
     Number(docId),
     assignee,
     assigneeUserId ? Number(assigneeUserId) : null,
+    reviewerUserId ? Number(reviewerUserId) : null,
     approverUserId ? Number(approverUserId) : null,
     today(),
   ]);

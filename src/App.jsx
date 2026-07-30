@@ -5,6 +5,7 @@ import { useDocs } from './context/DocsContext';
 import { useCatalogs } from './context/CatalogContext';
 import { api } from './services/api';
 import { OPERATION_ACADEMIC_AREA_ID } from './utils/areas';
+import { AREA_VISUALS, OPERATION_VISUALS } from './utils/areaVisuals';
 
 const Dashboard = lazy(() => import('./views/Dashboard').then(m => ({ default: m.Dashboard })));
 const Library = lazy(() => import('./views/Library').then(m => ({ default: m.Library })));
@@ -22,9 +23,6 @@ const UsersView = lazy(() => import('./views/Gestion').then(m => ({ default: m.U
 const ReportsView = lazy(() => import('./views/Gestion').then(m => ({ default: m.ReportsView })));
 const HelpView = lazy(() => import('./views/Gestion').then(m => ({ default: m.HelpView })));
 const LoginView = lazy(() => import('./views/Login').then(m => ({ default: m.LoginView })));
-
-const LIBRARY_ICON_COLORS = ['#b91c1c', '#f59e0b', '#8b5e3c', '#2563eb', '#7c2d12', '#a78bfa', '#9333ea', '#ea580c'];
-const COORDINATION_ICON_COLORS = ['#2563eb', '#0891b2', '#7c3aed', '#0f766e', '#4f46e5', '#be185d', '#ea580c'];
 
 function readBrowserLocation() {
   return {
@@ -105,12 +103,14 @@ function buildLibraryLinks(areas = [], coordinations = []) {
     { section: 'Areas' },
   ];
 
-  areas.forEach((area, areaIndex) => {
-    const areaColor = LIBRARY_ICON_COLORS[areaIndex % LIBRARY_ICON_COLORS.length] || area.color;
+  areas.forEach((area) => {
+    const visual = AREA_VISUALS[Number(area.id)] || {};
+    const areaColor = visual.color || area.color;
     links.push({
       label: area.name,
       desc: area.abbreviation,
       icon: 'building',
+      image: visual.mascot,
       view: 'library',
       params: { area: area.id },
       color: areaColor,
@@ -119,15 +119,17 @@ function buildLibraryLinks(areas = [], coordinations = []) {
     if (area.requiresCoordination) {
       coordinations
         .filter(coordination => Number(coordination.areaId) === Number(area.id))
-        .forEach((coordination, coordinationIndex) => {
-          const coordinationColor = COORDINATION_ICON_COLORS[coordinationIndex % COORDINATION_ICON_COLORS.length];
+        .forEach((coordination) => {
+          const coordinationVisual = OPERATION_VISUALS[Number(coordination.id)]
+            || OPERATION_VISUALS.general;
           links.push({
             label: coordination.name,
             desc: `${area.abbreviation} / ${coordination.abbreviation}`,
             icon: 'building',
+            image: coordinationVisual.mascot,
             view: 'library',
             params: { area: area.id, coordination: coordination.id },
-            color: coordinationColor,
+            color: coordinationVisual.color,
             child: true,
             parentId: area.id,
           });
@@ -333,7 +335,11 @@ function NavDropdown({ item, onNav, active, onCloseMobile }) {
               const hasChildren = item.dd.some(child => child.child && Number(child.parentId) === Number(l.params?.area));
               return (
                 <button key={i} type="button" className={'dd-link' + (l.child ? ' dd-link-child' : '')} onClick={() => handleNav(l.view, l.params)}>
-                  <span className="dd-ico" style={l.color ? iconTone(l.color) : null}><Icon name={l.icon} size={17} /></span>
+                  <span className={'dd-ico' + (l.image ? ' dd-ico-mascot' : '')} style={l.color ? iconTone(l.color) : null}>
+                    {l.image
+                      ? <img src={l.image} alt="" aria-hidden="true" />
+                      : <Icon name={l.icon} size={17} />}
+                  </span>
                   <span className="dd-copy"><span className="dd-t">{l.label}</span><span className="dd-d">{l.desc}</span></span>
                   {hasChildren && (
                     <span

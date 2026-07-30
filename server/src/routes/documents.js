@@ -7,13 +7,16 @@ import { getArea, getType } from '../db/repos/catalog.js';
 import { validateAreaCoordination } from '../db/areaRules.js';
 import { logActivity } from '../db/repos/catalog.js';
 import { notifyUsers } from '../db/repos/notifications.js';
-import { findDocumentOwnerRecipient } from '../db/repos/users.js';
+import {
+  findDocumentOwnerRecipient,
+  resolveResponsiblePerson,
+  validateWorkflowAssignments,
+} from '../db/repos/users.js';
 import {
   listDocuments, getDocument, createDocumentWithFile, toggleFavorite,
   incrementViews, createUpdateRequest, getFileMeta, upsertFile,
   getVersionFileMeta, updateDocument,
-  resolveRevisorName, assertCanCreateInArea,
-  assertCanEditInArea, createDocumentVersion,
+  assertCanCreateInArea, assertCanEditInArea, createDocumentVersion,
 } from '../db/repos/documents.js';
 
 const router = Router();
@@ -138,6 +141,11 @@ router.post('/:id/versions', requirePermission('editar'), (req, res) => {
       const doc = await getDocument(req.params.id, req.auth);
       if (!doc) return res.status(404).json({ message: 'Documento no encontrado.' });
       assertCanEditInArea(req.auth, doc.area, doc.coordination);
+      if (!['publicado', 'vencido', 'archivado'].includes(doc.state)) {
+        return res.status(409).json({
+          message: 'Solo puedes crear una nueva version desde un documento publicado, vencido o archivado.',
+        });
+      }
       if (!req.file) return res.status(400).json({ message: 'El archivo de la nueva version es obligatorio.' });
 
       const version = String(req.body?.version || '').trim();
@@ -177,12 +185,20 @@ router.post('/', requirePermission('crear'), (req, res) => {
     let storedName;
     try {
       const payload = req.body || {};
-      const { type, area, coordination, name, owner } = payload;
+      const {
+        type, area, coordination, name, revisor, aprobador,
+      } = payload;
       if (!req.file) {
         return res.status(400).json({ message: 'El archivo del documento es obligatorio.' });
       }
-      if (!type || !area || !name || !owner) {
-        return res.status(400).json({ message: 'Tipo, area, nombre y responsable son obligatorios.' });
+      if (!type || !area || !name || !revisor || !aprobador) {
+        return res.status(400).json({
+          message: 'Tipo, area, nombre, revisor y aprobador son obligatorios.',
+        });
+      }
+      const initialState = String(payload.initialState || 'borrador').toLowerCase();
+      if (!['borrador', 'revision'].includes(initialState)) {
+        return res.status(400).json({ message: 'El estado inicial debe ser borrador o revision.' });
       }
 
       assertCanCreateInArea(req.auth, area, coordination || null);
@@ -205,26 +221,37 @@ router.post('/', requirePermission('crear'), (req, res) => {
         return res.status(400).json({ message: 'Tipo documental invalido.' });
       }
 
-      const revisorName = payload.revisor
-        ? await resolveRevisorName(payload.revisor)
-        : 'Revisor asignado';
+      const workflowAssignments = await validateWorkflowAssignments(
+        revisor,
+        aprobador,
+        areaObj.id,
+      );
+      const responsiblePerson = await resolveResponsiblePerson(req.auth.id);
       storedName = await fileStorage.savePending(payload.version || '1.0', req.file);
       const newDoc = await createDocumentWithFile(
-        { ...payload, userId: req.user.sub },
+        {
+          ...payload,
+          owner: responsiblePerson.id,
+          initialState,
+          userId: req.user.sub,
+          userName: req.auth.name || req.user.email,
+        },
         areaObj,
         typeObj,
         coordinationObj,
         req.file,
         storedName,
-        revisorName,
+        workflowAssignments,
       );
 
-      await notifySafely([payload.revisor], {
-        title: 'Nuevo documento para revision',
-        message: `${req.user.email} cargo "${newDoc.name}" y te asigno la revision.`,
-        type: 'workflow',
-        docId: newDoc.id,
-      });
+      if (initialState === 'revision') {
+        await notifySafely([workflowAssignments.reviewer.id], {
+          title: 'Nuevo documento para revision',
+          message: `${req.user.email} cargo "${newDoc.name}" y te asigno la revision.`,
+          type: 'workflow',
+          docId: newDoc.id,
+        });
+      }
       return res.status(201).json(newDoc);
     } catch (err) {
       if (storedName) await fileStorage.remove(storedName).catch(() => {});
@@ -287,6 +314,11 @@ router.post('/:id/file', requirePermission('crear'), (req, res) => {
       const doc = await getDocument(routeDocId, req.auth);
       if (!doc) return res.status(404).json({ message: 'Documento no encontrado.' });
       assertCanCreateInArea(req.auth, doc.area, doc.coordination);
+      if (doc.state !== 'borrador') {
+        return res.status(409).json({
+          message: 'El archivo solo se puede reemplazar mientras el documento esta en Borrador.',
+        });
+      }
       if (Number(doc.id) !== routeDocId) {
         return res.status(409).json({ message: 'El documento consultado no coincide con el id de la ruta.' });
       }

@@ -97,6 +97,7 @@ CREATE TABLE IF NOT EXISTS workflow_items (
   stage      VARCHAR(20) NOT NULL,
   assignee   VARCHAR(200) NOT NULL,
   assignee_user_id INTEGER REFERENCES users(id),
+  reviewer_user_id INTEGER REFERENCES users(id),
   approver_user_id INTEGER REFERENCES users(id),
   since_date DATE NOT NULL,
   priority   VARCHAR(20) NOT NULL,
@@ -182,14 +183,14 @@ CREATE INDEX IF NOT EXISTS idx_notifications_user_unread ON notifications(user_i
 -- No incluye usuarios ni documentos: esos se crean desde Google Login y el flujo documental.
 
 INSERT INTO areas (id, name, abbreviation, color, lead_name, requires_coordination) VALUES
-  (1, 'Coordinacion de Operacion Academica', 'COA', '#2563eb', NULL, true),
-  (2, 'Coordinacion de Fabrica y Desarrollo', 'CFD', '#8b5e3c', NULL, false),
-  (3, 'Especializaciones', 'ESP', '#ea580c', NULL, false),
-  (4, 'Coordinacion B2B', 'B2B', '#991b1b', NULL, false),
-  (5, 'Coordinacion de Servicio', 'CSE', '#a78bfa', NULL, false),
-  (6, 'Coordinacion Pruebas Saber', 'CPS', '#9333ea', NULL, false),
-  (7, 'Coordinacion de Proyeccion Social', 'CPSO', '#78350f', NULL, false),
-  (8, 'Coordinacion de Desarrollo Profesional', 'CDP', '#f59e0b', NULL, false)
+  (1, 'Coordinacion de Operacion Academica', 'COA', '#29366f', NULL, true),
+  (2, 'Coordinacion de Fabrica y Desarrollo', 'CFD', '#43b8bf', NULL, false),
+  (3, 'Especializaciones', 'ESP', '#970b12', NULL, false),
+  (4, 'Coordinacion B2B', 'B2B', '#c5102e', NULL, false),
+  (5, 'Coordinacion de Servicio', 'CSE', '#c51a78', NULL, false),
+  (6, 'Coordinacion Pruebas Saber', 'CPS', '#70b52b', NULL, false),
+  (7, 'Coordinacion de Proyeccion Social', 'CPSO', '#08743e', NULL, false),
+  (8, 'Coordinacion de Desarrollo Profesional', 'CDP', '#9f559b', NULL, false)
 ON CONFLICT (id) DO UPDATE SET
   name = EXCLUDED.name,
   abbreviation = EXCLUDED.abbreviation,
@@ -225,14 +226,14 @@ ON CONFLICT (id) DO UPDATE SET
   icon = EXCLUDED.icon;
 
 INSERT INTO roles (id, name, description, perms) VALUES
-  (1, 'Administrador general', 'Control total de la plataforma, configuracion y usuarios.', '{"crear":true,"editar":true,"aprobar":true,"publicar":true,"archivar":true,"consultar":true,"descargar":true,"administrar":true}'::jsonb),
-  (2, 'Lider de area', 'Gestiona y aprueba los documentos de su area.', '{"crear":true,"editar":true,"aprobar":true,"publicar":true,"archivar":true,"consultar":true,"descargar":true,"administrar":false}'::jsonb),
+  (1, 'Administrador general', 'Administra la plataforma, la configuracion y los usuarios; supervisa el flujo sin reemplazar a revisores ni aprobadores.', '{"crear":true,"editar":true,"aprobar":false,"publicar":false,"archivar":true,"consultar":true,"descargar":true,"administrar":true}'::jsonb),
+  (2, 'Lider de area', 'Gestiona los documentos de su area y puede revisar, aprobar y publicar aquellos que tenga asignados.', '{"crear":true,"editar":true,"aprobar":true,"publicar":true,"archivar":true,"consultar":true,"descargar":true,"administrar":false}'::jsonb),
   (3, 'Editor documental', 'Crea y edita documentos; los envia a revision.', '{"crear":true,"editar":true,"aprobar":false,"publicar":false,"archivar":false,"consultar":true,"descargar":true,"administrar":false}'::jsonb),
-  (4, 'Revisor', 'Revisa documentos y devuelve observaciones.', '{"crear":false,"editar":false,"aprobar":false,"publicar":false,"archivar":false,"consultar":true,"descargar":true,"administrar":false}'::jsonb),
-  (5, 'Aprobador', 'Aprueba documentos revisados para su publicacion.', '{"crear":false,"editar":false,"aprobar":true,"publicar":true,"archivar":false,"consultar":true,"descargar":true,"administrar":false}'::jsonb),
+  (4, 'Revisor', 'Revisa documentos, los marca como aprobados o los devuelve para ajustes.', '{"crear":false,"editar":false,"aprobar":false,"publicar":false,"archivar":false,"consultar":true,"descargar":true,"administrar":false}'::jsonb),
+  (5, 'Aprobador', 'Toma la decision final y publica los documentos aprobados que tiene asignados.', '{"crear":false,"editar":false,"aprobar":true,"publicar":true,"archivar":false,"consultar":true,"descargar":true,"administrar":false}'::jsonb),
   (6, 'Usuario consultor', 'Consulta y descarga documentos publicados.', '{"crear":false,"editar":false,"aprobar":false,"publicar":false,"archivar":false,"consultar":true,"descargar":true,"administrar":false}'::jsonb),
   (7, 'Auditor / lector institucional', 'Lectura y trazabilidad sin descarga.', '{"crear":false,"editar":false,"aprobar":false,"publicar":false,"archivar":false,"consultar":true,"descargar":false,"administrar":false}'::jsonb),
-  (8, 'Coordinador Operacion Academica', 'Gestiona, revisa, aprueba y publica documentos de Operacion Academica y sus subcoordinaciones.', '{"crear":true,"editar":true,"aprobar":true,"publicar":true,"archivar":true,"consultar":true,"descargar":true,"administrar":false}'::jsonb)
+  (8, 'Coordinador Operacion Academica', 'Gestiona documentos de Operacion Academica y sus subcoordinaciones, y puede revisar, aprobar y publicar aquellos que tenga asignados.', '{"crear":true,"editar":true,"aprobar":true,"publicar":true,"archivar":true,"consultar":true,"descargar":true,"administrar":false}'::jsonb)
 ON CONFLICT (id) DO UPDATE SET
   name = EXCLUDED.name,
   description = EXCLUDED.description,

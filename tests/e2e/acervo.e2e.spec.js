@@ -52,6 +52,12 @@ test.describe.serial('Acervo Operaciones - suite integral', () => {
   const createdUserIds = [];
   let createdPersonId = null;
   let admin;
+  let leader;
+  let reviewer;
+  let approver;
+  let coordinationReviewer;
+  let coordinationApprover;
+  let consultant;
   let ownerId;
   let areaId;
   let coordinationAreaId;
@@ -60,6 +66,10 @@ test.describe.serial('Acervo Operaciones - suite integral', () => {
   let unrelatedCoordinationId;
   let typeId;
   let api;
+  let leaderApi;
+  let reviewerApi;
+  let approverApi;
+  let consultantApi;
   let adminToken;
   let documentId;
   let workflowId;
@@ -95,6 +105,31 @@ test.describe.serial('Acervo Operaciones - suite integral', () => {
     adminToken = signToken({ id: admin.id, email: admin.email, role: admin.role_id });
     api = await makeApiFor(admin);
 
+    const identitySuffix = Date.now();
+    const { rows: workflowUsers } = await query(`
+      INSERT INTO users (name, email, role_id, status)
+      VALUES
+        ($1, $2, 4, 'Activo'),
+        ($3, $4, 5, 'Activo'),
+        ($5, $6, 2, 'Activo'),
+        ($7, $8, 6, 'Activo')
+      RETURNING *
+    `, [
+      `Revisor ${runId}`, `revisor.e2e.${identitySuffix}@cun.edu.co`,
+      `Aprobador ${runId}`, `aprobador.e2e.${identitySuffix}@cun.edu.co`,
+      `Lider ${runId}`, `lider.e2e.${identitySuffix}@cun.edu.co`,
+      `Consultor flujo ${runId}`, `consultor.flujo.e2e.${identitySuffix}@cun.edu.co`,
+    ]);
+    createdUserIds.push(...workflowUsers.map(user => user.id));
+    reviewer = workflowUsers.find(user => Number(user.role_id) === 4);
+    approver = workflowUsers.find(user => Number(user.role_id) === 5);
+    leader = workflowUsers.find(user => Number(user.role_id) === 2);
+    consultant = workflowUsers.find(user => Number(user.role_id) === 6);
+    leaderApi = await makeApiFor(leader);
+    reviewerApi = await makeApiFor(reviewer);
+    approverApi = await makeApiFor(approver);
+    consultantApi = await makeApiFor(consultant);
+
     const { rows: areaRows } = await query(`
       SELECT id FROM areas
       ORDER BY requires_coordination ASC, id
@@ -116,6 +151,35 @@ test.describe.serial('Acervo Operaciones - suite integral', () => {
     `);
     coordinationAreaId = coordinationAreaRows[0]?.area_id || null;
     coordinationId = coordinationAreaRows[0]?.coordination_id || null;
+    await query(
+      'UPDATE users SET area_id = $1 WHERE id = ANY($2::int[])',
+      [areaId, [leader.id, reviewer.id, approver.id]],
+    );
+    leader.area_id = areaId;
+    reviewer.area_id = areaId;
+    approver.area_id = areaId;
+
+    if (coordinationAreaId && Number(coordinationAreaId) !== Number(areaId)) {
+      const { rows: coordinationWorkflowUsers } = await query(`
+        INSERT INTO users (name, email, role_id, area_id, status)
+        VALUES
+          ($1, $2, 4, $3, 'Activo'),
+          ($4, $5, 5, $3, 'Activo')
+        RETURNING *
+      `, [
+        `Revisor coordinacion ${runId}`,
+        `revisor.coordinacion.e2e.${identitySuffix}@cun.edu.co`,
+        coordinationAreaId,
+        `Aprobador coordinacion ${runId}`,
+        `aprobador.coordinacion.e2e.${identitySuffix}@cun.edu.co`,
+      ]);
+      createdUserIds.push(...coordinationWorkflowUsers.map(user => user.id));
+      coordinationReviewer = coordinationWorkflowUsers.find(user => Number(user.role_id) === 4);
+      coordinationApprover = coordinationWorkflowUsers.find(user => Number(user.role_id) === 5);
+    } else {
+      coordinationReviewer = reviewer;
+      coordinationApprover = approver;
+    }
     const { rows: secondCoordinationRows } = await query(`
       SELECT id
       FROM coordinations
@@ -169,10 +233,20 @@ test.describe.serial('Acervo Operaciones - suite integral', () => {
       }
       if (createdUserIds.length) {
         await query('DELETE FROM notifications WHERE user_id = ANY($1::int[])', [createdUserIds]);
+        await query(`
+          DELETE FROM people p
+          USING users u
+          WHERE u.id = ANY($1::int[])
+            AND LOWER(p.name) = LOWER(u.name)
+        `, [createdUserIds]);
         await query('DELETE FROM users WHERE id = ANY($1::int[])', [createdUserIds]);
       }
       if (createdPersonId) await query('DELETE FROM people WHERE id = $1', [createdPersonId]);
     } finally {
+      await leaderApi?.dispose();
+      await reviewerApi?.dispose();
+      await approverApi?.dispose();
+      await consultantApi?.dispose();
       await api?.dispose();
       await pool.end();
     }
@@ -189,10 +263,31 @@ test.describe.serial('Acervo Operaciones - suite integral', () => {
     expect(session.status()).toBe(200);
     expect((await session.json()).user.email).toBe(admin.email);
 
-    for (const endpoint of ['/areas', '/coordinations', '/types', '/people', '/assignees', '/stats', '/reports/summary']) {
+    for (const endpoint of ['/areas', '/coordinations', '/types', '/people', '/assignees', '/stats', '/map/counts', '/reports/summary']) {
       const response = await api.get(`/api${endpoint}`);
       expect(response.status(), endpoint).toBe(200);
     }
+
+    const areaAssigneesResponse = await api.get(`/api/assignees?areaId=${areaId}`);
+    await expectStatus(areaAssigneesResponse, 200);
+    const areaAssignees = await areaAssigneesResponse.json();
+    expect(areaAssignees).toEqual(expect.arrayContaining([
+      expect.objectContaining({
+        id: leader.id,
+        role: 2,
+        roleName: 'Lider de area',
+        area: areaId,
+        status: 'Activo',
+      }),
+      expect.objectContaining({ id: reviewer.id, role: 4, area: areaId, status: 'Activo' }),
+      expect.objectContaining({ id: approver.id, role: 5, area: areaId, status: 'Activo' }),
+    ]));
+    expect(areaAssignees.every(user => (
+      user.status === 'Activo'
+      && [2, 4, 5, 8].includes(Number(user.role))
+      && Number(user.area) === Number(areaId)
+    ))).toBe(true);
+    expect(areaAssignees.some(user => Number(user.id) === Number(consultant.id))).toBe(false);
   });
 
   test('bloquea sesiones invalidas, usuarios inactivos y escrituras CORS no permitidas', async () => {
@@ -241,7 +336,7 @@ test.describe.serial('Acervo Operaciones - suite integral', () => {
     const missing = await api.post('/api/documents', {
       multipart: {
         type: String(typeId), area: String(areaId), name: missingName,
-        owner: String(ownerId), version: '1.0', revisor: String(admin.id), aprobador: String(admin.id),
+        owner: String(ownerId), version: '1.0', revisor: String(reviewer.id), aprobador: String(approver.id),
       },
     });
     await expectStatus(missing, 400);
@@ -251,7 +346,7 @@ test.describe.serial('Acervo Operaciones - suite integral', () => {
     const invalid = await api.post('/api/documents', {
       multipart: {
         type: String(typeId), area: String(areaId), name: invalidName,
-        owner: String(ownerId), version: '1.0', revisor: String(admin.id), aprobador: String(admin.id),
+        owner: String(ownerId), version: '1.0', revisor: String(reviewer.id), aprobador: String(approver.id),
         file: { name: 'archivo.exe', mimeType: 'application/octet-stream', buffer: Buffer.from('invalid') },
       },
     });
@@ -262,7 +357,7 @@ test.describe.serial('Acervo Operaciones - suite integral', () => {
     const missingData = await api.post('/api/documents', {
       multipart: {
         type: String(typeId), area: String(areaId), name: missingDataName,
-        version: '1.0', revisor: String(admin.id), aprobador: String(admin.id),
+        version: '1.0', revisor: String(reviewer.id),
         file: { name: 'sin-responsable.pdf', mimeType: 'application/pdf', buffer: fixtureBuffer },
       },
     });
@@ -275,12 +370,46 @@ test.describe.serial('Acervo Operaciones - suite integral', () => {
         multipart: {
           type: String(typeId), area: String(areaId), coordination: String(unrelatedCoordinationId),
           name: wrongCoordinationName, owner: String(ownerId), version: '1.0',
-          revisor: String(admin.id), aprobador: String(admin.id),
+          revisor: String(reviewer.id), aprobador: String(approver.id),
           file: { name: 'coordinacion-invalida.pdf', mimeType: 'application/pdf', buffer: fixtureBuffer },
         },
       });
       await expectStatus(wrongCoordination, 400);
       expect(await countDocuments(wrongCoordinationName)).toBe(0);
+    }
+
+    const invalidAssignmentsName = `${runId}-ROLES-FLUJO-INVALIDOS`;
+    const invalidAssignments = await api.post('/api/documents', {
+      multipart: {
+        type: String(typeId),
+        area: String(areaId),
+        name: invalidAssignmentsName,
+        owner: String(ownerId),
+        version: '1.0',
+        initialState: 'borrador',
+        revisor: String(admin.id),
+        aprobador: String(admin.id),
+        file: { name: 'roles-invalidos.pdf', mimeType: 'application/pdf', buffer: fixtureBuffer },
+      },
+    });
+    await expectStatus(invalidAssignments, 400);
+    expect(await countDocuments(invalidAssignmentsName)).toBe(0);
+
+    if (coordinationAreaId && Number(coordinationAreaId) !== Number(areaId)) {
+      const wrongAreaAssignmentsName = `${runId}-FLUJO-OTRA-AREA`;
+      const wrongAreaAssignments = await api.post('/api/documents', {
+        multipart: {
+          type: String(typeId),
+          area: String(areaId),
+          name: wrongAreaAssignmentsName,
+          version: '1.0',
+          revisor: String(coordinationReviewer.id),
+          aprobador: String(coordinationApprover.id),
+          file: { name: 'flujo-otra-area.pdf', mimeType: 'application/pdf', buffer: fixtureBuffer },
+        },
+      });
+      await expectStatus(wrongAreaAssignments, 400);
+      expect(await countDocuments(wrongAreaAssignmentsName)).toBe(0);
     }
   });
 
@@ -297,7 +426,7 @@ test.describe.serial('Acervo Operaciones - suite integral', () => {
     const denied = await consultantApi.post('/api/documents', {
       multipart: {
         type: String(typeId), area: String(areaId), name: deniedName,
-        owner: String(ownerId), version: '1.0', revisor: String(admin.id), aprobador: String(admin.id),
+        owner: String(ownerId), version: '1.0', revisor: String(reviewer.id), aprobador: String(approver.id),
         file: { name: 'consultor.pdf', mimeType: 'application/pdf', buffer: fixtureBuffer },
       },
     });
@@ -314,7 +443,7 @@ test.describe.serial('Acervo Operaciones - suite integral', () => {
       multipart: {
         type: String(typeId), area: String(coordinationAreaId), coordination: String(coordinationId),
         name: coordinatedName, owner: String(ownerId), version: '1.0',
-        revisor: String(admin.id), aprobador: String(admin.id),
+        revisor: String(coordinationReviewer.id), aprobador: String(coordinationApprover.id),
         file: { name: 'con-coordinacion.pdf', mimeType: 'application/pdf', buffer: fixtureBuffer },
       },
     });
@@ -364,6 +493,20 @@ test.describe.serial('Acervo Operaciones - suite integral', () => {
     const schoolEditorApi = await makeApiFor(schoolEditor);
 
     try {
+      const operationAssigneesResponse = await coordinatorApi.get(
+        `/api/assignees?areaId=${OPERATION_ACADEMIC_AREA_ID}`,
+      );
+      await expectStatus(operationAssigneesResponse, 200);
+      expect(await operationAssigneesResponse.json()).toEqual(expect.arrayContaining([
+        expect.objectContaining({
+          id: coordinator.id,
+          role: 8,
+          roleName: 'Coordinador Operacion Academica',
+          area: OPERATION_ACADEMIC_AREA_ID,
+          status: 'Activo',
+        }),
+      ]));
+
       const generalName = `${runId}-OA-GENERAL`;
       const generalResponse = await coordinatorApi.post('/api/documents', {
         multipart: {
@@ -389,6 +532,55 @@ test.describe.serial('Acervo Operaciones - suite integral', () => {
       });
       await expectStatus(deniedGeneralEdit, 403);
 
+      const coordinatorFlowResponse = await coordinatorApi.post('/api/documents', {
+        multipart: {
+          type: String(typeId),
+          area: String(OPERATION_ACADEMIC_AREA_ID),
+          name: `${runId}-FLUJO-COORDINADOR-OA`,
+          owner: String(ownerId),
+          version: '1.0',
+          initialState: 'revision',
+          revisor: String(coordinator.id),
+          aprobador: String(coordinator.id),
+          file: {
+            name: 'flujo-coordinador-oa.pdf',
+            mimeType: 'application/pdf',
+            buffer: fixtureBuffer,
+          },
+        },
+      });
+      await expectStatus(coordinatorFlowResponse, 201);
+      const coordinatorFlowDocument = await coordinatorFlowResponse.json();
+      createdDocIds.push(Number(coordinatorFlowDocument.id));
+
+      const coordinatorReviewInbox = await coordinatorApi.get('/api/workflow');
+      await expectStatus(coordinatorReviewInbox, 200);
+      const coordinatorReviewItem = (await coordinatorReviewInbox.json())
+        .find(entry => Number(entry.docId) === Number(coordinatorFlowDocument.id));
+      expect(coordinatorReviewItem).toBeTruthy();
+      expect(coordinatorReviewItem.canMarkApproved).toBeTruthy();
+
+      const coordinatorReview = await coordinatorApi.post(
+        `/api/workflow/${coordinatorReviewItem.id}/transition`,
+        { data: { action: 'review', comments: 'Revision del coordinador de Operacion Academica' } },
+      );
+      await expectStatus(coordinatorReview, 200);
+      expect((await coordinatorReview.json()).status).toBe('approved_for_publication');
+
+      const coordinatorApprovalInbox = await coordinatorApi.get('/api/workflow');
+      await expectStatus(coordinatorApprovalInbox, 200);
+      const coordinatorApprovalItem = (await coordinatorApprovalInbox.json())
+        .find(entry => Number(entry.docId) === Number(coordinatorFlowDocument.id));
+      expect(coordinatorApprovalItem).toBeTruthy();
+      expect(coordinatorApprovalItem.canPublish).toBeTruthy();
+
+      const coordinatorPublication = await coordinatorApi.post(
+        `/api/workflow/${coordinatorApprovalItem.id}/transition`,
+        { data: { action: 'publish', comments: 'Publicacion del coordinador de Operacion Academica' } },
+      );
+      await expectStatus(coordinatorPublication, 200);
+      expect((await coordinatorPublication.json()).status).toBe('published');
+
       const otherSchoolName = `${runId}-OTRA-ESCUELA`;
       const otherSchoolResponse = await coordinatorApi.post('/api/documents', {
         multipart: {
@@ -398,8 +590,8 @@ test.describe.serial('Acervo Operaciones - suite integral', () => {
           name: otherSchoolName,
           owner: String(ownerId),
           version: '1.0',
-          revisor: String(coordinator.id),
-          aprobador: String(coordinator.id),
+          revisor: String(coordinationReviewer.id),
+          aprobador: String(coordinationApprover.id),
           file: { name: 'otra-escuela.pdf', mimeType: 'application/pdf', buffer: fixtureBuffer },
         },
       });
@@ -424,8 +616,8 @@ test.describe.serial('Acervo Operaciones - suite integral', () => {
           name: ownSchoolName,
           owner: String(ownerId),
           version: '1.0',
-          revisor: String(coordinator.id),
-          aprobador: String(coordinator.id),
+          revisor: String(coordinationReviewer.id),
+          aprobador: String(coordinationApprover.id),
           file: { name: 'escuela-asignada.pdf', mimeType: 'application/pdf', buffer: fixtureBuffer },
         },
       });
@@ -465,8 +657,8 @@ test.describe.serial('Acervo Operaciones - suite integral', () => {
           name: deniedGeneralName,
           owner: String(ownerId),
           version: '1.0',
-          revisor: String(coordinator.id),
-          aprobador: String(coordinator.id),
+          revisor: String(coordinationReviewer.id),
+          aprobador: String(coordinationApprover.id),
           file: { name: 'general-no-autorizado.pdf', mimeType: 'application/pdf', buffer: fixtureBuffer },
         },
       });
@@ -484,7 +676,8 @@ test.describe.serial('Acervo Operaciones - suite integral', () => {
         type: String(typeId), area: String(areaId), name: `${runId}-ANS-ACERVO`,
         owner: String(ownerId), version: '1.0', versionNote: 'Versión inicial E2E',
         desc: 'Documento temporal generado por la suite E2E', tags: 'e2e,automatizado',
-        revisor: String(admin.id), aprobador: String(admin.id),
+        initialState: 'borrador',
+        revisor: String(reviewer.id), aprobador: String(approver.id),
         file: { name: 'ANS-ACV-001-E2E.pdf', mimeType: 'application/pdf', buffer: fixtureBuffer },
       },
     });
@@ -500,11 +693,111 @@ test.describe.serial('Acervo Operaciones - suite integral', () => {
     expect(await fileStorage.exists(rows[0].stored_name)).toBeTruthy();
 
     const { rows: historyRows } = await query('SELECT COUNT(*)::int AS n FROM document_history WHERE doc_id = $1', [documentId]);
-    const { rows: workflowRows } = await query('SELECT COUNT(*)::int AS n FROM workflow_items WHERE doc_id = $1', [documentId]);
+    const { rows: workflowRows } = await query(`
+      SELECT stage, assignee_user_id, reviewer_user_id, approver_user_id
+      FROM workflow_items
+      WHERE doc_id = $1
+    `, [documentId]);
     const { rows: activityRows } = await query('SELECT COUNT(*)::int AS n FROM activity_log WHERE doc_id = $1', [documentId]);
+    const { rows: responsibleRows } = await query(`
+      SELECT p.name
+      FROM documents d
+      JOIN people p ON p.id = d.owner_id
+      WHERE d.id = $1
+    `, [documentId]);
     expect(historyRows[0].n).toBeGreaterThan(0);
-    expect(workflowRows[0].n).toBe(1);
+    expect(workflowRows).toHaveLength(1);
+    expect(document.state).toBe('borrador');
+    expect(workflowRows[0].stage).toBe('creacion');
+    expect(Number(workflowRows[0].assignee_user_id)).toBe(Number(admin.id));
+    expect(Number(workflowRows[0].reviewer_user_id)).toBe(Number(reviewer.id));
+    expect(Number(workflowRows[0].approver_user_id)).toBe(Number(approver.id));
+    expect(responsibleRows[0]?.name).toBe(admin.name);
     expect(activityRows[0].n).toBeGreaterThan(0);
+  });
+
+  test('permite cargar un documento directamente en revisión sin publicarlo', async () => {
+    const response = await api.post('/api/documents', {
+      multipart: {
+        type: String(typeId),
+        area: String(areaId),
+        name: `${runId}-REVISION-DIRECTA`,
+        owner: String(ownerId),
+        version: '1.0',
+        initialState: 'revision',
+        revisor: String(reviewer.id),
+        aprobador: String(approver.id),
+        file: { name: 'revision-directa.pdf', mimeType: 'application/pdf', buffer: fixtureBuffer },
+      },
+    });
+    await expectStatus(response, 201);
+    const document = await response.json();
+    createdDocIds.push(Number(document.id));
+    expect(document.state).toBe('revision');
+
+    const { rows } = await query(`
+      SELECT stage, assignee_user_id, reviewer_user_id, approver_user_id
+      FROM workflow_items
+      WHERE doc_id = $1
+    `, [document.id]);
+    expect(rows).toHaveLength(1);
+    expect(rows[0].stage).toBe('revision');
+    expect(Number(rows[0].assignee_user_id)).toBe(Number(reviewer.id));
+    expect(Number(rows[0].reviewer_user_id)).toBe(Number(reviewer.id));
+    expect(Number(rows[0].approver_user_id)).toBe(Number(approver.id));
+    expect((await consultantApi.get(`/api/documents/${document.id}`)).status()).toBe(404);
+  });
+
+  test('permite que el lider asignado revise, apruebe y publique en su area', async () => {
+    const response = await api.post('/api/documents', {
+      multipart: {
+        type: String(typeId),
+        area: String(areaId),
+        name: `${runId}-FLUJO-LIDER`,
+        owner: String(ownerId),
+        version: '1.0',
+        initialState: 'revision',
+        revisor: String(leader.id),
+        aprobador: String(leader.id),
+        file: { name: 'flujo-lider.pdf', mimeType: 'application/pdf', buffer: fixtureBuffer },
+      },
+    });
+    await expectStatus(response, 201);
+    const document = await response.json();
+    createdDocIds.push(Number(document.id));
+    expect(document.state).toBe('revision');
+    expect((await consultantApi.get(`/api/documents/${document.id}`)).status()).toBe(404);
+
+    const reviewInboxResponse = await leaderApi.get('/api/workflow');
+    await expectStatus(reviewInboxResponse, 200);
+    const reviewItem = (await reviewInboxResponse.json())
+      .find(entry => Number(entry.docId) === Number(document.id));
+    expect(reviewItem).toBeTruthy();
+    expect(reviewItem.canMarkApproved).toBeTruthy();
+
+    const review = await leaderApi.post(`/api/workflow/${reviewItem.id}/transition`, {
+      data: { action: 'review', comments: 'Revision realizada por lider de area' },
+    });
+    await expectStatus(review, 200);
+    expect((await review.json()).status).toBe('approved_for_publication');
+    expect((await consultantApi.get(`/api/documents/${document.id}`)).status()).toBe(404);
+
+    const approvalInboxResponse = await leaderApi.get('/api/workflow');
+    await expectStatus(approvalInboxResponse, 200);
+    const approvalItem = (await approvalInboxResponse.json())
+      .find(entry => Number(entry.docId) === Number(document.id));
+    expect(approvalItem).toBeTruthy();
+    expect(approvalItem.canPublish).toBeTruthy();
+
+    const publication = await leaderApi.post(`/api/workflow/${approvalItem.id}/transition`, {
+      data: { action: 'publish', comments: 'Publicacion realizada por lider de area' },
+    });
+    await expectStatus(publication, 200);
+    expect((await publication.json()).status).toBe('published');
+
+    const publicDetail = await consultantApi.get(`/api/documents/${document.id}`);
+    await expectStatus(publicDetail, 200);
+    expect((await publicDetail.json()).state).toBe('publicado');
   });
 
   test('responde correctamente ante documentos y acciones inexistentes', async () => {
@@ -513,7 +806,7 @@ test.describe.serial('Acervo Operaciones - suite integral', () => {
     expect((await api.get(`/api/documents/${missingId}/file/meta`)).status()).toBe(404);
     expect((await api.get(`/api/documents/${missingId}/file`)).status()).toBe(404);
     expect((await api.post(`/api/workflow/${missingId}/transition`, {
-      data: { action: 'approve', comments: 'No existe' },
+      data: { action: 'review', comments: 'No existe' },
     })).status()).toBe(404);
   });
 
@@ -535,7 +828,9 @@ test.describe.serial('Acervo Operaciones - suite integral', () => {
     })).status()).toBe(200);
   });
 
-  test('recorre revisión, aprobación y publicación', async () => {
+  test('mantiene privado el documento hasta que revisor y aprobador completan sus etapas', async () => {
+    expect((await consultantApi.get(`/api/documents/${documentId}`)).status()).toBe(404);
+
     const workflow = await api.get('/api/workflow');
     expect(workflow.status()).toBe(200);
     const item = (await workflow.json()).find(entry => Number(entry.docId) === documentId);
@@ -547,19 +842,65 @@ test.describe.serial('Acervo Operaciones - suite integral', () => {
     });
     expect(invalidStage.status()).toBe(403);
 
-    const approve = await api.post(`/api/workflow/${workflowId}/transition`, {
+    const submit = await api.post(`/api/workflow/${workflowId}/transition`, {
+      data: { action: 'submit', comments: 'Borrador terminado' },
+    });
+    expect(submit.status()).toBe(200);
+    expect((await submit.json()).status).toBe('submitted_to_review');
+
+    const adminCannotReview = await api.post(`/api/workflow/${workflowId}/transition`, {
+      data: { action: 'review', comments: 'El administrador no reemplaza al revisor' },
+    });
+    expect(adminCannotReview.status()).toBe(403);
+
+    const reviewerWorkflow = await reviewerApi.get('/api/workflow');
+    expect(reviewerWorkflow.status()).toBe(200);
+    const reviewerItem = (await reviewerWorkflow.json())
+      .find(entry => Number(entry.docId) === documentId);
+    expect(reviewerItem).toBeTruthy();
+    expect(reviewerItem.canMarkApproved).toBeTruthy();
+    expect(reviewerItem.canSendToApproval).toBeTruthy();
+
+    const review = await reviewerApi.post(`/api/workflow/${workflowId}/transition`, {
       data: { action: 'approve', comments: 'Revisión E2E aprobada' },
     });
-    expect(approve.status()).toBe(200);
-    expect((await approve.json()).status).toBe('approved_for_publication');
+    expect(review.status()).toBe(200);
+    expect((await review.json()).status).toBe('approved_for_publication');
 
-    const publish = await api.post(`/api/workflow/${workflowId}/transition`, {
+    const approvedDetail = await api.get(`/api/documents/${documentId}`);
+    expect(approvedDetail.status()).toBe(200);
+    expect((await approvedDetail.json()).state).toBe('aprobado');
+    const lockedEdit = await api.put(`/api/documents/${documentId}`, {
+      data: { desc: 'No debe modificarse después de la revisión' },
+    });
+    expect(lockedEdit.status()).toBe(409);
+    expect((await consultantApi.get(`/api/documents/${documentId}`)).status()).toBe(404);
+    const consultantLibrary = await consultantApi.get('/api/documents');
+    expect(consultantLibrary.status()).toBe(200);
+    expect((await consultantLibrary.json()).data.some(
+      document => Number(document.id) === documentId,
+    )).toBeFalsy();
+
+    const reviewerCannotPublish = await reviewerApi.post(`/api/workflow/${workflowId}/transition`, {
+      data: { action: 'publish', comments: 'El revisor no puede publicar' },
+    });
+    expect(reviewerCannotPublish.status()).toBe(403);
+
+    const approverWorkflow = await approverApi.get('/api/workflow');
+    expect(approverWorkflow.status()).toBe(200);
+    const approverItem = (await approverWorkflow.json())
+      .find(entry => Number(entry.docId) === documentId);
+    expect(approverItem).toBeTruthy();
+    expect(approverItem.canPublish).toBeTruthy();
+
+    const publish = await approverApi.post(`/api/workflow/${workflowId}/transition`, {
       data: { action: 'publish', comments: 'Publicación E2E' },
     });
     expect(publish.status()).toBe(200);
     expect((await publish.json()).status).toBe('published');
 
-    const detail = await api.get(`/api/documents/${documentId}`);
+    const detail = await consultantApi.get(`/api/documents/${documentId}`);
+    expect(detail.status()).toBe(200);
     expect((await detail.json()).state).toBe('publicado');
   });
 

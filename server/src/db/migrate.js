@@ -102,14 +102,14 @@ async function refreshAreaCatalog() {
 
   await query(`
     INSERT INTO areas (id, name, abbreviation, color, lead_name, requires_coordination) VALUES
-      (1, 'Coordinacion de Operacion Academica', 'COA', '#2563eb', NULL, true),
-      (2, 'Coordinacion de Fabrica y Desarrollo', 'CFD', '#8b5e3c', NULL, false),
-      (3, 'Especializaciones', 'ESP', '#ea580c', NULL, false),
-      (4, 'Coordinacion B2B', 'B2B', '#991b1b', NULL, false),
-      (5, 'Coordinacion de Servicio', 'CSE', '#a78bfa', NULL, false),
-      (6, 'Coordinacion Pruebas Saber', 'CPS', '#9333ea', NULL, false),
-      (7, 'Coordinacion de Proyeccion Social', 'CPSO', '#78350f', NULL, false),
-      (8, 'Coordinacion de Desarrollo Profesional', 'CDP', '#f59e0b', NULL, false)
+      (1, 'Coordinacion de Operacion Academica', 'COA', '#29366f', NULL, true),
+      (2, 'Coordinacion de Fabrica y Desarrollo', 'CFD', '#43b8bf', NULL, false),
+      (3, 'Especializaciones', 'ESP', '#970b12', NULL, false),
+      (4, 'Coordinacion B2B', 'B2B', '#c5102e', NULL, false),
+      (5, 'Coordinacion de Servicio', 'CSE', '#c51a78', NULL, false),
+      (6, 'Coordinacion Pruebas Saber', 'CPS', '#70b52b', NULL, false),
+      (7, 'Coordinacion de Proyeccion Social', 'CPSO', '#08743e', NULL, false),
+      (8, 'Coordinacion de Desarrollo Profesional', 'CDP', '#9f559b', NULL, false)
     ON CONFLICT (id) DO UPDATE SET
       name = EXCLUDED.name,
       abbreviation = EXCLUDED.abbreviation,
@@ -160,6 +160,7 @@ export async function migrate() {
   await dropColumn('update_requests', 'legacy_key');
 
   await addColumn('workflow_items', 'assignee_user_id', 'INTEGER REFERENCES users(id)');
+  await addColumn('workflow_items', 'reviewer_user_id', 'INTEGER REFERENCES users(id)');
   await addColumn('workflow_items', 'approver_user_id', 'INTEGER REFERENCES users(id)');
   await addColumn('workflow_items', 'completed_at', 'TIMESTAMPTZ');
   await addColumn('workflow_items', 'completed_by', 'INTEGER REFERENCES users(id)');
@@ -210,6 +211,101 @@ export async function migrate() {
     FROM users u
     WHERE wi.assignee_user_id IS NULL
       AND LOWER(wi.assignee) = LOWER(u.name)
+  `);
+
+  await query(`
+    UPDATE workflow_items
+    SET reviewer_user_id = COALESCE(
+      reviewer_user_id,
+      CASE
+        WHEN stage = 'revision' THEN assignee_user_id
+        WHEN reviewed_by IS NOT NULL THEN reviewed_by
+        ELSE NULL
+      END
+    )
+    WHERE reviewer_user_id IS NULL
+  `);
+
+  await query(`
+    UPDATE workflow_items wi
+    SET reviewer_user_id = (
+      SELECT u.id
+      FROM users u
+      JOIN documents d ON d.id = wi.doc_id
+      WHERE u.role_id IN (2, 4, 8)
+        AND u.status = 'Activo'
+        AND u.area_id = d.area_id
+      ORDER BY
+        CASE u.role_id
+          WHEN 4 THEN 0
+          WHEN 2 THEN 1
+          ELSE 2
+        END,
+        u.id
+      LIMIT 1
+    )
+    WHERE wi.completed_at IS NULL
+      AND NOT EXISTS (
+      SELECT 1
+      FROM users current_reviewer
+      JOIN documents current_document ON current_document.id = wi.doc_id
+      WHERE current_reviewer.id = wi.reviewer_user_id
+        AND current_reviewer.role_id IN (2, 4, 8)
+        AND current_reviewer.status = 'Activo'
+        AND current_reviewer.area_id = current_document.area_id
+    )
+  `);
+
+  await query(`
+    UPDATE workflow_items wi
+    SET approver_user_id = (
+      SELECT u.id
+      FROM users u
+      JOIN documents d ON d.id = wi.doc_id
+      WHERE u.role_id IN (2, 5, 8)
+        AND u.status = 'Activo'
+        AND u.area_id = d.area_id
+      ORDER BY
+        CASE u.role_id
+          WHEN 5 THEN 0
+          WHEN 2 THEN 1
+          ELSE 2
+        END,
+        u.id
+      LIMIT 1
+    )
+    WHERE wi.completed_at IS NULL
+      AND NOT EXISTS (
+      SELECT 1
+      FROM users current_approver
+      JOIN documents current_document ON current_document.id = wi.doc_id
+      WHERE current_approver.id = wi.approver_user_id
+        AND current_approver.role_id IN (2, 5, 8)
+        AND current_approver.status = 'Activo'
+        AND current_approver.area_id = current_document.area_id
+    )
+  `);
+
+  await query(`
+    UPDATE workflow_items wi
+    SET assignee_user_id = wi.reviewer_user_id,
+        assignee = COALESCE(
+          (SELECT reviewer.name FROM users reviewer WHERE reviewer.id = wi.reviewer_user_id),
+          'Revisor del area pendiente'
+        )
+    WHERE wi.stage = 'revision'
+      AND wi.completed_at IS NULL
+  `);
+
+  await query(`
+    UPDATE workflow_items wi
+    SET assignee_user_id = wi.approver_user_id,
+        assignee = COALESCE(
+          (SELECT approver.name FROM users approver WHERE approver.id = wi.approver_user_id),
+          'Aprobador del area pendiente'
+        )
+    WHERE wi.stage = 'aprobacion'
+      AND wi.completed_at IS NULL
   `);
 
   await query(`

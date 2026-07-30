@@ -2,11 +2,13 @@ import { useEffect, useMemo, useRef, useState } from 'react';
 import { Icon } from '../components';
 import { useAuth } from '../context/AuthContext';
 import { useCatalogs } from '../context/CatalogContext';
+import { api } from '../services/api';
 import {
   OPERATION_ACADEMIC_AREA_ID,
   OPERATION_ACADEMIC_FULL_ROLE_ID,
 } from '../utils/areas';
 import { storage } from '../utils/storage';
+import { AREA_VISUALS, OPERATION_VISUALS } from '../utils/areaVisuals';
 
 const LAYERS = [
   {
@@ -33,14 +35,14 @@ const LAYERS = [
 ];
 
 const AREA_REFERENCE = [
-  { id: 1, name: 'Coordinación de Operación Académica', abbreviation: 'COA', color: '#2563eb', requiresCoordination: true },
-  { id: 2, name: 'Coordinación de Fábrica y Desarrollo', abbreviation: 'CFD', color: '#8b5e3c' },
-  { id: 3, name: 'Especializaciones', abbreviation: 'ESP', color: '#ea580c' },
-  { id: 4, name: 'Coordinación B2B', abbreviation: 'B2B', color: '#991b1b' },
-  { id: 5, name: 'Coordinación de Servicio', abbreviation: 'CSE', color: '#a78bfa' },
-  { id: 6, name: 'Coordinación Pruebas Saber', abbreviation: 'CPS', color: '#9333ea' },
-  { id: 7, name: 'Coordinación de Proyección Social', abbreviation: 'CPSO', color: '#78350f' },
-  { id: 8, name: 'Coordinación de Desarrollo Profesional', abbreviation: 'CDP', color: '#f59e0b' },
+  { id: 1, name: 'Coordinación de Operación Académica', abbreviation: 'COA', color: '#29366f', requiresCoordination: true },
+  { id: 2, name: 'Coordinación de Fábrica y Desarrollo', abbreviation: 'CFD', color: '#43b8bf' },
+  { id: 3, name: 'Especializaciones', abbreviation: 'ESP', color: '#970b12' },
+  { id: 4, name: 'Coordinación B2B', abbreviation: 'B2B', color: '#c5102e' },
+  { id: 5, name: 'Coordinación de Servicio', abbreviation: 'CSE', color: '#c51a78' },
+  { id: 6, name: 'Coordinación Pruebas Saber', abbreviation: 'CPS', color: '#70b52b' },
+  { id: 7, name: 'Coordinación de Proyección Social', abbreviation: 'CPSO', color: '#08743e' },
+  { id: 8, name: 'Coordinación de Desarrollo Profesional', abbreviation: 'CDP', color: '#9f559b' },
 ];
 
 const COORDINATION_REFERENCE = [
@@ -50,8 +52,6 @@ const COORDINATION_REFERENCE = [
   { id: 4, areaId: 1, name: 'Coordinación Escuela Transformación de Negocios', abbreviation: 'ETN', sortOrder: 4 },
   { id: 5, areaId: 1, name: 'Coordinación Escuela Transformación de Ingenierías', abbreviation: 'ETI', sortOrder: 5 },
 ];
-
-const OPERATION_COORDINATION_COLORS = ['#2563eb', '#0f766e', '#7c3aed', '#c2410c', '#be185d'];
 
 const PERMISSION_LABELS = {
   crear: 'Crear documentos',
@@ -69,17 +69,17 @@ const ROLE_REFERENCE = [
     id: 1,
     name: 'Administrador general',
     icon: 'settings',
-    summary: 'Controla la plataforma, sus accesos y el ciclo documental completo.',
+    summary: 'Administra la plataforma y supervisa el flujo sin reemplazar al revisor ni al aprobador.',
     scope: 'Todas las áreas y todos los documentos.',
-    permissions: ['crear', 'editar', 'aprobar', 'publicar', 'archivar', 'consultar', 'descargar', 'administrar'],
-    stages: ['buscar', 'crear', 'revisar', 'aprobar', 'publicar', 'actualizar', 'administrar'],
+    permissions: ['crear', 'editar', 'archivar', 'consultar', 'descargar', 'administrar'],
+    stages: ['buscar', 'crear', 'actualizar', 'administrar'],
   },
   {
     id: 2,
     name: 'Líder de área',
     icon: 'building',
-    summary: 'Gestiona y acompaña los documentos de su área.',
-    scope: 'Área asignada; en COA la escritura continúa limitada a la escuela asignada.',
+    summary: 'Gestiona los documentos de su área y puede revisar, aprobar y publicar cuando queda asignado en el flujo.',
+    scope: 'Área asignada y tareas expresamente asignadas; en COA la escritura continúa limitada a la escuela asignada.',
     permissions: ['crear', 'editar', 'aprobar', 'publicar', 'archivar', 'consultar', 'descargar'],
     stages: ['buscar', 'crear', 'revisar', 'aprobar', 'publicar', 'actualizar'],
   },
@@ -96,7 +96,7 @@ const ROLE_REFERENCE = [
     id: 4,
     name: 'Revisor',
     icon: 'eye',
-    summary: 'Revisa el contenido asignado y devuelve observaciones cuando corresponde.',
+    summary: 'Revisa el contenido asignado, lo marca como aprobado o lo devuelve para ajustes.',
     scope: 'Documentos visibles y tareas expresamente asignadas en el flujo.',
     permissions: ['consultar', 'descargar'],
     stages: ['buscar', 'revisar'],
@@ -132,8 +132,8 @@ const ROLE_REFERENCE = [
     id: 8,
     name: 'Coordinador de Operación Académica',
     icon: 'grid',
-    summary: 'Gestiona los documentos generales y los de todas las escuelas de COA.',
-    scope: 'Toda Operación Académica, incluidas sus cinco escuelas y el alcance general.',
+    summary: 'Gestiona Operación Académica y puede revisar, aprobar y publicar cuando queda asignado en el flujo.',
+    scope: 'Toda Operación Académica, incluidas sus cinco escuelas y el alcance general; las decisiones requieren asignación expresa.',
     permissions: ['crear', 'editar', 'aprobar', 'publicar', 'archivar', 'consultar', 'descargar'],
     stages: ['buscar', 'crear', 'revisar', 'aprobar', 'publicar', 'actualizar'],
   },
@@ -225,7 +225,7 @@ const PROCESS_ROUTES = [
         title: 'Cargar',
         icon: 'upload',
         description: 'Registra el documento y su archivo inicial.',
-        detail: 'La creación define tipo, área, alcance, responsable, archivo y participantes del flujo.',
+        detail: 'La creación define tipo, área, alcance, responsable, archivo y participantes del flujo. Puede guardarse como borrador o enviarse directamente a revisión.',
         actors: 'Administrador, líder, editor y coordinador COA según alcance.',
         location: 'Gestión · Cargar documento',
         permission: 'crear',
@@ -237,9 +237,9 @@ const PROCESS_ROUTES = [
         stage: 'revisar',
         title: 'Revisar',
         icon: 'eye',
-        description: 'Valida contenido y devuelve observaciones.',
-        detail: 'La revisión solo permite actuar sobre tareas asignadas. La consulta del mapa no amplía permisos del flujo.',
-        actors: 'Revisor asignado, líder, coordinador COA o administrador.',
+        description: 'Valida el contenido y lo marca como aprobado o lo devuelve.',
+        detail: 'Solo el usuario asignado y habilitado como revisor puede tomar esta decisión. Puede ser Revisor, Líder de área o Coordinador de Operación Académica. El estado Aprobado todavía no hace visible el documento para todos.',
+        actors: 'Revisor, Líder de área o Coordinador de Operación Académica asignado.',
         location: 'Gestión · Revisión y aprobación',
         permission: 'consultar',
         actionLabel: 'Ver flujo',
@@ -248,11 +248,11 @@ const PROCESS_ROUTES = [
       {
         id: 'approve',
         stage: 'aprobar',
-        title: 'Aprobar',
+        title: 'Aprobar para publicar',
         icon: 'check',
-        description: 'Confirma que el documento está listo.',
-        detail: 'La aprobación se ejecuta en el mismo módulo de flujo y requiere una asignación vigente.',
-        actors: 'Aprobador asignado, líder, coordinador COA o administrador.',
+        description: 'Toma la decisión final sobre el documento aprobado.',
+        detail: 'Solo el usuario asignado y habilitado como aprobador puede confirmar la publicación. Puede ser Aprobador, Líder de área o Coordinador de Operación Académica.',
+        actors: 'Aprobador, Líder de área o Coordinador de Operación Académica asignado.',
         location: 'Gestión · Revisión y aprobación',
         permission: 'aprobar',
         actionLabel: 'Ver aprobaciones',
@@ -263,9 +263,9 @@ const PROCESS_ROUTES = [
         stage: 'publicar',
         title: 'Publicar',
         icon: 'send',
-        description: 'Deja disponible la versión aprobada.',
-        detail: 'Publicar completa el flujo abierto y conserva el registro de quién tomó la decisión.',
-        actors: 'Usuario asignado con permiso de publicación o administrador.',
+        description: 'Deja disponible la versión para todos los usuarios.',
+        detail: 'El documento solo se vuelve visible para consulta general después de que el aprobador asignado confirma “Aprobar y publicar”.',
+        actors: 'Resultado de la decisión del usuario asignado como aprobador.',
         location: 'Gestión · Revisión y aprobación',
         permission: 'publicar',
         actionLabel: 'Ver flujo',
@@ -664,7 +664,8 @@ function TourDialog({ step, onBack, onNext, onSkip }) {
 export function Dashboard({ nav, userName = 'Usuario' }) {
   const { user, roleName, hasPermission } = useAuth();
   const { areas, coordinations } = useCatalogs();
-  const [activeLayer, setActiveLayer] = useState('process');
+  const canConsult = hasPermission('consultar');
+  const [activeLayer, setActiveLayer] = useState('areas');
   const [areaMapLevel, setAreaMapLevel] = useState('areas');
   const [selectedStationId, setSelectedStationId] = useState('search');
   const [selectedAreaId, setSelectedAreaId] = useState(() => Number(user?.area) || OPERATION_ACADEMIC_AREA_ID);
@@ -675,14 +676,23 @@ export function Dashboard({ nav, userName = 'Usuario' }) {
   const [searchQuery, setSearchQuery] = useState('');
   const [tourOpen, setTourOpen] = useState(() => !storage.hasSeenHomeTour());
   const [tourStep, setTourStep] = useState(0);
+  const [mapPreview, setMapPreview] = useState(null);
+  const [mapCounts, setMapCounts] = useState({ byArea: {}, byCoordination: {}, operationGeneral: 0 });
+  const [mapCountsStatus, setMapCountsStatus] = useState('loading');
+  const areaMapCanvasRef = useRef(null);
   const areaMapGridRef = useRef(null);
 
-  const areaCatalog = useMemo(() => mergeCatalog(AREA_REFERENCE, areas), [areas]);
+  const areaCatalog = useMemo(
+    () => mergeCatalog(AREA_REFERENCE, areas).map((area) => ({
+      ...area,
+      ...(AREA_VISUALS[Number(area.id)] || {}),
+    })),
+    [areas],
+  );
   const coordinationCatalog = useMemo(
     () => mergeCatalog(COORDINATION_REFERENCE, coordinations),
     [coordinations],
   );
-  const selectedArea = areaCatalog.find(area => Number(area.id) === Number(selectedAreaId)) || areaCatalog[0];
   const selectedRole = ROLE_REFERENCE.find(role => Number(role.id) === Number(selectedRoleId)) || ROLE_REFERENCE[0];
   const currentRole = ROLE_REFERENCE.find(role => Number(role.id) === Number(user?.role));
   const currentArea = areaCatalog.find(area => Number(area.id) === Number(user?.area));
@@ -702,22 +712,24 @@ export function Dashboard({ nav, userName = 'Usuario' }) {
       id: 'general',
       name: 'General de Operación Académica',
       abbreviation: 'GENERAL',
-      color: operationArea?.color || '#2563eb',
-      icon: 'sparkles',
+      color: OPERATION_VISUALS.general.color,
+      mascot: OPERATION_VISUALS.general.mascot,
       kind: 'general',
     },
-    ...operationCoordinations.map((coordination, index) => ({
-      id: `school-${coordination.id}`,
-      name: coordination.name.replace(/^Coordinaci[oó]n\s+/i, ''),
-      abbreviation: coordination.abbreviation,
-      color: OPERATION_COORDINATION_COLORS[index % OPERATION_COORDINATION_COLORS.length],
-      icon: 'building',
-      kind: 'school',
-      coordinationId: coordination.id,
-    })),
+    ...operationCoordinations.map((coordination) => {
+      const visual = OPERATION_VISUALS[Number(coordination.id)] || OPERATION_VISUALS.general;
+      return {
+        id: `school-${coordination.id}`,
+        name: coordination.name.replace(/^Coordinaci[oó]n\s+/i, ''),
+        abbreviation: coordination.abbreviation,
+        color: visual.color,
+        contrast: visual.contrast,
+        mascot: visual.mascot,
+        kind: 'school',
+        coordinationId: coordination.id,
+      };
+    }),
   ];
-  const selectedOperationNode = operationMapNodes.find(node => node.id === selectedOperationNodeId)
-    || operationMapNodes[0];
   const operationMapAccessible = Boolean(operationArea && canOpenArea(operationArea));
   const selectedStation = PROCESS_ROUTES
     .flatMap(route => route.stations)
@@ -738,6 +750,44 @@ export function Dashboard({ nav, userName = 'Usuario' }) {
     { id: 'reports', label: 'Consultar reportes', description: 'Resumen del acervo disponible', icon: 'report', view: 'reports', show: hasPermission('consultar') },
     { id: 'users', label: 'Usuarios y roles', description: 'Accesos y permisos', icon: 'users', view: 'users', show: hasPermission('administrar') },
   ].filter(action => action.show).slice(0, 6);
+
+  useEffect(() => {
+    let cancelled = false;
+
+    if (!canConsult) {
+      setMapCountsStatus('unavailable');
+      return undefined;
+    }
+
+    setMapCountsStatus('loading');
+    api.getMapDocumentCounts()
+      .then((summary) => {
+        if (cancelled) return;
+        const byArea = Object.fromEntries(
+          (summary?.byArea || []).map(row => [Number(row.id), Number(row.value) || 0]),
+        );
+        const byCoordination = Object.fromEntries(
+          (summary?.byCoordination || []).map(row => [Number(row.id), Number(row.value) || 0]),
+        );
+        setMapCounts({
+          byArea,
+          byCoordination,
+          operationGeneral: Number(summary?.operationGeneral) || 0,
+        });
+        setMapCountsStatus('ready');
+      })
+      .catch(() => {
+        if (!cancelled) setMapCountsStatus('unavailable');
+      });
+
+    return () => {
+      cancelled = true;
+    };
+  }, [canConsult, user?.id]);
+
+  useEffect(() => {
+    setMapPreview(null);
+  }, [activeLayer, areaMapLevel]);
 
   useEffect(() => {
     if (activeLayer !== 'areas') return undefined;
@@ -843,11 +893,6 @@ export function Dashboard({ nav, userName = 'Usuario' }) {
     document.getElementById(`map-tab-${nextLayer.id}`)?.focus();
   };
 
-  const openSelectedArea = () => {
-    if (!selectedArea || !canOpenArea(selectedArea)) return;
-    nav('library', { area: selectedArea.id });
-  };
-
   const selectAreaNode = (area) => {
     setSelectedAreaId(area.id);
     if (Number(area.id) === OPERATION_ACADEMIC_AREA_ID) {
@@ -855,11 +900,47 @@ export function Dashboard({ nav, userName = 'Usuario' }) {
     }
   };
 
-  const openSelectedOperationNode = () => {
-    if (!operationMapAccessible || !selectedOperationNode) return;
+  const showMapPreview = (event, preview) => {
+    const canvas = areaMapCanvasRef.current;
+    const node = event.currentTarget;
+    if (!canvas || !node) {
+      setMapPreview(preview);
+      return;
+    }
+
+    const canvasRect = canvas.getBoundingClientRect();
+    const nodeRect = node.getBoundingClientRect();
+    const previewWidth = 342;
+    const previewHeight = 380;
+    const gap = 16;
+    const nodeCenter = nodeRect.left - canvasRect.left + (nodeRect.width / 2);
+    const preferredLeft = nodeCenter > canvasRect.width / 2
+      ? nodeRect.left - canvasRect.left - previewWidth - gap
+      : nodeRect.right - canvasRect.left + gap;
+    const left = Math.max(18, Math.min(preferredLeft, canvasRect.width - previewWidth - 18));
+    const preferredTop = nodeRect.top - canvasRect.top + (nodeRect.height / 2) - (previewHeight / 2);
+    const top = Math.max(68, Math.min(preferredTop, canvasRect.height - previewHeight - 18));
+
+    setMapPreview({ ...preview, position: { left, top } });
+  };
+
+  const openMapPreview = () => {
+    if (!mapPreview) return;
+
+    if (mapPreview.type === 'area') {
+      if (Number(mapPreview.id) === OPERATION_ACADEMIC_AREA_ID) {
+        setSelectedAreaId(OPERATION_ACADEMIC_AREA_ID);
+        setAreaMapLevel('operation');
+        return;
+      }
+      if (mapPreview.accessible) nav('library', { area: mapPreview.id });
+      return;
+    }
+
+    if (!operationMapAccessible) return;
     const params = { area: OPERATION_ACADEMIC_AREA_ID };
-    if (selectedOperationNode.kind === 'school') {
-      params.coordination = selectedOperationNode.coordinationId;
+    if (mapPreview.nodeKind === 'school') {
+      params.coordination = mapPreview.coordinationId;
     }
     nav('library', params);
   };
@@ -869,6 +950,24 @@ export function Dashboard({ nav, userName = 'Usuario' }) {
     : currentArea
       ? currentArea.name
       : 'Alcance institucional';
+  const mapPreviewDocumentCount = mapPreview?.type === 'area'
+    ? Number(mapCounts.byArea[Number(mapPreview.id)]) || 0
+    : mapPreview?.nodeKind === 'general'
+      ? mapCounts.operationGeneral
+      : Number(mapCounts.byCoordination[Number(mapPreview?.coordinationId)]) || 0;
+  const mapPreviewCountLabel = mapCountsStatus === 'ready'
+    ? `${mapPreviewDocumentCount} ${mapPreviewDocumentCount === 1 ? 'archivo cargado' : 'archivos cargados'}`
+    : mapCountsStatus === 'loading'
+      ? 'Consultando archivos…'
+      : 'Conteo no disponible';
+  const mapPreviewCanNavigate = Boolean(
+    mapPreview
+      && (mapPreview.accessible
+        || (mapPreview.type === 'area' && Number(mapPreview.id) === OPERATION_ACADEMIC_AREA_ID)),
+  );
+  const documentCountAria = (count) => mapCountsStatus === 'ready'
+    ? `${count} ${count === 1 ? 'archivo cargado' : 'archivos cargados'}`
+    : 'conteo de archivos en curso';
 
   return (
     <div className="page fade-in map-home">
@@ -1037,11 +1136,16 @@ export function Dashboard({ nav, userName = 'Usuario' }) {
             className="map-home-layer map-home-area-layer"
           >
             <div
+              ref={areaMapCanvasRef}
               className={`card area-map-canvas ${areaMapLevel === 'operation' ? 'is-operation' : ''}`}
               style={{
                 '--map-core-color': areaMapLevel === 'operation'
-                  ? operationArea?.color || '#2563eb'
+                  ? AREA_VISUALS[OPERATION_ACADEMIC_AREA_ID].color
                   : 'var(--brand-700)',
+              }}
+              onMouseLeave={() => setMapPreview(null)}
+              onBlurCapture={(event) => {
+                if (!event.currentTarget.contains(event.relatedTarget)) setMapPreview(null);
               }}
             >
               {areaMapLevel === 'operation' ? (
@@ -1051,14 +1155,23 @@ export function Dashboard({ nav, userName = 'Usuario' }) {
                 </button>
               ) : (
                 <div className="area-map-legend" aria-label="Convenciones del mapa">
-                  <span><i className="area-map-legend-dot"></i>Área disponible</span>
+                  <span><i className="area-map-legend-dot"></i>Pasa el cursor para explorar</span>
                   <span><Icon name="lock" size={11} />Vista informativa</span>
                 </div>
               )}
 
               <div key={`core-${areaMapLevel}`} className="area-map-core">
                 <span className="area-map-core-icon">
-                  <Icon name={areaMapLevel === 'operation' ? 'grid' : 'library'} size={26} />
+                  {areaMapLevel === 'operation' ? (
+                    <img
+                      className="area-map-core-mascot"
+                      src={OPERATION_VISUALS.general.mascot}
+                      alt=""
+                      aria-hidden="true"
+                    />
+                  ) : (
+                    <Icon name="library" size={30} />
+                  )}
                 </span>
                 <span className="eyebrow">
                   {areaMapLevel === 'operation' ? 'Área seleccionada' : 'Repositorio central'}
@@ -1087,6 +1200,28 @@ export function Dashboard({ nav, userName = 'Usuario' }) {
                     const isCurrent = node.kind === 'school'
                       && Number(user?.coordination) === Number(node.coordinationId);
                     const selected = node.id === selectedOperationNodeId;
+                    const documentCount = node.kind === 'general'
+                      ? mapCounts.operationGeneral
+                      : Number(mapCounts.byCoordination[Number(node.coordinationId)]) || 0;
+                    const preview = {
+                      type: 'operation',
+                      id: node.id,
+                      name: node.name,
+                      abbreviation: node.abbreviation,
+                      color: node.color,
+                      contrast: node.contrast,
+                      mascot: node.mascot,
+                      nodeKind: node.kind,
+                      coordinationId: node.coordinationId,
+                      accessible: operationMapAccessible,
+                      isCurrent,
+                      description: node.kind === 'general'
+                        ? 'Documentos transversales de Operación Académica, compartidos por todas sus escuelas.'
+                        : 'Biblioteca documental propia de esta subcoordinación dentro de Operación Académica.',
+                      actionLabel: node.kind === 'general'
+                        ? 'Abrir documentos generales'
+                        : 'Abrir biblioteca de la escuela',
+                    };
                     return (
                       <button
                         key={node.id}
@@ -1096,12 +1231,19 @@ export function Dashboard({ nav, userName = 'Usuario' }) {
                           '--area-color': node.color,
                           '--area-delay': `${index * 55}ms`,
                         }}
-                        onClick={() => setSelectedOperationNodeId(node.id)}
+                        onMouseEnter={(event) => showMapPreview(event, preview)}
+                        onFocus={(event) => showMapPreview(event, preview)}
+                        onClick={(event) => {
+                          setSelectedOperationNodeId(node.id);
+                          showMapPreview(event, preview);
+                        }}
                         aria-pressed={selected}
-                        aria-label={`${node.name}${isCurrent ? ', tu escuela' : ''}${operationMapAccessible ? '' : ', vista informativa'}`}
+                        aria-label={`${node.name}, ${documentCountAria(documentCount)}${isCurrent ? ', tu escuela' : ''}${operationMapAccessible ? '' : ', vista informativa'}`}
                       >
                         <span className="area-map-node-line" aria-hidden="true"></span>
-                        <span className="area-map-node-icon"><Icon name={node.icon} size={18} /></span>
+                        <span className="area-map-node-icon">
+                          <img src={node.mascot} alt="" aria-hidden="true" />
+                        </span>
                         <span className="area-map-node-copy">
                           <strong>{node.name}</strong>
                           <small className="mono">{node.abbreviation}</small>
@@ -1126,6 +1268,25 @@ export function Dashboard({ nav, userName = 'Usuario' }) {
                     const isCurrent = Number(user?.area) === Number(area.id);
                     const accessible = canOpenArea(area);
                     const selected = Number(selectedAreaId) === Number(area.id);
+                    const isOperationArea = Number(area.id) === OPERATION_ACADEMIC_AREA_ID;
+                    const documentCount = Number(mapCounts.byArea[Number(area.id)]) || 0;
+                    const preview = {
+                      type: 'area',
+                      id: area.id,
+                      name: area.name,
+                      abbreviation: area.abbreviation,
+                      color: area.color,
+                      contrast: area.contrast,
+                      mascot: area.mascot,
+                      accessible,
+                      isCurrent,
+                      description: isOperationArea
+                        ? 'Combina documentos generales, compartidos por todas las escuelas, con documentos propios de cada subcoordinación.'
+                        : `Reúne los documentos, procedimientos, formatos y manuales asociados a ${area.name}.`,
+                      actionLabel: isOperationArea
+                        ? 'Explorar escuelas y documentos'
+                        : 'Abrir biblioteca del área',
+                    };
                     return (
                       <button
                         key={area.id}
@@ -1135,12 +1296,19 @@ export function Dashboard({ nav, userName = 'Usuario' }) {
                           '--area-color': area.color,
                           '--area-delay': `${index * 55}ms`,
                         }}
-                        onClick={() => selectAreaNode(area)}
+                        onMouseEnter={(event) => showMapPreview(event, preview)}
+                        onFocus={(event) => showMapPreview(event, preview)}
+                        onClick={(event) => {
+                          showMapPreview(event, preview);
+                          selectAreaNode(area);
+                        }}
                         aria-pressed={selected}
-                        aria-label={`${area.name}${isCurrent ? ', tu área' : ''}${accessible ? '' : ', vista informativa'}`}
+                        aria-label={`${area.name}, ${documentCountAria(documentCount)}${isCurrent ? ', tu área' : ''}${accessible ? '' : ', vista informativa'}`}
                       >
                         <span className="area-map-node-line" aria-hidden="true"></span>
-                        <span className="area-map-node-icon"><Icon name={Number(area.id) === OPERATION_ACADEMIC_AREA_ID ? 'grid' : 'building'} size={17} /></span>
+                        <span className="area-map-node-icon">
+                          <img src={area.mascot} alt="" aria-hidden="true" />
+                        </span>
                         <span className="area-map-node-copy">
                           <strong>{area.name}</strong>
                           <small className="mono">{area.abbreviation}</small>
@@ -1151,114 +1319,75 @@ export function Dashboard({ nav, userName = 'Usuario' }) {
                           </span>
                         )}
                         <span
-                          className={`area-map-node-access ${accessible ? 'available' : 'restricted'}`}
-                          title={Number(area.id) === OPERATION_ACADEMIC_AREA_ID ? 'Explorar sus escuelas' : accessible ? 'Ver detalle del área' : 'Vista informativa'}
+                          className={`area-map-node-access ${accessible || isOperationArea ? 'available' : 'restricted'}`}
+                          title={isOperationArea ? 'Explorar sus escuelas' : accessible ? 'Ver detalle del área' : 'Vista informativa'}
                           aria-hidden="true"
                         >
-                          <Icon name={accessible ? 'chevRight' : 'lock'} size={accessible ? 14 : 12} />
+                          <Icon name={accessible || isOperationArea ? 'chevRight' : 'lock'} size={accessible || isOperationArea ? 14 : 12} />
                         </span>
                       </button>
                     );
                   })
                 )}
               </div>
-            </div>
 
-            <aside className="card area-detail-card" style={{ '--area-color': selectedArea?.color || 'var(--brand-700)' }}>
-              <header>
-                <span className="area-detail-icon"><Icon name={Number(selectedArea?.id) === OPERATION_ACADEMIC_AREA_ID ? 'grid' : 'building'} size={21} /></span>
-                <div>
-                  <span className="mono area-detail-code">{selectedArea?.abbreviation}</span>
-                  <h3>{selectedArea?.name}</h3>
-                </div>
-                {Number(user?.area) === Number(selectedArea?.id) && <span className="badge map-badge-available"><span className="b-dot"></span>Tu área</span>}
-              </header>
-
-              {Number(selectedArea?.id) !== OPERATION_ACADEMIC_AREA_ID ? (
-                <>
-                  <p>Esta rama reúne los documentos, procedimientos, formatos y manuales asociados a {selectedArea?.name}.</p>
-                  {!canOpenArea(selectedArea) && (
-                    <div className="map-restriction-note">
-                      <Icon name="lock" size={15} />
-                      Esta área se presenta para explicar la estructura institucional. Tu alcance actual no habilita su biblioteca.
+              {mapPreview && (
+                <aside
+                  className="area-map-hover-card"
+                  style={{
+                    '--area-color': mapPreview.color,
+                    '--area-contrast': mapPreview.contrast || '#fff',
+                    left: mapPreview.position?.left,
+                    top: mapPreview.position?.top,
+                  }}
+                  aria-live="polite"
+                  aria-label={`Información de ${mapPreview.name}`}
+                >
+                  <header>
+                    <span className="area-map-hover-mascot">
+                      <img src={mapPreview.mascot} alt="" aria-hidden="true" />
+                    </span>
+                    <div>
+                      <span className="mono area-map-hover-code">{mapPreview.abbreviation}</span>
+                      <h3>{mapPreview.name}</h3>
                     </div>
-                  )}
-                  <button
-                    type="button"
-                    className="btn btn-primary area-detail-main-action"
-                    disabled={!canOpenArea(selectedArea)}
-                    onClick={openSelectedArea}
-                  >
-                    Abrir biblioteca del área <Icon name="arrowRight" size={15} />
-                  </button>
-                </>
-              ) : (
-                <>
-                  <p>Operación Académica combina documentos generales, compartidos por todas las escuelas, con documentos propios de cada subcoordinación.</p>
-                  <div className="operation-scope-note">
-                    <div><Icon name="eye" size={16} /><span><strong>Consulta transversal</strong>Los usuarios de COA pueden ver todas sus escuelas.</span></div>
-                    <div><Icon name="edit" size={16} /><span><strong>Escritura controlada</strong>Cada usuario edita únicamente su escuela asignada.</span></div>
+                    {mapPreview.isCurrent && (
+                      <span className="area-map-hover-current">
+                        <Icon name="check" size={10} />
+                        {mapPreview.type === 'area' ? 'Tu área' : 'Tu escuela'}
+                      </span>
+                    )}
+                  </header>
+
+                  <p>{mapPreview.description}</p>
+
+                  <div className="area-map-hover-count">
+                    <span><Icon name="file" size={20} /></span>
+                    <div>
+                      <strong>{mapPreviewCountLabel}</strong>
+                      <small>Registrados en esta área o subárea</small>
+                    </div>
                   </div>
 
-                  {areaMapLevel === 'areas' ? (
-                    <button
-                      type="button"
-                      className="btn btn-primary area-detail-main-action"
-                      onClick={() => setAreaMapLevel('operation')}
-                    >
-                      Explorar escuelas y documentos generales <Icon name="arrowRight" size={15} />
-                    </button>
-                  ) : (
-                    <>
-                      <div
-                        className="operation-map-selection"
-                        style={{ '--operation-node-color': selectedOperationNode?.color || '#2563eb' }}
-                      >
-                        <span className="operation-map-selection-icon">
-                          <Icon name={selectedOperationNode?.icon || 'building'} size={19} />
-                        </span>
-                        <span className="operation-map-selection-copy">
-                          <small>Rama seleccionada</small>
-                          <strong>{selectedOperationNode?.name}</strong>
-                          <span>
-                            {selectedOperationNode?.kind === 'general'
-                              ? 'Documentación transversal visible para todas las escuelas.'
-                              : 'Biblioteca documental propia de esta subcoordinación.'}
-                          </span>
-                        </span>
-                        <span className="operation-map-selection-code mono">{selectedOperationNode?.abbreviation}</span>
-                        {selectedOperationNode?.kind === 'school'
-                          && Number(user?.coordination) === Number(selectedOperationNode.coordinationId)
-                          && <span className="operation-map-selection-current"><Icon name="check" size={10} />Tu escuela</span>}
-                      </div>
-
-                      {!operationMapAccessible && (
-                        <div className="map-restriction-note">
-                          <Icon name="lock" size={15} />
-                          Puedes conocer esta estructura, pero tu alcance actual no habilita sus bibliotecas.
-                        </div>
-                      )}
-
-                      <button
-                        type="button"
-                        className="btn btn-primary area-detail-main-action"
-                        disabled={!operationMapAccessible}
-                        onClick={openSelectedOperationNode}
-                      >
-                        {selectedOperationNode?.kind === 'general'
-                          ? 'Abrir documentos generales'
-                          : 'Abrir biblioteca de la escuela'}
-                        <Icon name="arrowRight" size={15} />
-                      </button>
-
-                      <button type="button" className="area-map-detail-back" onClick={() => setAreaMapLevel('areas')}>
-                        <Icon name="chevLeft" size={13} /> Volver al mapa de áreas
-                      </button>
-                    </>
+                  {!mapPreviewCanNavigate && (
+                    <div className="area-map-hover-restriction">
+                      <Icon name="lock" size={14} />
+                      Puedes conocer esta rama, pero tu perfil no habilita su biblioteca.
+                    </div>
                   )}
-                </>
+
+                  <button
+                    type="button"
+                    className="btn btn-primary area-map-hover-action"
+                    disabled={!mapPreviewCanNavigate}
+                    onClick={openMapPreview}
+                  >
+                    {mapPreviewCanNavigate ? mapPreview.actionLabel : 'Vista informativa'}
+                    <Icon name={mapPreviewCanNavigate ? 'arrowRight' : 'lock'} size={14} />
+                  </button>
+                </aside>
               )}
-            </aside>
+            </div>
           </div>
         )}
 

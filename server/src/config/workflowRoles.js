@@ -1,0 +1,31 @@
+export const AREA_LEADER_ROLE_ID = 2;
+export const REVIEWER_ROLE_ID = 4;
+export const APPROVER_ROLE_ID = 5;
+export const OPERATION_ACADEMIC_COORDINATOR_ROLE_ID = 8;
+
+export const REVIEWER_ROLE_IDS = [
+  REVIEWER_ROLE_ID,
+  AREA_LEADER_ROLE_ID,
+  OPERATION_ACADEMIC_COORDINATOR_ROLE_ID,
+];
+
+export const APPROVER_ROLE_IDS = [
+  APPROVER_ROLE_ID,
+  AREA_LEADER_ROLE_ID,
+  OPERATION_ACADEMIC_COORDINATOR_ROLE_ID,
+];
+
+export const WORKFLOW_ASSIGNABLE_ROLE_IDS = [
+  AREA_LEADER_ROLE_ID,
+  REVIEWER_ROLE_ID,
+  APPROVER_ROLE_ID,
+  OPERATION_ACADEMIC_COORDINATOR_ROLE_ID,
+];
+
+export function isReviewerRole(roleId) {
+  return REVIEWER_ROLE_IDS.includes(Number(roleId));
+}
+
+export function isApproverRole(roleId) {
+  return APPROVER_ROLE_IDS.includes(Number(roleId));
+}

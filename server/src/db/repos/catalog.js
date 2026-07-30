@@ -260,7 +260,7 @@ export async function getStats(auth) {
   const { rows } = await query(`
     SELECT
       COUNT(*)::int AS total,
-      COUNT(*) FILTER (WHERE state IN ('publicado', 'aprobado'))::int AS vigentes,
+      COUNT(*) FILTER (WHERE state = 'publicado')::int AS vigentes,
       COUNT(*) FILTER (WHERE state = 'revision')::int AS revision,
       COUNT(*) FILTER (WHERE state = 'vencido')::int AS vencidos,
       COUNT(*) FILTER (WHERE state = 'borrador')::int AS borradores
@@ -268,6 +268,53 @@ export async function getStats(auth) {
     ${where}
   `, params);
   return rows[0];
+}
+
+export async function getMapDocumentCounts(auth) {
+  const areaConditions = [];
+  const areaParams = [];
+  addDocumentScope(areaConditions, areaParams, auth, 'd');
+  const areaJoinScope = areaConditions.length ? `AND ${areaConditions.join(' AND ')}` : '';
+
+  const coordinationConditions = [];
+  const coordinationParams = [];
+  addDocumentScope(coordinationConditions, coordinationParams, auth, 'd');
+  const coordinationJoinScope = coordinationConditions.length
+    ? `AND ${coordinationConditions.join(' AND ')}`
+    : '';
+
+  const generalConditions = ['d.area_id = 1', 'd.coordination_id IS NULL'];
+  const generalParams = [];
+  addDocumentScope(generalConditions, generalParams, auth, 'd');
+
+  const [areaRows, coordinationRows, operationGeneralRows] = await Promise.all([
+    query(`
+      SELECT a.id, COUNT(d.id)::int AS value
+      FROM areas a
+      LEFT JOIN documents d ON d.area_id = a.id ${areaJoinScope}
+      GROUP BY a.id
+      ORDER BY a.id
+    `, areaParams),
+    query(`
+      SELECT c.id, COUNT(d.id)::int AS value
+      FROM coordinations c
+      LEFT JOIN documents d ON d.coordination_id = c.id ${coordinationJoinScope}
+      WHERE c.area_id = 1
+      GROUP BY c.id, c.sort_order
+      ORDER BY c.sort_order, c.id
+    `, coordinationParams),
+    query(`
+      SELECT COUNT(*)::int AS value
+      FROM documents d
+      WHERE ${generalConditions.join(' AND ')}
+    `, generalParams),
+  ]);
+
+  return {
+    byArea: areaRows.rows,
+    byCoordination: coordinationRows.rows,
+    operationGeneral: operationGeneralRows.rows[0]?.value || 0,
+  };
 }
 
 export async function getReportSummary(auth) {
