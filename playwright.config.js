@@ -1,4 +1,7 @@
 import { defineConfig } from '@playwright/test';
+import path from 'path';
+
+const e2eStorageDir = path.resolve('test-results', 'file-storage');
 
 export default defineConfig({
   testDir: './tests/e2e',
@@ -31,6 +34,8 @@ export default defineConfig({
         SMTP_USER: 'e2e-no-send',
         SMTP_PASS: 'e2e-no-send',
         SMTP_FROM: 'Acervo E2E <e2e@localhost>',
+        FILE_STORAGE_MODE: 'local',
+        FILE_STORAGE_LOCAL_DIR: e2eStorageDir,
       },
     },
     {

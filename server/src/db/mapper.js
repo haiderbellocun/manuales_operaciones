@@ -4,7 +4,14 @@ function fmtDate(d) {
   return d.toISOString().slice(0, 10);
 }
 
-export function mapDocument(row, history = [], fav = false, versions = [], activity = []) {
+export function mapDocument(
+  row,
+  history = [],
+  fav = false,
+  versions = [],
+  activity = [],
+  infographic = null,
+) {
   return {
     id: row.id,
     area: row.area_id,
@@ -17,6 +24,9 @@ export function mapDocument(row, history = [], fav = false, versions = [], activ
     owner: row.owner_id,
     vigencia: row.vigencia || '—',
     views: row.views,
+    downloads: row.downloads || 0,
+    lastViewedAt: row.last_viewed_at || null,
+    lastDownloadedAt: row.last_downloaded_at || null,
     desc: row.description || '',
     tags: row.tags || [],
     related: row.related || [],
@@ -25,6 +35,15 @@ export function mapDocument(row, history = [], fav = false, versions = [], activ
     app: row.app_ref || undefined,
     created: fmtDate(row.created),
     updated: fmtDate(row.updated),
+    infographic: infographic ? {
+      available: true,
+      originalName: infographic.original_name,
+      mimeType: infographic.mime_type,
+      size: Number(infographic.file_size),
+      documentVersion: infographic.document_version || row.version,
+      uploadedAt: infographic.uploaded_at,
+      uploadedBy: infographic.uploaded_by,
+    } : { available: false },
     fav,
     history: history.map(h => ({
       v: h.version,

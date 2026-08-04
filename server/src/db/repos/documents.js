@@ -39,6 +39,14 @@ async function getActivity(docId) {
   return rows;
 }
 
+async function getInfographicRow(docId) {
+  const { rows } = await query(
+    'SELECT * FROM document_infographics WHERE doc_id = $1',
+    [Number(docId)],
+  );
+  return rows[0] || null;
+}
+
 async function getFavSet(userId) {
   const { rows } = await query(
     'SELECT doc_id FROM favorites WHERE user_id = $1',
@@ -159,11 +167,12 @@ async function mapDocumentById(id, userId) {
   const history = await getHistory(rows[0].id);
   const versions = await getVersions(rows[0].id);
   const activity = await getActivity(rows[0].id);
+  const infographic = await getInfographicRow(rows[0].id);
   const { rows: favRows } = await query(
     'SELECT 1 FROM favorites WHERE user_id = $1 AND doc_id = $2',
     [userId, rows[0].id],
   );
-  return mapDocument(rows[0], history, favRows.length > 0, versions, activity);
+  return mapDocument(rows[0], history, favRows.length > 0, versions, activity, infographic);
 }
 
 export function assertCanCreateInArea(auth, areaId, coordinationId = null) {
@@ -239,7 +248,21 @@ export async function listDocuments(auth, filters = {}) {
   }
 
   const favs = await getFavSet(auth.id);
-  const data = rows.map(row => mapDocument(row, histByDoc[row.id] || [], favs.has(row.id)));
+  const { rows: infographicRows } = await query(
+    'SELECT * FROM document_infographics WHERE doc_id = ANY($1::int[])',
+    [docIds],
+  );
+  const infographicByDoc = Object.fromEntries(
+    infographicRows.map(infographic => [infographic.doc_id, infographic]),
+  );
+  const data = rows.map(row => mapDocument(
+    row,
+    histByDoc[row.id] || [],
+    favs.has(row.id),
+    [],
+    [],
+    infographicByDoc[row.id] || null,
+  ));
 
   return { data, total, page: pageNum, limit: limitNum, pages: Math.ceil(total / limitNum) };
 }
@@ -253,11 +276,12 @@ export async function getDocument(id, auth) {
   const history = await getHistory(rows[0].id);
   const versions = await getVersions(rows[0].id);
   const activity = await getActivity(rows[0].id);
+  const infographic = await getInfographicRow(rows[0].id);
   const { rows: favRows } = await query(
     'SELECT 1 FROM favorites WHERE user_id = $1 AND doc_id = $2',
     [auth.id, rows[0].id],
   );
-  return mapDocument(rows[0], history, favRows.length > 0, versions, activity);
+  return mapDocument(rows[0], history, favRows.length > 0, versions, activity, infographic);
 }
 
 export async function createDocument(payload, areaObj, typeObj, coordinationObj = null) {
@@ -325,6 +349,19 @@ export async function createDocument(payload, areaObj, typeObj, coordinationObj 
   return mapDocumentById(id, payload.userId);
 }
 
+export async function reserveDocumentId() {
+  const { rows } = await query(`
+    SELECT nextval(pg_get_serial_sequence('documents', 'id'))::bigint AS id
+  `);
+  const id = Number(rows[0]?.id);
+  if (!Number.isInteger(id) || id <= 0) {
+    const err = new Error('No se pudo reservar el ID del documento.');
+    err.statusCode = 500;
+    throw err;
+  }
+  return id;
+}
+
 export async function createDocumentWithFile(
   payload,
   areaObj,
@@ -332,8 +369,16 @@ export async function createDocumentWithFile(
   coordinationObj,
   file,
   storedName,
+  infographicFile,
+  infographicStoredName,
   workflowAssignments,
 ) {
+  const documentId = Number(payload.reservedDocumentId);
+  if (!Number.isInteger(documentId) || documentId <= 0) {
+    const err = new Error('El ID reservado del documento es obligatorio.');
+    err.statusCode = 500;
+    throw err;
+  }
   const coordinationId = coordinationObj?.id || null;
   const codePrefix = documentCodePrefix(areaObj, coordinationObj);
   const now = today();
@@ -365,11 +410,12 @@ export async function createDocumentWithFile(
 
     const { rows: documentRows } = await client.query(`
       INSERT INTO documents (
-        area_id, coordination_id, type_id, document_number, name, version, state, owner_id,
+        id, area_id, coordination_id, type_id, document_number, name, version, state, owner_id,
         vigencia, views, description, tags, related, created, updated
-      ) VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,0,$10,$11,$12,$13,$13)
+      ) VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,0,$11,$12,$13,$14,$14)
       RETURNING *
     `, [
+      documentId,
       Number(payload.area),
       coordinationId,
       Number(payload.type),
@@ -411,6 +457,22 @@ export async function createDocumentWithFile(
       Number(payload.userId),
     ]);
 
+    const { rows: infographicRows } = await client.query(`
+      INSERT INTO document_infographics (
+        doc_id, original_name, stored_name, mime_type, file_size,
+        document_version, uploaded_by
+      ) VALUES ($1, $2, $3, $4, $5, $6, $7)
+      RETURNING *
+    `, [
+      document.id,
+      infographicFile.originalname,
+      infographicStoredName,
+      infographicFile.mimetype,
+      infographicFile.size,
+      version,
+      Number(payload.userId),
+    ]);
+
     await client.query(`
       INSERT INTO workflow_items (
         doc_id, stage, assignee, assignee_user_id, reviewer_user_id,
@@ -434,7 +496,8 @@ export async function createDocumentWithFile(
         who_user_id, action, doc_id, when_text, event_type, details
       ) VALUES
         ($1, $2, $3, $4, 'document_created', $5),
-        ($1, 'Adjunto archivo al documento', $3, $4, 'file_uploaded', $6)
+        ($1, 'Adjunto archivo al documento', $3, $4, 'file_uploaded', $6),
+        ($1, 'Adjunto infografia al documento', $3, $4, 'infographic_uploaded', $7)
     `, [
       Number(payload.userId),
       `Creo el documento "${payload.name}"`,
@@ -454,10 +517,17 @@ export async function createDocumentWithFile(
         mimeType: file.mimetype,
         size: file.size,
       }),
+      JSON.stringify({
+        originalName: infographicFile.originalname,
+        storedName: infographicStoredName,
+        mimeType: infographicFile.mimetype,
+        size: infographicFile.size,
+        documentVersion: version,
+      }),
     ]);
 
     await client.query('COMMIT');
-    return mapDocument(document, historyRows, false, [], []);
+    return mapDocument(document, historyRows, false, [], [], infographicRows[0]);
   } catch (err) {
     await client.query('ROLLBACK');
     throw err;
@@ -573,14 +643,6 @@ export async function toggleFavorite(userId, docId) {
   return { fav: true };
 }
 
-export async function incrementViews(docId) {
-  const { rows } = await query(
-    'UPDATE documents SET views = views + 1 WHERE id = $1 RETURNING views',
-    [Number(docId)],
-  );
-  return rows[0]?.views ?? 0;
-}
-
 export async function createUpdateRequest(docId, userId, reason, detail) {
   const { rows } = await query(`
     INSERT INTO update_requests (doc_id, user_id, reason, detail)
@@ -605,6 +667,56 @@ export async function createUpdateRequest(docId, userId, reason, detail) {
 export async function getFileMeta(docId) {
   const { rows } = await query('SELECT * FROM document_files WHERE doc_id = $1', [Number(docId)]);
   return mapFile(rows[0]);
+}
+
+export async function getInfographicMeta(docId) {
+  const row = await getInfographicRow(docId);
+  if (!row) return null;
+  return {
+    originalName: row.original_name,
+    storedName: row.stored_name,
+    mimeType: row.mime_type,
+    size: Number(row.file_size),
+    documentVersion: row.document_version,
+    uploadedAt: row.uploaded_at,
+    uploadedBy: row.uploaded_by,
+  };
+}
+
+export async function upsertInfographic(doc, file, uploadedBy, storedName) {
+  await query(`
+    INSERT INTO document_infographics (
+      doc_id, original_name, stored_name, mime_type, file_size,
+      document_version, uploaded_by
+    ) VALUES ($1, $2, $3, $4, $5, $6, $7)
+    ON CONFLICT (doc_id) DO UPDATE SET
+      original_name = EXCLUDED.original_name,
+      stored_name = EXCLUDED.stored_name,
+      mime_type = EXCLUDED.mime_type,
+      file_size = EXCLUDED.file_size,
+      document_version = EXCLUDED.document_version,
+      uploaded_at = NOW(),
+      uploaded_by = EXCLUDED.uploaded_by
+  `, [
+    Number(doc.id),
+    file.originalname,
+    storedName,
+    file.mimetype,
+    file.size,
+    doc.version,
+    uploadedBy,
+  ]);
+  await logActivity(uploadedBy, 'Adjunto infografia al documento', Number(doc.id), {
+    eventType: 'infographic_uploaded',
+    details: {
+      originalName: file.originalname,
+      storedName,
+      mimeType: file.mimetype,
+      size: file.size,
+      documentVersion: doc.version,
+    },
+  }).catch(() => {});
+  return getInfographicMeta(doc.id);
 }
 
 export async function getVersionFileMeta(docId, versionId) {
@@ -720,7 +832,15 @@ async function findVersionWorkflowUser(client, roleIds, preferredUserId, areaId)
   return rows[0] || null;
 }
 
-export async function createDocumentVersion(doc, payload, file, storedName, auth) {
+export async function createDocumentVersion(
+  doc,
+  payload,
+  file,
+  storedName,
+  auth,
+  infographicFile = null,
+  infographicStoredName = null,
+) {
   if (!['publicado', 'vencido', 'archivado'].includes(doc.state)) {
     const err = new Error('Solo puedes crear una nueva version desde un documento publicado, vencido o archivado.');
     err.statusCode = 409;
@@ -731,6 +851,11 @@ export async function createDocumentVersion(doc, payload, file, storedName, auth
   if (!version) {
     const err = new Error('La version es obligatoria.');
     err.statusCode = 400;
+    throw err;
+  }
+  if (version === String(doc.version || '').trim()) {
+    const err = new Error('La nueva version debe ser distinta de la version vigente.');
+    err.statusCode = 409;
     throw err;
   }
 
@@ -750,17 +875,26 @@ export async function createDocumentVersion(doc, payload, file, storedName, auth
 
     await client.query(`
       INSERT INTO document_versions (
-        doc_id, version, original_name, stored_name, mime_type, file_size, note, created_by
-      ) VALUES ($1,$2,$3,$4,$5,$6,$7,$8)
+        doc_id, version, original_name, stored_name, mime_type, file_size,
+        note, created_at, created_by
+      )
+      SELECT
+        df.doc_id, $2, df.original_name, df.stored_name, df.mime_type, df.file_size,
+        $3, COALESCE(df.uploaded_at, NOW()), df.uploaded_by
+      FROM document_files df
+      WHERE df.doc_id = $1 AND df.stored_name IS NOT NULL
+      ON CONFLICT (doc_id, version) DO UPDATE SET
+        original_name = EXCLUDED.original_name,
+        stored_name = EXCLUDED.stored_name,
+        mime_type = EXCLUDED.mime_type,
+        file_size = EXCLUDED.file_size,
+        note = COALESCE(document_versions.note, EXCLUDED.note),
+        created_at = EXCLUDED.created_at,
+        created_by = EXCLUDED.created_by
     `, [
       doc.id,
-      version,
-      file.originalname,
-      storedName,
-      file.mimetype || 'application/octet-stream',
-      file.size,
-      payload.note || null,
-      auth.id,
+      String(doc.version || '').trim(),
+      `Version ${doc.version} preservada antes de crear la version ${version}`,
     ]);
 
     await client.query(`
@@ -781,6 +915,31 @@ export async function createDocumentVersion(doc, payload, file, storedName, auth
       file.size,
       auth.id,
     ]);
+
+    if (infographicFile && infographicStoredName) {
+      await client.query(`
+        INSERT INTO document_infographics (
+          doc_id, original_name, stored_name, mime_type, file_size,
+          document_version, uploaded_by
+        ) VALUES ($1, $2, $3, $4, $5, $6, $7)
+        ON CONFLICT (doc_id) DO UPDATE SET
+          original_name = EXCLUDED.original_name,
+          stored_name = EXCLUDED.stored_name,
+          mime_type = EXCLUDED.mime_type,
+          file_size = EXCLUDED.file_size,
+          document_version = EXCLUDED.document_version,
+          uploaded_at = NOW(),
+          uploaded_by = EXCLUDED.uploaded_by
+      `, [
+        doc.id,
+        infographicFile.originalname,
+        infographicStoredName,
+        infographicFile.mimetype,
+        infographicFile.size,
+        version,
+        auth.id,
+      ]);
+    }
 
     await client.query(`
       UPDATE documents
@@ -881,8 +1040,14 @@ export async function createDocumentVersion(doc, payload, file, storedName, auth
         originalName: file.originalname,
         storedName,
         size: file.size,
+        infographic: infographicFile ? {
+          originalName: infographicFile.originalname,
+          storedName: infographicStoredName,
+          mimeType: infographicFile.mimetype,
+          size: infographicFile.size,
+        } : null,
       },
-    });
+    }).catch(() => {});
     return mapDocumentById(doc.id, auth.id);
   } catch (err) {
     await client.query('ROLLBACK');

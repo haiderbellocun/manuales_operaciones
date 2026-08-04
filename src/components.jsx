@@ -328,7 +328,7 @@ export function KpiCard({ icon, value, label, tone = 'brand', trend }) {
   );
 }
 
-export function DocCard({ doc, onOpen, onFav }) {
+export function DocCard({ doc, onOpen, onFav, onPreviewStart, onPreviewEnd }) {
   const { areaById, coordinationById, typeById } = useCatalogs();
   const area = areaById(doc.area);
   const coordination = doc.coordination ? coordinationById(doc.coordination) : null;
@@ -339,7 +339,17 @@ export function DocCard({ doc, onOpen, onFav }) {
     ? `${area?.abbreviation || 'N/D'} · ${coordination.abbreviation}`
     : (area?.abbreviation || 'N/D');
   return (
-    <div className="doc-card" onClick={() => onOpen(doc.id)} role="button" tabIndex={0} onKeyDown={e => e.key === 'Enter' && onOpen(doc.id)}>
+    <div
+      className="doc-card"
+      onClick={() => onOpen(doc.id)}
+      onMouseEnter={event => onPreviewStart?.(doc, event.currentTarget)}
+      onMouseLeave={() => onPreviewEnd?.()}
+      onFocus={event => onPreviewStart?.(doc, event.currentTarget)}
+      onBlur={() => onPreviewEnd?.()}
+      role="button"
+      tabIndex={0}
+      onKeyDown={e => e.key === 'Enter' && onOpen(doc.id)}
+    >
       <div className="doc-card-top" style={{ background: areaColor }}></div>
       <div className="doc-card-body">
         <div className="doc-card-head">

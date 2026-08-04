@@ -15,8 +15,9 @@ import {
   SelectField,
   Modal,
 } from '../components';
-import { FileDropzone } from '../components/DocumentPreview';
+import { FileDropzone, InfographicDropzone } from '../components/DocumentPreview';
 import { AreaCoordinationFields } from '../components/AreaCoordinationFields';
+import { getErrorToastType, getUserErrorMessage } from '../utils/errors';
 import {
   areaAssignmentValid,
   documentCodePrefix,
@@ -196,6 +197,7 @@ export function UploadFlow({ nav, showToast, onUploaded }) {
   const { coordinations } = useCatalogs();
   const [step, setStep] = useState(0);
   const [file, setFile] = useState(null);
+  const [infographic, setInfographic] = useState(null);
   const [submitting, setSubmitting] = useState(false);
   const [catalogs, setCatalogs] = useState({ areas: [], types: [], users: [] });
   const [catalogLoading, setCatalogLoading] = useState(true);
@@ -267,7 +269,11 @@ export function UploadFlow({ nav, showToast, onUploaded }) {
   const areaReady = areaAssignmentValid(areaCode, f.coordination, {
     allowGeneral: canCreateGeneralOperationAcademic,
   });
-  const canNext = step === 0 ? (f.type && f.area && f.name && areaReady) : step === 1 ? !!file : true;
+  const canNext = step === 0
+    ? (f.type && f.area && f.name && areaReady)
+    : step === 1
+      ? Boolean(file && infographic)
+      : true;
   const canFinish = Boolean(f.revisor && f.aprobador && !submitting);
 
   useEffect(() => {
@@ -334,18 +340,31 @@ export function UploadFlow({ nav, showToast, onUploaded }) {
 
   const handleSubmit = async () => {
     setSubmitting(true);
+    showToast?.({
+      title: 'Cargando documento',
+      message: `Estamos guardando el archivo, la infografía y los datos de la versión ${f.version || 'inicial'}.`,
+      type: 'info',
+      duration: 15000,
+    });
     try {
-      const newDoc = await addDocument({ ...f, file });
-      showToast(
-        f.initialState === 'revision'
-          ? 'Documento cargado y enviado a revisión.'
-          : 'Documento guardado como borrador.',
-        'success',
-      );
+      const newDoc = await addDocument({ ...f, file, infographic });
+      showToast?.({
+        title: f.initialState === 'revision'
+          ? 'Documento enviado a revisión'
+          : 'Documento guardado como borrador',
+        message: f.initialState === 'revision'
+          ? 'El archivo y su infografía quedaron cargados. El revisor asignado ya puede gestionarlo.'
+          : 'El archivo y su infografía quedaron cargados y todavía no son visibles para todos los usuarios.',
+        type: 'success',
+      });
       onUploaded?.();
       nav('detail', { id: newDoc.id });
     } catch (err) {
-      showToast(err.message || 'Error al cargar el documento. Intenta de nuevo.', 'error');
+      showToast?.({
+        title: 'No se pudo cargar el documento',
+        message: getUserErrorMessage(err, 'No se pudo guardar el documento y su infografía. Inténtalo nuevamente.'),
+        type: getErrorToastType(err),
+      });
     } finally {
       setSubmitting(false);
     }
@@ -414,8 +433,22 @@ export function UploadFlow({ nav, showToast, onUploaded }) {
         )}
         {step === 1 && (
           <div>
-            <div className="form-row"><label>Archivo del documento *</label>
-              <FileDropzone file={file} onFile={setFile} />
+            <div className="upload-assets-grid">
+              <div className="form-row"><label>Archivo del documento *</label>
+                <FileDropzone
+                  file={file}
+                  onFile={setFile}
+                  onError={message => showToast?.({ title: 'Archivo no válido', message, type: 'warning' })}
+                />
+              </div>
+              <div className="form-row"><label>Infografia del documento *</label>
+                <InfographicDropzone
+                  file={infographic}
+                  onFile={setInfographic}
+                  onError={message => showToast?.({ title: 'Infografía no válida', message, type: 'warning' })}
+                />
+                <span className="hint">Se mostrara antes de abrir el archivo y al pasar el cursor sobre el documento en la biblioteca.</span>
+              </div>
             </div>
             <div className="form-grid">
               <div className="form-row"><label>Versión inicial</label><input className="input" value={f.version} onChange={e => set('version', e.target.value)} /></div>
@@ -452,6 +485,7 @@ export function UploadFlow({ nav, showToast, onUploaded }) {
                 <div className="spec-row"><span className="k">Responsable</span><span className="v">{user?.name || '—'}</span></div>
                 <div className="spec-row"><span className="k">Número documental</span><span className="v mono">{autoCode}</span></div>
                 <div className="spec-row"><span className="k">Versión</span><span className="v">v{f.version}</span></div>
+                <div className="spec-row"><span className="k">Infografía</span><span className="v">{infographic?.name || '—'}</span></div>
                 <div className="spec-row"><span className="k">Estado inicial</span><span className="v">{f.initialState === 'revision' ? 'En revisión' : 'Borrador'}</span></div>
               </div>
             </div>
@@ -491,9 +525,13 @@ export function WorkflowView({ nav, showToast }) {
     setLoading(true);
     return api.getWorkflow()
       .then(setItems)
-      .catch(() => {
+      .catch((error) => {
         setItems([]);
-        showToast?.('No se pudo cargar el flujo de aprobación.', 'error');
+        showToast?.({
+          title: 'No se pudo cargar el flujo documental',
+          message: getUserErrorMessage(error, 'No se pudo consultar la bandeja de revisión y aprobación.'),
+          type: getErrorToastType(error),
+        });
       })
       .finally(() => setLoading(false));
   };
@@ -502,6 +540,19 @@ export function WorkflowView({ nav, showToast }) {
 
   const runTransition = async (item, action) => {
     setBusy(`${item.id}-${action}`);
+    const actionLabels = {
+      submit: 'Enviando a revisión',
+      review: 'Marcando como aprobado',
+      approve: 'Marcando como aprobado',
+      publish: 'Publicando documento',
+      return: 'Devolviendo documento',
+    };
+    showToast?.({
+      title: actionLabels[action] || 'Actualizando flujo documental',
+      message: `Estamos procesando “${item.name || 'el documento seleccionado'}”.`,
+      type: 'info',
+      duration: 12000,
+    });
     try {
       await api.transitionWorkflow(item.id, action);
       await loadWorkflow();
@@ -513,11 +564,18 @@ export function WorkflowView({ nav, showToast }) {
         publish: 'Documento aprobado y publicado correctamente.',
         return: 'Documento devuelto para ajustes.',
       };
-      showToast?.(messages[action] || 'Flujo actualizado correctamente.', action === 'return' ? 'warning' : 'success');
+      showToast?.({
+        title: action === 'return' ? 'Documento devuelto' : 'Flujo actualizado',
+        message: messages[action] || 'El estado documental se actualizó correctamente.',
+        type: action === 'return' ? 'warning' : 'success',
+      });
       return true;
     } catch (err) {
-      const type = err.status === 403 ? 'warning' : 'error';
-      showToast?.(err.message || 'No se pudo actualizar el flujo.', type);
+      showToast?.({
+        title: 'No se pudo actualizar el flujo',
+        message: getUserErrorMessage(err, 'No se pudo realizar la transición documental solicitada.'),
+        type: getErrorToastType(err),
+      });
       return false;
     } finally {
       setBusy(null);
@@ -700,7 +758,7 @@ function userPaginationItems(currentPage, totalPages) {
   return items;
 }
 
-export function UsersView({ nav }) {
+export function UsersView({ nav, showToast }) {
   const { coordinations } = useCatalogs();
   const [tab, setTab] = useState('users');
   const [users, setUsers] = useState([]);
@@ -768,18 +826,27 @@ export function UsersView({ nav }) {
   const lastVisibleUser = Math.min(firstUserIndex + USERS_PER_PAGE, filteredUsers.length);
   const hasUserFilters = Boolean(userSearch.trim()) || userArea !== 'all';
 
-  const loadUsers = () => {
+  const loadUsers = ({ notifyError = true } = {}) => {
     setLoading(true);
     return Promise.all([api.getUsers(), api.getRoles(), api.getAreas()])
       .then(([nextUsers, nextRoles, nextAreas]) => {
         setUsers(nextUsers);
         setRoles(nextRoles);
         setAreas(nextAreas);
+        return true;
       })
-      .catch(() => {
+      .catch((loadError) => {
         setUsers([]);
         setRoles([]);
         setAreas([]);
+        if (notifyError) {
+          showToast?.({
+            title: 'No se pudieron cargar los usuarios',
+            message: getUserErrorMessage(loadError, 'No se pudieron consultar los usuarios, roles y áreas.'),
+            type: getErrorToastType(loadError),
+          });
+        }
+        return false;
       })
       .finally(() => setLoading(false));
   };
@@ -846,8 +913,15 @@ export function UsersView({ nav }) {
 
   const submitUser = async () => {
     if (!modal) return;
+    const creating = modal.mode === 'create';
     setSaving(true);
     setError('');
+    showToast?.({
+      title: creating ? 'Creando usuario' : 'Actualizando usuario',
+      message: 'Estamos validando los datos, el rol y el alcance asignado.',
+      type: 'info',
+      duration: 10000,
+    });
     try {
       const payload = {
         name: modal.form.name,
@@ -863,9 +937,22 @@ export function UsersView({ nav }) {
         await api.updateUser(modal.user.id, payload);
       }
       setModal(null);
-      await loadUsers();
+      const refreshed = await loadUsers({ notifyError: false });
+      showToast?.({
+        title: creating ? 'Usuario creado' : 'Usuario actualizado',
+        message: refreshed
+          ? `${payload.name} quedó guardado correctamente.`
+          : `${payload.name} quedó guardado, pero no fue posible actualizar la lista. Recarga la página para verlo.`,
+        type: refreshed ? 'success' : 'warning',
+      });
     } catch (err) {
-      setError(err.message || 'No se pudo guardar el usuario.');
+      const message = getUserErrorMessage(err, 'No se pudo guardar el usuario.');
+      setError(message);
+      showToast?.({
+        title: creating ? 'No se pudo crear el usuario' : 'No se pudo actualizar el usuario',
+        message,
+        type: getErrorToastType(err),
+      });
     } finally {
       setSaving(false);
     }
@@ -896,12 +983,32 @@ export function UsersView({ nav }) {
     if (!roleModal) return;
     setSaving(true);
     setError('');
+    showToast?.({
+      title: 'Actualizando rol',
+      message: 'Estamos guardando el nombre y los permisos seleccionados.',
+      type: 'info',
+      duration: 10000,
+    });
     try {
       await api.updateRole(roleModal.role.id, roleModal.form);
+      const roleName = roleModal.form.name;
       setRoleModal(null);
-      await loadUsers();
+      const refreshed = await loadUsers({ notifyError: false });
+      showToast?.({
+        title: 'Rol actualizado',
+        message: refreshed
+          ? `Los permisos de ${roleName} quedaron guardados.`
+          : `El rol quedó guardado, pero no fue posible actualizar la lista. Recarga la página para verlo.`,
+        type: refreshed ? 'success' : 'warning',
+      });
     } catch (err) {
-      setError(err.message || 'No se pudo guardar el rol.');
+      const message = getUserErrorMessage(err, 'No se pudo guardar el rol.');
+      setError(message);
+      showToast?.({
+        title: 'No se pudo actualizar el rol',
+        message,
+        type: getErrorToastType(err),
+      });
     } finally {
       setSaving(false);
     }

@@ -1,4 +1,22 @@
+import { getUserErrorMessage } from '../utils/errors';
+
 const API_BASE = import.meta.env.VITE_API_URL || '/api';
+
+async function responseError(res, path, fallback) {
+  const payload = await res.clone().json().catch(async () => {
+    const message = await res.text().catch(() => '');
+    return message ? { message } : {};
+  });
+  const rawMessage = payload.message || `Error ${res.status}`;
+  const error = new Error(rawMessage);
+  error.status = res.status;
+  error.code = payload.code;
+  error.payload = payload;
+  error.path = path;
+  error.rawMessage = rawMessage;
+  error.message = getUserErrorMessage(error, fallback);
+  return error;
+}
 
 async function request(path, options = {}) {
   const headers = { ...options.headers };
@@ -8,11 +26,7 @@ async function request(path, options = {}) {
 
   const res = await fetch(`${API_BASE}${path}`, { ...options, headers, credentials: 'include' });
   if (!res.ok) {
-    const data = await res.json().catch(() => ({}));
-    const err = new Error(data.message || `Error ${res.status}`);
-    err.status = res.status;
-    err.payload = data;
-    throw err;
+    throw await responseError(res, path);
   }
   if (res.status === 204) return null;
   const ct = res.headers.get('content-type') || '';
@@ -52,17 +66,22 @@ export const api = {
     return result.fav;
   },
 
-  async incrementViews(id) {
-    await request(`/documents/${id}/view`, { method: 'POST' });
+  async incrementViews(id, source = 'document_detail') {
+    return request(`/documents/${id}/view`, {
+      method: 'POST',
+      body: JSON.stringify({ source }),
+    });
   },
 
-  async uploadDocument(payload, file) {
+  async uploadDocument(payload, file, infographic) {
     if (!file) throw new Error('El archivo del documento es obligatorio.');
+    if (!infographic) throw new Error('La infografia del documento es obligatoria.');
     const form = new FormData();
     Object.entries(payload || {}).forEach(([key, value]) => {
       if (value !== undefined && value !== null) form.append(key, value);
     });
     form.append('file', file);
+    form.append('infographic', infographic);
     return request('/documents', { method: 'POST', body: form });
   },
 
@@ -76,31 +95,44 @@ export const api = {
     return request(`/documents/${docId}/file`, { method: 'POST', body: form });
   },
 
-  async createDocumentVersion(docId, payload, file) {
+  async createDocumentVersion(docId, payload, file, infographic = null) {
     const form = new FormData();
     Object.entries(payload || {}).forEach(([key, value]) => {
       if (value !== undefined && value !== null) form.append(key, value);
     });
     if (file) form.append('file', file);
+    if (infographic) form.append('infographic', infographic);
     return request(`/documents/${docId}/versions`, { method: 'POST', body: form });
   },
 
-  async getDocumentFileUrl(docId) {
-    const res = await fetch(`${API_BASE}/documents/${docId}/file`, {
+  async getDocumentFileUrl(docId, { preview = false } = {}) {
+    const path = `/documents/${docId}/file${preview ? '?mode=preview' : ''}`;
+    const res = await fetch(`${API_BASE}${path}`, {
       credentials: 'include',
     });
-    if (!res.ok) return null;
+    if (!res.ok) throw await responseError(res, path, 'No se pudo cargar el archivo del documento.');
     const blob = await res.blob();
-    return { blob, name: res.headers.get('content-disposition')?.match(/filename="(.+)"/)?.[1] || 'documento' };
+    return {
+      blob,
+      name: res.headers.get('content-disposition')?.match(/filename="(.+)"/)?.[1] || 'documento',
+      downloads: Number(res.headers.get('x-document-downloads')) || null,
+      lastDownloadedAt: res.headers.get('x-last-downloaded-at') || null,
+    };
   },
 
   async getDocumentVersionFileUrl(docId, versionId) {
-    const res = await fetch(`${API_BASE}/documents/${docId}/versions/${versionId}/file`, {
+    const path = `/documents/${docId}/versions/${versionId}/file`;
+    const res = await fetch(`${API_BASE}${path}`, {
       credentials: 'include',
     });
-    if (!res.ok) return null;
+    if (!res.ok) throw await responseError(res, path, 'No se pudo descargar la versión seleccionada.');
     const blob = await res.blob();
-    return { blob, name: res.headers.get('content-disposition')?.match(/filename="(.+)"/)?.[1] || 'documento' };
+    return {
+      blob,
+      name: res.headers.get('content-disposition')?.match(/filename="(.+)"/)?.[1] || 'documento',
+      downloads: Number(res.headers.get('x-document-downloads')) || null,
+      lastDownloadedAt: res.headers.get('x-last-downloaded-at') || null,
+    };
   },
 
   async getDocumentFileMeta(docId) {
@@ -164,6 +196,31 @@ export const api = {
     return request(`/assignees${query}`);
   },
 
+  async uploadDocumentInfographic(docId, infographic) {
+    if (!infographic) throw new Error('Selecciona una infografia.');
+    const form = new FormData();
+    form.append('infographic', infographic);
+    return request(`/documents/${docId}/infographic`, { method: 'POST', body: form });
+  },
+
+  async getDocumentInfographic(docId) {
+    const path = `/documents/${docId}/infographic`;
+    const res = await fetch(`${API_BASE}${path}`, {
+      credentials: 'include',
+    });
+    if (res.status === 404) return null;
+    if (!res.ok) throw await responseError(res, path, 'No se pudo cargar la infografía del documento.');
+    return {
+      blob: await res.blob(),
+      name: res.headers.get('content-disposition')?.match(/filename="(.+)"/)?.[1] || 'infografia',
+      type: res.headers.get('content-type') || 'image/png',
+    };
+  },
+
+  async getDocumentInfographicMeta(docId) {
+    return request(`/documents/${docId}/infographic/meta`);
+  },
+
   async getActivity() {
     return request('/activity');
   },
@@ -214,6 +271,18 @@ export const api = {
 
   async getReportSummary() {
     return request('/reports/summary');
+  },
+
+  async getDocumentAnalytics(params = {}) {
+    const qs = new URLSearchParams(
+      Object.fromEntries(Object.entries(params).filter(([key, value]) => (
+        value !== undefined
+        && value !== null
+        && value !== ''
+        && (key === 'period' || value !== 'all')
+      ))),
+    ).toString();
+    return request(`/reports/analytics${qs ? `?${qs}` : ''}`);
   },
 };
 

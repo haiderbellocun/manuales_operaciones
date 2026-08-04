@@ -3,13 +3,21 @@ import { api } from '../services/api';
 import { storage } from '../utils/storage';
 import { useAuth } from '../context/AuthContext';
 import { useCatalogs } from '../context/CatalogContext';
-import { STATES, fmtDate } from '../utils/display';
+import { STATES, fmtDate, fmtDateTime } from '../utils/display';
 import { Icon, StateBadge, AreaTag, DocCard, Avatar, FilterToggleButton, SelectField } from '../components';
-import { DocumentPreview, FileDropzone } from '../components/DocumentPreview';
+import {
+  DocumentPreview,
+  FileDropzone,
+  InfographicDropzone,
+  validateInfographic,
+} from '../components/DocumentPreview';
+import { DocumentInfographic } from '../components/DocumentInfographic';
+import { DocumentHoverPreview } from '../components/DocumentHoverPreview';
 import {
   OPERATION_ACADEMIC_AREA_ID,
   OPERATION_ACADEMIC_FULL_ROLE_ID,
 } from '../utils/areas';
+import { getErrorToastType, getUserErrorMessage } from '../utils/errors';
 
 function FilterRail({ docs, filt, setFilt, className }) {
   const { areas, coordinations, types } = useCatalogs();
@@ -130,14 +138,23 @@ function FilterRail({ docs, filt, setFilt, className }) {
   );
 }
 
-function HybridRow({ doc, nav, toggleFav }) {
+function HybridRow({ doc, nav, toggleFav, onPreviewStart, onPreviewEnd }) {
   const { areaById, typeById, personById } = useCatalogs();
   const area = areaById(doc.area);
   const type = typeById(doc.type);
   const owner = personById(doc.owner);
   const areaColor = area?.color || 'var(--brand-700)';
   return (
-    <div className="card hybrid-row" onClick={() => nav('detail', { id: doc.id })} role="button" tabIndex={0}>
+    <div
+      className="card hybrid-row"
+      onClick={() => nav('detail', { id: doc.id })}
+      onMouseEnter={event => onPreviewStart?.(doc, event.currentTarget)}
+      onMouseLeave={() => onPreviewEnd?.()}
+      onFocus={event => onPreviewStart?.(doc, event.currentTarget)}
+      onBlur={() => onPreviewEnd?.()}
+      role="button"
+      tabIndex={0}
+    >
       <div className="hybrid-accent" style={{ background: areaColor }}></div>
       <div className="hybrid-content">
         <span className="kpi-ico hybrid-icon"><Icon name={type?.icon || 'doc'} size={21} /></span>
@@ -163,7 +180,7 @@ function HybridRow({ doc, nav, toggleFav }) {
   );
 }
 
-export function Library({ nav, docs, toggleFav, initParams }) {
+export function Library({ nav, docs, toggleFav, initParams, showToast }) {
   const { hasPermission } = useAuth();
   const { areaById, coordinationById, typeById, personById } = useCatalogs();
   const canCreate = hasPermission('crear');
@@ -180,7 +197,61 @@ export function Library({ nav, docs, toggleFav, initParams }) {
   });
   const [view, setView] = useState(savedPrefs.view || 'cards');
   const [filtersOpen, setFiltersOpen] = useState(false);
+  const [hoverPreview, setHoverPreview] = useState(null);
   const saveTimer = useRef(null);
+  const previewTimer = useRef(null);
+
+  const handleToggleFavorite = async (docId) => {
+    try {
+      const isFavorite = await toggleFav(docId);
+      showToast?.({
+        title: isFavorite ? 'Documento agregado a favoritos' : 'Documento retirado de favoritos',
+        message: isFavorite
+          ? 'Podrás encontrarlo rápidamente desde la vista de favoritos.'
+          : 'El documento ya no aparece en tu lista de favoritos.',
+        type: 'success',
+      });
+    } catch (error) {
+      showToast?.({
+        title: 'No se pudo actualizar el favorito',
+        message: getUserErrorMessage(error, 'No se pudo actualizar la lista de favoritos.'),
+        type: getErrorToastType(error),
+      });
+    }
+  };
+
+  const showDocumentPreview = (doc, element) => {
+    if (window.matchMedia?.('(hover: none), (pointer: coarse)').matches) return;
+    clearTimeout(previewTimer.current);
+    const rect = element.getBoundingClientRect();
+    const anchorRect = {
+      top: rect.top,
+      right: rect.right,
+      bottom: rect.bottom,
+      left: rect.left,
+      width: rect.width,
+      height: rect.height,
+    };
+    previewTimer.current = setTimeout(() => {
+      setHoverPreview({ doc, anchorRect });
+    }, 180);
+  };
+
+  const hideDocumentPreview = () => {
+    clearTimeout(previewTimer.current);
+    setHoverPreview(null);
+  };
+
+  useEffect(() => {
+    const hideOnViewportChange = () => hideDocumentPreview();
+    window.addEventListener('scroll', hideOnViewportChange, true);
+    window.addEventListener('resize', hideOnViewportChange);
+    return () => {
+      clearTimeout(previewTimer.current);
+      window.removeEventListener('scroll', hideOnViewportChange, true);
+      window.removeEventListener('resize', hideOnViewportChange);
+    };
+  }, []);
 
   useEffect(() => {
     if (initParams?.area || initParams?.coordination) {
@@ -301,7 +372,16 @@ export function Library({ nav, docs, toggleFav, initParams }) {
             </div>
           ) : view === 'cards' ? (
             <div className="grid-cards">
-              {filtered.map(d => <DocCard key={d.id} doc={d} onOpen={(id) => nav('detail', { id })} onFav={toggleFav} />)}
+              {filtered.map(d => (
+                <DocCard
+                  key={d.id}
+                  doc={d}
+                  onOpen={(id) => nav('detail', { id })}
+                  onFav={handleToggleFavorite}
+                  onPreviewStart={showDocumentPreview}
+                  onPreviewEnd={hideDocumentPreview}
+                />
+              ))}
             </div>
           ) : view === 'table' ? (
             <div className="tbl-wrap">
@@ -309,7 +389,12 @@ export function Library({ nav, docs, toggleFav, initParams }) {
                 <thead><tr><th>Documento</th><th>Código</th><th>Tipo</th><th>Área</th><th>Versión</th><th>Responsable</th><th>Actualizado</th><th>Estado</th></tr></thead>
                 <tbody>
                   {filtered.map(d => (
-                    <tr key={d.id} onClick={() => nav('detail', { id: d.id })}>
+                    <tr
+                      key={d.id}
+                      onClick={() => nav('detail', { id: d.id })}
+                      onMouseEnter={event => showDocumentPreview(d, event.currentTarget)}
+                      onMouseLeave={hideDocumentPreview}
+                    >
                       <td className="col-name">{d.name}</td>
                       <td className="col-number">{d.documentNumber}</td>
                       <td>{typeById(d.type)?.name || 'Tipo no disponible'}</td>
@@ -325,11 +410,23 @@ export function Library({ nav, docs, toggleFav, initParams }) {
             </div>
           ) : (
             <div className="hybrid-list">
-              {filtered.map(d => <HybridRow key={d.id} doc={d} nav={nav} toggleFav={toggleFav} />)}
+              {filtered.map(d => (
+                <HybridRow
+                  key={d.id}
+                  doc={d}
+                  nav={nav}
+                  toggleFav={handleToggleFavorite}
+                  onPreviewStart={showDocumentPreview}
+                  onPreviewEnd={hideDocumentPreview}
+                />
+              ))}
             </div>
           )}
         </div>
       </div>
+      {hoverPreview && (
+        <DocumentHoverPreview doc={hoverPreview.doc} anchorRect={hoverPreview.anchorRect} />
+      )}
     </div>
   );
 }
@@ -365,14 +462,16 @@ export function DocDetail({ nav, docId, docs, toggleFav, requestUpdate, showToas
   const [remoteDoc, setRemoteDoc] = useState(null);
   const [loadingDoc, setLoadingDoc] = useState(() => !localDoc && Number.isFinite(numericDocId));
   const doc = remoteDoc || localDoc;
-  const [tab, setTab] = useState('preview');
+  const [tab, setTab] = useState('info');
   const [versionModal, setVersionModal] = useState(false);
   const [versionForm, setVersionForm] = useState({ version: '', note: '', vigencia: '', desc: '' });
   const [versionFile, setVersionFile] = useState(null);
+  const [versionInfographic, setVersionInfographic] = useState(null);
   const [savingVersion, setSavingVersion] = useState(false);
   const [editModal, setEditModal] = useState(false);
   const [editForm, setEditForm] = useState({ name: '', owner: '', vigencia: '', desc: '', tags: '' });
   const [savingEdit, setSavingEdit] = useState(false);
+  const [savingInfographic, setSavingInfographic] = useState(false);
   const viewed = useRef(false);
   const canDownload = hasPermission('descargar');
   const canEditScope = canEditDocumentScope(user, doc, hasPermission('administrar'));
@@ -381,38 +480,112 @@ export function DocDetail({ nav, docId, docs, toggleFav, requestUpdate, showToas
     && ['publicado', 'vencido', 'archivado'].includes(doc?.state);
   const canEditDocument = hasPermission('editar') && canEditScope && doc?.state === 'borrador';
 
+  const handleToggleFavorite = async () => {
+    try {
+      const isFavorite = await toggleFav(doc.id);
+      setRemoteDoc(current => ({ ...(current || doc), fav: isFavorite }));
+      showToast?.({
+        title: isFavorite ? 'Documento agregado a favoritos' : 'Documento retirado de favoritos',
+        message: isFavorite
+          ? 'Podrás encontrarlo rápidamente desde la vista de favoritos.'
+          : 'El documento ya no aparece en tu lista de favoritos.',
+        type: 'success',
+      });
+    } catch (error) {
+      showToast?.({
+        title: 'No se pudo actualizar el favorito',
+        message: getUserErrorMessage(error, 'No se pudo actualizar la lista de favoritos.'),
+        type: getErrorToastType(error),
+      });
+    }
+  };
+
   const handleDownload = async () => {
-    const record = await api.getDocumentFileUrl(doc.id);
-    if (!record?.blob) return;
-    const url = URL.createObjectURL(record.blob);
-    const a = document.createElement('a');
-    a.href = url;
-    a.download = record.name || `${doc.documentNumber}.bin`;
-    document.body.appendChild(a);
-    a.click();
-    a.remove();
-    URL.revokeObjectURL(url);
+    showToast?.({ title: 'Preparando descarga', message: 'Estamos recuperando el archivo vigente.', type: 'info', duration: 10000 });
+    try {
+      const record = await api.getDocumentFileUrl(doc.id);
+      if (!record?.blob) throw new Error('El documento no tiene un archivo disponible para descargar.');
+      setRemoteDoc(current => ({
+        ...(current || doc),
+        downloads: record.downloads ?? Number((current || doc).downloads || 0) + 1,
+        lastDownloadedAt: record.lastDownloadedAt || new Date().toISOString(),
+      }));
+      const url = URL.createObjectURL(record.blob);
+      const a = document.createElement('a');
+      a.href = url;
+      a.download = record.name || `${doc.documentNumber}.bin`;
+      document.body.appendChild(a);
+      a.click();
+      a.remove();
+      URL.revokeObjectURL(url);
+      showToast?.({ title: 'Descarga iniciada', message: `Se inició la descarga de ${record.name || doc.name}.`, type: 'success' });
+    } catch (error) {
+      showToast?.({
+        title: 'No se pudo descargar el documento',
+        message: getUserErrorMessage(error, 'No se pudo recuperar el archivo del documento.'),
+        type: getErrorToastType(error),
+      });
+    }
   };
 
   const handleVersionDownload = async (versionId) => {
-    const record = await api.getDocumentVersionFileUrl(doc.id, versionId);
-    if (!record?.blob) {
-      showToast?.('No se pudo descargar esta versión.', 'error');
-      return;
+    showToast?.({ title: 'Preparando versión histórica', message: 'Estamos recuperando el archivo seleccionado.', type: 'info', duration: 10000 });
+    try {
+      const record = await api.getDocumentVersionFileUrl(doc.id, versionId);
+      if (!record?.blob) throw new Error('La versión seleccionada no tiene un archivo disponible.');
+      setRemoteDoc(current => ({
+        ...(current || doc),
+        downloads: record.downloads ?? Number((current || doc).downloads || 0) + 1,
+        lastDownloadedAt: record.lastDownloadedAt || new Date().toISOString(),
+      }));
+      const url = URL.createObjectURL(record.blob);
+      const a = document.createElement('a');
+      a.href = url;
+      a.download = record.name || `${doc.documentNumber}-version.bin`;
+      document.body.appendChild(a);
+      a.click();
+      a.remove();
+      URL.revokeObjectURL(url);
+      showToast?.({ title: 'Descarga iniciada', message: 'La versión histórica comenzó a descargarse.', type: 'success' });
+    } catch (error) {
+      showToast?.({
+        title: 'No se pudo descargar la versión',
+        message: getUserErrorMessage(error, 'No se pudo recuperar el archivo de esta versión.'),
+        type: getErrorToastType(error),
+      });
     }
-    const url = URL.createObjectURL(record.blob);
-    const a = document.createElement('a');
-    a.href = url;
-    a.download = record.name || `${doc.documentNumber}-version.bin`;
-    document.body.appendChild(a);
-    a.click();
-    a.remove();
-    URL.revokeObjectURL(url);
+  };
+
+  const handleShare = async () => {
+    const shareData = {
+      title: doc.name,
+      text: `${doc.documentNumber} · ${doc.name}`,
+      url: window.location.href,
+    };
+    try {
+      if (navigator.share) {
+        await navigator.share(shareData);
+      } else if (navigator.clipboard?.writeText) {
+        await navigator.clipboard.writeText(shareData.url);
+      } else {
+        throw new Error('El navegador no permite compartir este enlace.');
+      }
+      showToast?.({ title: 'Documento listo para compartir', message: 'El enlace del documento fue compartido o copiado correctamente.', type: 'success' });
+    } catch (err) {
+      if (err?.name !== 'AbortError') {
+        showToast?.({
+          title: 'No se pudo compartir el documento',
+          message: getUserErrorMessage(err, 'No se pudo compartir el enlace del documento.'),
+          type: getErrorToastType(err),
+        });
+      }
+    }
   };
 
   const openVersionModal = () => {
     setVersionForm({ version: nextVersion(doc.version), note: '', vigencia: '', desc: '' });
     setVersionFile(null);
+    setVersionInfographic(null);
     setVersionModal(true);
   };
 
@@ -421,15 +594,41 @@ export function DocDetail({ nav, docId, docs, toggleFav, requestUpdate, showToas
       showToast?.('Selecciona el archivo de la nueva versión.', 'warning');
       return;
     }
+    if (versionInfographic) {
+      const validationError = validateInfographic(versionInfographic);
+      if (validationError) {
+        showToast?.(validationError, 'warning');
+        return;
+      }
+    }
     setSavingVersion(true);
+    showToast?.({
+      title: 'Creando nueva versión',
+      message: `Estamos cargando el archivo de la versión ${versionForm.version}${versionInfographic ? ' y su nueva infografía' : ''}.`,
+      type: 'info',
+      duration: 15000,
+    });
     try {
-      const updated = await api.createDocumentVersion(doc.id, versionForm, versionFile);
+      const updated = await api.createDocumentVersion(
+        doc.id,
+        versionForm,
+        versionFile,
+        versionInfographic,
+      );
       setRemoteDoc(updated);
       await onVersionCreated?.();
       setVersionModal(false);
-      showToast?.('Nueva versión creada como borrador.', 'success');
+      showToast?.({
+        title: `Versión ${updated.version} creada`,
+        message: 'El documento quedó en Borrador y debe iniciar nuevamente el flujo de revisión y publicación.',
+        type: 'success',
+      });
     } catch (err) {
-      showToast?.(err.message || 'No se pudo crear la nueva versión.', 'error');
+      showToast?.({
+        title: 'No se pudo crear la nueva versión',
+        message: getUserErrorMessage(err, 'No se pudo crear la nueva versión del documento.'),
+        type: getErrorToastType(err),
+      });
     } finally {
       setSavingVersion(false);
     }
@@ -448,28 +647,71 @@ export function DocDetail({ nav, docId, docs, toggleFav, requestUpdate, showToas
 
   const submitEdit = async () => {
     setSavingEdit(true);
+    showToast?.({ title: 'Guardando cambios', message: 'Estamos actualizando los datos del documento.', type: 'info', duration: 10000 });
     try {
       const updated = await api.updateDocument(doc.id, editForm);
       setRemoteDoc(updated);
       await onVersionCreated?.();
       setEditModal(false);
-      showToast?.('Documento actualizado correctamente.', 'success');
+      showToast?.({ title: 'Documento actualizado', message: 'Los datos del documento se guardaron correctamente.', type: 'success' });
     } catch (err) {
-      showToast?.(err.message || 'No se pudo actualizar el documento.', err.status === 403 ? 'warning' : 'error');
+      showToast?.({
+        title: 'No se pudo actualizar el documento',
+        message: getUserErrorMessage(err, 'No se pudieron guardar los cambios del documento.'),
+        type: getErrorToastType(err),
+      });
     } finally {
       setSavingEdit(false);
+    }
+  };
+
+  const replaceInfographic = async (file) => {
+    const validationError = validateInfographic(file);
+    if (validationError) {
+      showToast?.(validationError, 'warning');
+      return;
+    }
+    setSavingInfographic(true);
+    showToast?.({ title: 'Actualizando infografía', message: 'Estamos cargando la nueva imagen informativa.', type: 'info', duration: 10000 });
+    try {
+      const meta = await api.uploadDocumentInfographic(doc.id, file);
+      setRemoteDoc(current => ({
+        ...(current || doc),
+        infographic: { available: true, ...meta },
+      }));
+      await onVersionCreated?.();
+      showToast?.({ title: 'Infografía actualizada', message: 'La nueva infografía ya acompaña al documento.', type: 'success' });
+    } catch (err) {
+      showToast?.({
+        title: 'No se pudo actualizar la infografía',
+        message: getUserErrorMessage(err, 'No se pudo guardar la nueva infografía.'),
+        type: getErrorToastType(err),
+      });
+    } finally {
+      setSavingInfographic(false);
     }
   };
 
   useEffect(() => {
     setRemoteDoc(null);
     viewed.current = false;
+    setTab('info');
   }, [numericDocId]);
 
   useEffect(() => {
     if (doc && !viewed.current) {
       viewed.current = true;
-      api.incrementViews(doc.id);
+      api.incrementViews(doc.id)
+        .then(metrics => {
+          setRemoteDoc(current => ({
+            ...(current || doc),
+            views: metrics.views,
+            downloads: metrics.downloads,
+            lastViewedAt: metrics.lastViewedAt,
+            lastDownloadedAt: metrics.lastDownloadedAt,
+          }));
+        })
+        .catch(() => {});
     }
   }, [doc?.id]);
 
@@ -549,12 +791,14 @@ export function DocDetail({ nav, docId, docs, toggleFav, requestUpdate, showToas
                 <div className="row gap-12 mono text-sm muted doc-header-meta">
                   <span>{doc.documentNumber}</span><span style={{ color: 'var(--line)' }}>•</span>
                   <span>Versión {doc.version}</span><span style={{ color: 'var(--line)' }}>•</span>
-                  <span className="row gap-6"><Icon name="eye" size={14} />{doc.views} consultas</span>
+                  <span className="row gap-6" title={`Última consulta: ${fmtDateTime(doc.lastViewedAt)}`}><Icon name="eye" size={14} />{doc.views} consultas</span>
+                  <span style={{ color: 'var(--line)' }}>•</span>
+                  <span className="row gap-6" title={`Última descarga: ${fmtDateTime(doc.lastDownloadedAt)}`}><Icon name="download" size={14} />{doc.downloads || 0} descargas</span>
                 </div>
               </div>
             </div>
             <div className="row gap-8 doc-header-actions">
-              <button className="btn btn-ghost" onClick={() => toggleFav(doc.id)} style={doc.fav ? { color: '#c98a13', borderColor: '#ecd9a8' } : null}><Icon name="star" size={16} />{doc.fav ? 'Favorito' : 'Marcar'}</button>
+              <button className="btn btn-ghost" onClick={handleToggleFavorite} style={doc.fav ? { color: '#c98a13', borderColor: '#ecd9a8' } : null}><Icon name="star" size={16} />{doc.fav ? 'Favorito' : 'Marcar'}</button>
               <button className="btn btn-ghost" onClick={() => requestUpdate(doc)}><Icon name="refresh" size={16} />Solicitar actualización</button>
               {canEditDocument && <button className="btn btn-ghost" onClick={openEditModal}><Icon name="edit" size={16} />Editar datos</button>}
               {canCreateVersion && <button className="btn btn-ghost" onClick={openVersionModal}><Icon name="history" size={16} />Nueva versión</button>}
@@ -566,13 +810,40 @@ export function DocDetail({ nav, docId, docs, toggleFav, requestUpdate, showToas
 
       <div className="detail-grid">
         <div>
-          <div className="seg mb-16">
+          <div className="seg mb-16 doc-detail-tabs">
+            <button type="button" className={tab === 'info' ? 'active' : ''} onClick={() => setTab('info')}><Icon name="sparkles" size={15} />Infografía</button>
             <button type="button" className={tab === 'preview' ? 'active' : ''} onClick={() => setTab('preview')}><Icon name="eye" size={15} />Previsualización</button>
             <button type="button" className={tab === 'desc' ? 'active' : ''} onClick={() => setTab('desc')}><Icon name="doc" size={15} />Descripción</button>
           </div>
-          {tab === 'preview' ? (
+          {tab === 'info' ? (
+            <DocumentInfographic
+              doc={doc}
+              area={area}
+              coordination={coordination}
+              type={type}
+              owner={owner}
+              canDownload={canDownload}
+              onView={() => setTab('preview')}
+              onDownload={handleDownload}
+              onShare={handleShare}
+              canReplace={canEditDocument && !savingInfographic}
+              onReplace={replaceInfographic}
+            />
+          ) : tab === 'preview' ? (
             <div className="card" style={{ padding: 22 }}>
-              <DocumentPreview docId={doc.id} doc={doc} height={420} onFullscreen canDownload={canDownload} />
+              <DocumentPreview
+                docId={doc.id}
+                doc={doc}
+                height={420}
+                onFullscreen
+                onDownload={handleDownload}
+                canDownload={canDownload}
+                onError={(message, error) => showToast?.({
+                  title: 'No se pudo abrir la previsualización',
+                  message,
+                  type: getErrorToastType(error),
+                })}
+              />
             </div>
           ) : (
             <div className="card" style={{ padding: '22px 24px' }}>
@@ -717,11 +988,28 @@ export function DocDetail({ nav, docId, docs, toggleFav, requestUpdate, showToas
                 <label>Descripción actualizada</label>
                 <textarea className="input" value={versionForm.desc} onChange={e => setVersionForm(f => ({ ...f, desc: e.target.value }))} placeholder="Opcional. Si lo dejas vacío se conserva la descripción actual." />
               </div>
-              <FileDropzone file={versionFile} onFile={setVersionFile} />
+              <div className="version-assets-stack">
+                <div className="form-row">
+                  <label>Archivo de la nueva versión *</label>
+                  <FileDropzone file={versionFile} onFile={setVersionFile} onError={message => showToast?.({ title: 'Archivo no válido', message, type: 'warning' })} />
+                </div>
+                <div className="form-row">
+                  <div className="row between gap-8">
+                    <label>Actualizar infografía</label>
+                    <span className="tag">Opcional</span>
+                  </div>
+                  <InfographicDropzone file={versionInfographic} onFile={setVersionInfographic} onError={message => showToast?.({ title: 'Infografía no válida', message, type: 'warning' })} />
+                  <span className="hint">
+                    {doc.infographic?.available
+                      ? `Si no seleccionas una imagen, se conservará ${doc.infographic.originalName || 'la infografía vigente'}.`
+                      : 'Este documento no tiene infografía. Puedes agregarla junto con la nueva versión.'}
+                  </span>
+                </div>
+              </div>
             </div>
             <div className="modal-foot">
               <button className="btn btn-ghost" type="button" onClick={() => setVersionModal(false)} disabled={savingVersion}>Cancelar</button>
-              <button className="btn btn-primary" type="button" onClick={submitVersion} disabled={savingVersion}>{savingVersion ? 'Creando...' : 'Crear versión'}<Icon name="arrowRight" size={15} /></button>
+              <button className="btn btn-primary" type="button" onClick={submitVersion} disabled={savingVersion || !versionFile || !versionForm.version.trim()}>{savingVersion ? 'Creando...' : 'Crear versión'}<Icon name="arrowRight" size={15} /></button>
             </div>
           </div>
         </div>

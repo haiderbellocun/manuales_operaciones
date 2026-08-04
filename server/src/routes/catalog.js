@@ -4,6 +4,7 @@ import {
   listAreas, listCoordinations, listTypes, listRoles, updateRole, listPeople, getStats, getMapDocumentCounts, getReportSummary, listActivity,
 } from '../db/repos/catalog.js';
 import { createUser, listAssignableUsers, listUsers, updateUser } from '../db/repos/users.js';
+import { getDocumentAnalytics } from '../db/repos/analytics.js';
 
 const router = Router();
 const OPERATION_ACADEMIC_AREA_ID = 1;
@@ -162,6 +163,14 @@ router.get('/map/counts', authRequired, requirePermission('consultar'), async (r
 router.get('/reports/summary', authRequired, requirePermission('consultar'), async (req, res, next) => {
   try {
     res.json(await getReportSummary(req.auth));
+  } catch (err) {
+    next(err);
+  }
+});
+
+router.get('/reports/analytics', authRequired, requirePermission('consultar'), async (req, res, next) => {
+  try {
+    res.json(await getDocumentAnalytics(req.auth, req.query || {}));
   } catch (err) {
     next(err);
   }

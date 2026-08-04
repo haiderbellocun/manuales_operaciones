@@ -6,6 +6,7 @@ import { useCatalogs } from './context/CatalogContext';
 import { api } from './services/api';
 import { OPERATION_ACADEMIC_AREA_ID } from './utils/areas';
 import { AREA_VISUALS, OPERATION_VISUALS } from './utils/areaVisuals';
+import { getErrorToastType, getUserErrorMessage } from './utils/errors';
 
 const Dashboard = lazy(() => import('./views/Dashboard').then(m => ({ default: m.Dashboard })));
 const Library = lazy(() => import('./views/Library').then(m => ({ default: m.Library })));
@@ -20,7 +21,7 @@ const SearchView = lazy(() => import('./views/Gestion').then(m => ({ default: m.
 const UploadFlow = lazy(() => import('./views/Gestion').then(m => ({ default: m.UploadFlow })));
 const WorkflowView = lazy(() => import('./views/Gestion').then(m => ({ default: m.WorkflowView })));
 const UsersView = lazy(() => import('./views/Gestion').then(m => ({ default: m.UsersView })));
-const ReportsView = lazy(() => import('./views/Gestion').then(m => ({ default: m.ReportsView })));
+const ReportsView = lazy(() => import('./views/Analytics').then(m => ({ default: m.ReportsView })));
 const HelpView = lazy(() => import('./views/Gestion').then(m => ({ default: m.HelpView })));
 const LoginView = lazy(() => import('./views/Login').then(m => ({ default: m.LoginView })));
 
@@ -158,7 +159,7 @@ function buildNav(areas = [], coordinations = []) {
       { label: 'Usuarios y roles', desc: 'Permisos y accesos', icon: 'users', view: 'users', permission: 'administrar' },
     ],
   },
-  { id: 'reportes', label: 'Reportes', view: 'reports' },
+  { id: 'reportes', label: 'Analítica', view: 'reports' },
   ];
 }
 
@@ -478,7 +479,7 @@ function TopBar({
                 <span className="badge badge-aprobado user-badge"><Icon name="shield" size={12} />{roleName}</span>
               </div>
               {canManageUsers && <button type="button" className="dd-link" onClick={() => onNav('users')}><span className="dd-ico"><Icon name="users" size={16} /></span><span><span className="dd-t">Usuarios y roles</span></span></button>}
-              <button type="button" className="dd-link" onClick={() => onNav('reports')}><span className="dd-ico"><Icon name="report" size={16} /></span><span><span className="dd-t">Reportes e indicadores</span></span></button>
+              <button type="button" className="dd-link" onClick={() => onNav('reports')}><span className="dd-ico"><Icon name="report" size={16} /></span><span><span className="dd-t">Analítica documental</span></span></button>
               <button type="button" className="dd-link" onClick={onLogout}><span className="dd-ico" style={{ color: 'var(--st-vencido-fg)' }}><Icon name="logout" size={16} /></span><span><span className="dd-t">Cerrar sesión</span></span></button>
             </div>
           )}
@@ -531,14 +532,23 @@ export default function App() {
   };
 
   const requestUpdate = (doc) => setUpdateModal(doc);
-  const showToast = (toastInput, type = 'success') => {
+  const showToast = useCallback((toastInput, type = 'success') => {
+    const titles = {
+      success: 'Acción completada',
+      error: 'No se pudo completar',
+      warning: 'Revisa la información',
+      info: 'Procesando acción',
+    };
     const nextToast = typeof toastInput === 'string'
       ? { message: toastInput, type }
       : { type: 'success', ...toastInput };
+    nextToast.title = nextToast.title || titles[nextToast.type] || titles.info;
     setToast(nextToast);
     if (toastTimerRef.current) clearTimeout(toastTimerRef.current);
-    toastTimerRef.current = setTimeout(() => setToast(null), nextToast.duration || 3600);
-  };
+    const duration = nextToast.duration
+      || (nextToast.type === 'error' || nextToast.type === 'warning' ? 6500 : 4200);
+    toastTimerRef.current = setTimeout(() => setToast(null), duration);
+  }, []);
 
   const loadNotifications = async () => {
     if (!isAuthenticated) {
@@ -560,7 +570,14 @@ export default function App() {
     try {
       await api.markNotificationRead(notification.id);
       await loadNotifications();
-    } catch {}
+      showToast({ title: 'Notificación actualizada', message: 'La notificación quedó marcada como leída.', type: 'success' });
+    } catch (error) {
+      showToast({
+        title: 'No se pudo actualizar la notificación',
+        message: getUserErrorMessage(error, 'No se pudo marcar la notificación como leída.'),
+        type: getErrorToastType(error),
+      });
+    }
     setNotifOpen(false);
     if (notification.docId) nav('detail', { id: notification.docId });
   };
@@ -569,16 +586,28 @@ export default function App() {
     try {
       await api.markAllNotificationsRead();
       await loadNotifications();
-    } catch {}
+      showToast({ title: 'Notificaciones actualizadas', message: 'Todas las notificaciones quedaron marcadas como leídas.', type: 'success' });
+    } catch (error) {
+      showToast({
+        title: 'No se pudieron actualizar las notificaciones',
+        message: getUserErrorMessage(error, 'No se pudieron marcar las notificaciones como leídas.'),
+        type: getErrorToastType(error),
+      });
+    }
   };
 
   const handleSubmitUpdate = async (doc, reason, detail) => {
+    showToast({ title: 'Enviando solicitud', message: 'Estamos notificando al responsable del documento.', type: 'info', duration: 10000 });
     try {
       await api.requestUpdate(doc.id, { reason, detail });
       setUpdateModal(null);
-      showToast('Solicitud de actualización enviada al responsable', 'success');
-    } catch {
-      showToast('No se pudo enviar la solicitud. Intenta de nuevo.', 'error');
+      showToast({ title: 'Solicitud enviada', message: 'El responsable recibió la solicitud de actualización.', type: 'success' });
+    } catch (error) {
+      showToast({
+        title: 'No se pudo enviar la solicitud',
+        message: getUserErrorMessage(error, 'No se pudo enviar la solicitud de actualización.'),
+        type: getErrorToastType(error),
+      });
     }
   };
 
@@ -674,7 +703,7 @@ export default function App() {
     }
     switch (v) {
       case 'dashboard': return <Dashboard nav={nav} userName={userName} />;
-      case 'library': return <Library nav={nav} docs={docs} toggleFav={toggleFav} initParams={p} />;
+      case 'library': return <Library nav={nav} docs={docs} toggleFav={toggleFav} initParams={p} showToast={showToast} />;
       case 'detail': return <DocDetail nav={nav} docId={p.id} docs={docs} toggleFav={toggleFav} requestUpdate={requestUpdate} showToast={showToast} onVersionCreated={refresh} />;
       case 'ans': return <AnsModule nav={nav} />;
       case 'ansDetail': return <AnsDetail nav={nav} ansId={p.id} />;
@@ -685,8 +714,8 @@ export default function App() {
       case 'search': return <SearchView nav={nav} docs={docs} initial={p.q} />;
       case 'upload': return <UploadFlow nav={nav} showToast={showToast} onUploaded={refresh} />;
       case 'workflow': return <WorkflowView nav={nav} docs={docs} showToast={showToast} />;
-      case 'users': return <UsersView nav={nav} />;
-      case 'reports': return <ReportsView nav={nav} docs={docs} />;
+      case 'users': return <UsersView nav={nav} showToast={showToast} />;
+      case 'reports': return <ReportsView nav={nav} docs={docs} showToast={showToast} />;
       case 'history': return <DocDetail nav={nav} docId={p.id} docs={docs} toggleFav={toggleFav} requestUpdate={requestUpdate} showToast={showToast} onVersionCreated={refresh} />;
       case 'help': return <HelpView nav={nav} />;
       default: return <Dashboard nav={nav} userName={userName} />;
@@ -727,11 +756,19 @@ export default function App() {
       )}
 
       {toast && (
-        <div className={'toast toast-' + (toast.type || 'success')} role="status" aria-live="polite">
+        <div
+          className={'toast toast-' + (toast.type || 'success')}
+          role={toast.type === 'error' ? 'alert' : 'status'}
+          aria-live={toast.type === 'error' ? 'assertive' : 'polite'}
+          data-testid="app-toast"
+        >
           <span className="toast-icon">
             <Icon name={toast.type === 'error' ? 'alert' : toast.type === 'warning' ? 'alert' : toast.type === 'info' ? 'help' : 'check'} size={17} />
           </span>
-          <span className="toast-message">{toast.message}</span>
+          <span className="toast-copy">
+            <strong className="toast-title">{toast.title}</strong>
+            <span className="toast-message">{toast.message}</span>
+          </span>
           <button type="button" className="toast-close" onClick={() => setToast(null)} aria-label="Cerrar aviso">
             <Icon name="x" size={14} />
           </button>

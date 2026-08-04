@@ -172,6 +172,9 @@ export async function migrate() {
   await addColumn('activity_log', 'event_type', "VARCHAR(50) NOT NULL DEFAULT 'general'");
   await addColumn('activity_log', 'details', "JSONB NOT NULL DEFAULT '{}'");
   await addColumn('activity_log', 'created_at', 'TIMESTAMPTZ NOT NULL DEFAULT NOW()');
+  await addColumn('documents', 'downloads', 'INTEGER NOT NULL DEFAULT 0');
+  await addColumn('documents', 'last_viewed_at', 'TIMESTAMPTZ');
+  await addColumn('documents', 'last_downloaded_at', 'TIMESTAMPTZ');
 
   await addColumn('areas', 'requires_coordination', 'BOOLEAN NOT NULL DEFAULT false');
 
@@ -191,6 +194,34 @@ export async function migrate() {
   await addColumn('users', 'coordination_id', 'INTEGER REFERENCES coordinations(id) ON DELETE SET NULL');
   await addColumn('people', 'coordination_id', 'INTEGER REFERENCES coordinations(id) ON DELETE SET NULL');
   await query('CREATE INDEX IF NOT EXISTS idx_documents_coordination ON documents(coordination_id)');
+
+  await query(`
+    WITH interaction_totals AS (
+      SELECT
+        doc_id,
+        COUNT(*) FILTER (WHERE interaction_type = 'view')::int AS views,
+        COUNT(*) FILTER (WHERE interaction_type = 'download')::int AS downloads,
+        MAX(occurred_at) FILTER (WHERE interaction_type = 'view') AS last_viewed_at,
+        MAX(occurred_at) FILTER (WHERE interaction_type = 'download') AS last_downloaded_at
+      FROM document_interactions
+      GROUP BY doc_id
+    )
+    UPDATE documents d
+    SET views = GREATEST(d.views, totals.views),
+        downloads = GREATEST(d.downloads, totals.downloads),
+        last_viewed_at = COALESCE(
+          GREATEST(d.last_viewed_at, totals.last_viewed_at),
+          d.last_viewed_at,
+          totals.last_viewed_at
+        ),
+        last_downloaded_at = COALESCE(
+          GREATEST(d.last_downloaded_at, totals.last_downloaded_at),
+          d.last_downloaded_at,
+          totals.last_downloaded_at
+        )
+    FROM interaction_totals totals
+    WHERE totals.doc_id = d.id
+  `);
 
   await refreshAreaCatalog();
 

@@ -36,6 +36,7 @@ export async function createApp() {
       return callback(err);
     },
     credentials: true,
+    exposedHeaders: ['Content-Disposition', 'X-Document-Downloads', 'X-Last-Downloaded-At'],
   }));
   app.use(express.json({ limit: '2mb' }));
   app.use((req, res, next) => {
@@ -90,7 +91,10 @@ export async function createApp() {
     const message = status >= 500 && process.env.NODE_ENV === 'production'
       ? 'Error interno del servidor.'
       : (err.message || 'Error interno del servidor.');
-    res.status(status).json({ message });
+    res.status(status).json({
+      ...(err.code ? { code: err.code } : {}),
+      message,
+    });
   });
 
   return app;

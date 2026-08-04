@@ -1,4 +1,5 @@
 import { test, expect, request as playwrightRequest } from '@playwright/test';
+import fs from 'fs';
 import path from 'path';
 import { fileURLToPath } from 'url';
 import { createRequire } from 'module';
@@ -27,13 +28,24 @@ const signToken = user => jwt.sign(
   process.env.JWT_SECRET,
   { expiresIn: '4h' },
 );
-const bucket = new Storage().bucket(process.env.GCS_BUCKET);
+const localStorageRoot = path.resolve(projectRoot, 'test-results', 'file-storage');
+const useLocalStorage = process.env.FILE_STORAGE_MODE !== 'gcs';
+const bucket = useLocalStorage ? null : new Storage().bucket(process.env.GCS_BUCKET);
+const localObjectPath = storedName => path.resolve(
+  localStorageRoot,
+  ...String(storedName || '').split('/').filter(Boolean),
+);
 const fileStorage = {
   async exists(storedName) {
+    if (useLocalStorage) return fs.existsSync(localObjectPath(storedName));
     const [exists] = await bucket.file(storedName).exists();
     return exists;
   },
   async remove(storedName) {
+    if (useLocalStorage) {
+      await fs.promises.rm(localObjectPath(storedName), { force: true });
+      return;
+    }
     await bucket.file(storedName).delete({ ignoreNotFound: true });
   },
 };
@@ -45,6 +57,22 @@ const fixtureBuffer = Buffer.concat([
   Buffer.alloc(4096, 0x20),
   Buffer.from('\n%%EOF\n', 'utf8'),
 ]);
+const infographicFixtureBuffer = fs.readFileSync(
+  path.join(projectRoot, 'tests', 'fixtures', 'document-infographic-sample.png'),
+);
+const infographicPart = (name = 'infografia-acervo.png') => ({
+  name,
+  mimeType: 'image/png',
+  buffer: infographicFixtureBuffer,
+});
+const escapeRegExp = value => String(value).replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
+const expectDocumentStoragePath = (storedName, docId, version, { infographic = false } = {}) => {
+  const folder = infographic ? 'infographics/' : '';
+  expect(storedName).toMatch(new RegExp(
+    `^documents/${Number(docId)}/${folder}[^/]+_v${escapeRegExp(version)}_\\d{8}T\\d{9}Z\\.[a-z0-9]+$`,
+  ));
+  expect(storedName).not.toContain('pending-');
+};
 
 test.describe.serial('Acervo Operaciones - suite integral', () => {
   const runId = `E2E-${Date.now()}`;
@@ -72,6 +100,7 @@ test.describe.serial('Acervo Operaciones - suite integral', () => {
   let consultantApi;
   let adminToken;
   let documentId;
+  let publishedDocumentId;
   let workflowId;
 
   async function makeApiFor(user) {
@@ -219,6 +248,8 @@ test.describe.serial('Acervo Operaciones - suite integral', () => {
         const { rows: files } = await query(`
           SELECT stored_name FROM document_files WHERE doc_id = ANY($1::int[])
           UNION
+          SELECT stored_name FROM document_infographics WHERE doc_id = ANY($1::int[])
+          UNION
           SELECT stored_name FROM document_versions
           WHERE doc_id = ANY($1::int[]) AND stored_name IS NOT NULL
         `, [createdDocIds]);
@@ -263,7 +294,7 @@ test.describe.serial('Acervo Operaciones - suite integral', () => {
     expect(session.status()).toBe(200);
     expect((await session.json()).user.email).toBe(admin.email);
 
-    for (const endpoint of ['/areas', '/coordinations', '/types', '/people', '/assignees', '/stats', '/map/counts', '/reports/summary']) {
+    for (const endpoint of ['/areas', '/coordinations', '/types', '/people', '/assignees', '/stats', '/map/counts', '/reports/summary', '/reports/analytics?period=30']) {
       const response = await api.get(`/api${endpoint}`);
       expect(response.status(), endpoint).toBe(200);
     }
@@ -337,10 +368,34 @@ test.describe.serial('Acervo Operaciones - suite integral', () => {
       multipart: {
         type: String(typeId), area: String(areaId), name: missingName,
         owner: String(ownerId), version: '1.0', revisor: String(reviewer.id), aprobador: String(approver.id),
+        infographic: infographicPart(),
       },
     });
     await expectStatus(missing, 400);
     expect(await countDocuments(missingName)).toBe(0);
+
+    const missingInfographicName = `${runId}-SIN-INFOGRAFIA`;
+    const missingInfographic = await api.post('/api/documents', {
+      multipart: {
+        type: String(typeId), area: String(areaId), name: missingInfographicName,
+        version: '1.0', revisor: String(reviewer.id), aprobador: String(approver.id),
+        file: { name: 'sin-infografia.pdf', mimeType: 'application/pdf', buffer: fixtureBuffer },
+      },
+    });
+    await expectStatus(missingInfographic, 400);
+    expect(await countDocuments(missingInfographicName)).toBe(0);
+
+    const invalidInfographicName = `${runId}-INFOGRAFIA-INVALIDA`;
+    const invalidInfographic = await api.post('/api/documents', {
+      multipart: {
+        type: String(typeId), area: String(areaId), name: invalidInfographicName,
+        version: '1.0', revisor: String(reviewer.id), aprobador: String(approver.id),
+        file: { name: 'infografia-invalida.pdf', mimeType: 'application/pdf', buffer: fixtureBuffer },
+        infographic: { name: 'infografia.svg', mimeType: 'image/svg+xml', buffer: Buffer.from('<svg/>') },
+      },
+    });
+    await expectStatus(invalidInfographic, 400);
+    expect(await countDocuments(invalidInfographicName)).toBe(0);
 
     const invalidName = `${runId}-FORMATO-INVALIDO`;
     const invalid = await api.post('/api/documents', {
@@ -348,6 +403,7 @@ test.describe.serial('Acervo Operaciones - suite integral', () => {
         type: String(typeId), area: String(areaId), name: invalidName,
         owner: String(ownerId), version: '1.0', revisor: String(reviewer.id), aprobador: String(approver.id),
         file: { name: 'archivo.exe', mimeType: 'application/octet-stream', buffer: Buffer.from('invalid') },
+        infographic: infographicPart(),
       },
     });
     await expectStatus(invalid, 400);
@@ -359,6 +415,7 @@ test.describe.serial('Acervo Operaciones - suite integral', () => {
         type: String(typeId), area: String(areaId), name: missingDataName,
         version: '1.0', revisor: String(reviewer.id),
         file: { name: 'sin-responsable.pdf', mimeType: 'application/pdf', buffer: fixtureBuffer },
+        infographic: infographicPart(),
       },
     });
     await expectStatus(missingData, 400);
@@ -372,6 +429,7 @@ test.describe.serial('Acervo Operaciones - suite integral', () => {
           name: wrongCoordinationName, owner: String(ownerId), version: '1.0',
           revisor: String(reviewer.id), aprobador: String(approver.id),
           file: { name: 'coordinacion-invalida.pdf', mimeType: 'application/pdf', buffer: fixtureBuffer },
+          infographic: infographicPart(),
         },
       });
       await expectStatus(wrongCoordination, 400);
@@ -390,6 +448,7 @@ test.describe.serial('Acervo Operaciones - suite integral', () => {
         revisor: String(admin.id),
         aprobador: String(admin.id),
         file: { name: 'roles-invalidos.pdf', mimeType: 'application/pdf', buffer: fixtureBuffer },
+        infographic: infographicPart(),
       },
     });
     await expectStatus(invalidAssignments, 400);
@@ -406,6 +465,7 @@ test.describe.serial('Acervo Operaciones - suite integral', () => {
           revisor: String(coordinationReviewer.id),
           aprobador: String(coordinationApprover.id),
           file: { name: 'flujo-otra-area.pdf', mimeType: 'application/pdf', buffer: fixtureBuffer },
+          infographic: infographicPart(),
         },
       });
       await expectStatus(wrongAreaAssignments, 400);
@@ -428,6 +488,7 @@ test.describe.serial('Acervo Operaciones - suite integral', () => {
         type: String(typeId), area: String(areaId), name: deniedName,
         owner: String(ownerId), version: '1.0', revisor: String(reviewer.id), aprobador: String(approver.id),
         file: { name: 'consultor.pdf', mimeType: 'application/pdf', buffer: fixtureBuffer },
+        infographic: infographicPart(),
       },
     });
     expect(denied.status()).toBe(403);
@@ -445,6 +506,7 @@ test.describe.serial('Acervo Operaciones - suite integral', () => {
         name: coordinatedName, owner: String(ownerId), version: '1.0',
         revisor: String(coordinationReviewer.id), aprobador: String(coordinationApprover.id),
         file: { name: 'con-coordinacion.pdf', mimeType: 'application/pdf', buffer: fixtureBuffer },
+        infographic: infographicPart(),
       },
     });
     await expectStatus(response, 201);
@@ -518,6 +580,7 @@ test.describe.serial('Acervo Operaciones - suite integral', () => {
           revisor: String(coordinator.id),
           aprobador: String(coordinator.id),
           file: { name: 'operacion-academica-general.pdf', mimeType: 'application/pdf', buffer: fixtureBuffer },
+          infographic: infographicPart('infografia-operacion-general.png'),
         },
       });
       await expectStatus(generalResponse, 201);
@@ -547,6 +610,7 @@ test.describe.serial('Acervo Operaciones - suite integral', () => {
             mimeType: 'application/pdf',
             buffer: fixtureBuffer,
           },
+          infographic: infographicPart('infografia-flujo-coordinador.png'),
         },
       });
       await expectStatus(coordinatorFlowResponse, 201);
@@ -593,6 +657,7 @@ test.describe.serial('Acervo Operaciones - suite integral', () => {
           revisor: String(coordinationReviewer.id),
           aprobador: String(coordinationApprover.id),
           file: { name: 'otra-escuela.pdf', mimeType: 'application/pdf', buffer: fixtureBuffer },
+          infographic: infographicPart('infografia-otra-escuela.png'),
         },
       });
       await expectStatus(otherSchoolResponse, 201);
@@ -619,6 +684,7 @@ test.describe.serial('Acervo Operaciones - suite integral', () => {
           revisor: String(coordinationReviewer.id),
           aprobador: String(coordinationApprover.id),
           file: { name: 'escuela-asignada.pdf', mimeType: 'application/pdf', buffer: fixtureBuffer },
+          infographic: infographicPart('infografia-escuela-asignada.png'),
         },
       });
       await expectStatus(ownSchoolResponse, 201);
@@ -660,6 +726,7 @@ test.describe.serial('Acervo Operaciones - suite integral', () => {
           revisor: String(coordinationReviewer.id),
           aprobador: String(coordinationApprover.id),
           file: { name: 'general-no-autorizado.pdf', mimeType: 'application/pdf', buffer: fixtureBuffer },
+          infographic: infographicPart(),
         },
       });
       await expectStatus(deniedGeneral, 403);
@@ -679,6 +746,7 @@ test.describe.serial('Acervo Operaciones - suite integral', () => {
         initialState: 'borrador',
         revisor: String(reviewer.id), aprobador: String(approver.id),
         file: { name: 'ANS-ACV-001-E2E.pdf', mimeType: 'application/pdf', buffer: fixtureBuffer },
+        infographic: infographicPart('infografia-ans-acervo.png'),
       },
     });
     expect(response.status()).toBe(201);
@@ -690,7 +758,29 @@ test.describe.serial('Acervo Operaciones - suite integral', () => {
     const { rows } = await query('SELECT * FROM document_files WHERE doc_id = $1', [documentId]);
     expect(rows).toHaveLength(1);
     expect(Number(rows[0].file_size)).toBeGreaterThan(0);
+    expectDocumentStoragePath(rows[0].stored_name, documentId, '1.0');
     expect(await fileStorage.exists(rows[0].stored_name)).toBeTruthy();
+
+    const { rows: infographicRows } = await query(
+      'SELECT * FROM document_infographics WHERE doc_id = $1',
+      [documentId],
+    );
+    expect(infographicRows).toHaveLength(1);
+    expect(infographicRows[0]).toEqual(expect.objectContaining({
+      original_name: 'infografia-ans-acervo.png',
+      mime_type: 'image/png',
+      document_version: '1.0',
+      uploaded_by: admin.id,
+    }));
+    expect(Number(infographicRows[0].file_size)).toBe(infographicFixtureBuffer.length);
+    expectDocumentStoragePath(infographicRows[0].stored_name, documentId, '1.0', { infographic: true });
+    expect(await fileStorage.exists(infographicRows[0].stored_name)).toBeTruthy();
+    expect(document.infographic).toEqual(expect.objectContaining({
+      available: true,
+      originalName: 'infografia-ans-acervo.png',
+      mimeType: 'image/png',
+      documentVersion: '1.0',
+    }));
 
     const { rows: historyRows } = await query('SELECT COUNT(*)::int AS n FROM document_history WHERE doc_id = $1', [documentId]);
     const { rows: workflowRows } = await query(`
@@ -728,6 +818,7 @@ test.describe.serial('Acervo Operaciones - suite integral', () => {
         revisor: String(reviewer.id),
         aprobador: String(approver.id),
         file: { name: 'revision-directa.pdf', mimeType: 'application/pdf', buffer: fixtureBuffer },
+        infographic: infographicPart('infografia-revision-directa.png'),
       },
     });
     await expectStatus(response, 201);
@@ -760,6 +851,7 @@ test.describe.serial('Acervo Operaciones - suite integral', () => {
         revisor: String(leader.id),
         aprobador: String(leader.id),
         file: { name: 'flujo-lider.pdf', mimeType: 'application/pdf', buffer: fixtureBuffer },
+        infographic: infographicPart('infografia-flujo-lider.png'),
       },
     });
     await expectStatus(response, 201);
@@ -798,6 +890,7 @@ test.describe.serial('Acervo Operaciones - suite integral', () => {
     const publicDetail = await consultantApi.get(`/api/documents/${document.id}`);
     await expectStatus(publicDetail, 200);
     expect((await publicDetail.json()).state).toBe('publicado');
+    publishedDocumentId = Number(document.id);
   });
 
   test('responde correctamente ante documentos y acciones inexistentes', async () => {
@@ -810,18 +903,128 @@ test.describe.serial('Acervo Operaciones - suite integral', () => {
     })).status()).toBe(404);
   });
 
+  test('consulta y reemplaza la infografia solo mientras el documento esta en borrador', async () => {
+    const meta = await api.get(`/api/documents/${documentId}/infographic/meta`);
+    await expectStatus(meta, 200);
+    expect(await meta.json()).toEqual(expect.objectContaining({
+      originalName: 'infografia-ans-acervo.png',
+      mimeType: 'image/png',
+      size: infographicFixtureBuffer.length,
+      documentVersion: '1.0',
+    }));
+
+    const image = await api.get(`/api/documents/${documentId}/infographic`);
+    await expectStatus(image, 200);
+    expect(image.headers()['content-type']).toContain('image/png');
+    expect((await image.body()).subarray(0, 8)).toEqual(
+      Buffer.from([0x89, 0x50, 0x4e, 0x47, 0x0d, 0x0a, 0x1a, 0x0a]),
+    );
+    const { rows: interactionsAfterImage } = await query(
+      'SELECT COUNT(*)::int AS n FROM document_interactions WHERE doc_id = $1',
+      [documentId],
+    );
+    expect(interactionsAfterImage[0].n).toBe(0);
+
+    const invalidReplacement = await api.post(`/api/documents/${documentId}/infographic`, {
+      multipart: {
+        infographic: { name: 'no-es-imagen.pdf', mimeType: 'application/pdf', buffer: fixtureBuffer },
+      },
+    });
+    await expectStatus(invalidReplacement, 400);
+    expect((await consultantApi.post(`/api/documents/${documentId}/infographic`, {
+      multipart: { infographic: infographicPart() },
+    })).status()).toBe(403);
+
+    const { rows: previousRows } = await query(
+      'SELECT stored_name FROM document_infographics WHERE doc_id = $1',
+      [documentId],
+    );
+    const previousStoredName = previousRows[0].stored_name;
+    const replacement = await api.post(`/api/documents/${documentId}/infographic`, {
+      multipart: { infographic: infographicPart('infografia-ans-reemplazada.png') },
+    });
+    await expectStatus(replacement, 200);
+    expect(await replacement.json()).toEqual(expect.objectContaining({
+      originalName: 'infografia-ans-reemplazada.png',
+      mimeType: 'image/png',
+      documentVersion: '1.0',
+    }));
+    const { rows: replacementRows } = await query(
+      'SELECT * FROM document_infographics WHERE doc_id = $1',
+      [documentId],
+    );
+    expect(replacementRows).toHaveLength(1);
+    expect(replacementRows[0].stored_name).not.toBe(previousStoredName);
+    expectDocumentStoragePath(replacementRows[0].stored_name, documentId, '1.0', { infographic: true });
+    expect(await fileStorage.exists(replacementRows[0].stored_name)).toBeTruthy();
+    expect(await fileStorage.exists(previousStoredName)).toBeFalsy();
+  });
+
   test('consulta, descarga, favoritos, vistas, edición y solicitud de actualización', async () => {
     const detail = await api.get(`/api/documents/${documentId}`);
     expect(detail.status()).toBe(200);
     const meta = await api.get(`/api/documents/${documentId}/file/meta`);
     expect(meta.status()).toBe(200);
+
+    const preview = await api.get(`/api/documents/${documentId}/file?mode=preview`);
+    expect(preview.status()).toBe(200);
+    expect((await preview.body()).length).toBeGreaterThan(1000);
+    const { rows: previewEvents } = await query(
+      'SELECT COUNT(*)::int AS n FROM document_interactions WHERE doc_id = $1',
+      [documentId],
+    );
+    expect(previewEvents[0].n).toBe(0);
+
     const download = await api.get(`/api/documents/${documentId}/file`);
     expect(download.status()).toBe(200);
     expect((await download.body()).length).toBeGreaterThan(1000);
+    expect(Number(download.headers()['x-document-downloads'])).toBe(1);
 
     expect((await api.post(`/api/documents/${documentId}/favorite`)).status()).toBe(200);
     expect((await api.post(`/api/documents/${documentId}/favorite`)).status()).toBe(200);
-    expect((await api.post(`/api/documents/${documentId}/view`)).status()).toBe(200);
+    const view = await api.post(`/api/documents/${documentId}/view`, {
+      data: { source: 'e2e_document_detail' },
+    });
+    expect(view.status()).toBe(200);
+    const viewMetrics = await view.json();
+    expect(viewMetrics).toEqual(expect.objectContaining({
+      type: 'view',
+      views: 1,
+      downloads: 1,
+    }));
+
+    const { rows: interactionRows } = await query(`
+      SELECT interaction_type, user_id, document_version, source, occurred_at
+      FROM document_interactions
+      WHERE doc_id = $1
+      ORDER BY occurred_at, id
+    `, [documentId]);
+    expect(interactionRows).toHaveLength(2);
+    expect(interactionRows).toEqual(expect.arrayContaining([
+      expect.objectContaining({
+        interaction_type: 'download',
+        user_id: admin.id,
+        document_version: '1.0',
+        source: 'current_file',
+      }),
+      expect.objectContaining({
+        interaction_type: 'view',
+        user_id: admin.id,
+        document_version: '1.0',
+        source: 'e2e_document_detail',
+      }),
+    ]));
+    expect(interactionRows.every(row => row.occurred_at)).toBeTruthy();
+
+    const { rows: metricRows } = await query(`
+      SELECT views, downloads, last_viewed_at, last_downloaded_at
+      FROM documents
+      WHERE id = $1
+    `, [documentId]);
+    expect(metricRows[0]).toEqual(expect.objectContaining({ views: 1, downloads: 1 }));
+    expect(metricRows[0].last_viewed_at).toBeTruthy();
+    expect(metricRows[0].last_downloaded_at).toBeTruthy();
+
     expect((await api.put(`/api/documents/${documentId}`, { data: { desc: 'Actualizado por E2E' } })).status()).toBe(200);
     expect((await api.post(`/api/documents/${documentId}/update-request`, {
       data: { reason: 'Prueba E2E', detail: 'Validación automática de solicitudes' },
@@ -902,6 +1105,11 @@ test.describe.serial('Acervo Operaciones - suite integral', () => {
     const detail = await consultantApi.get(`/api/documents/${documentId}`);
     expect(detail.status()).toBe(200);
     expect((await detail.json()).state).toBe('publicado');
+
+    const lockedInfographic = await api.post(`/api/documents/${documentId}/infographic`, {
+      multipart: { infographic: infographicPart('infografia-no-debe-cambiar.png') },
+    });
+    await expectStatus(lockedInfographic, 409);
   });
 
   test('aplica permisos de descarga y administración por rol', async () => {
@@ -947,17 +1155,106 @@ test.describe.serial('Acervo Operaciones - suite integral', () => {
     });
     await expectStatus(invalidFile, 400);
 
+    const invalidInfographic = await api.post(`/api/documents/${documentId}/versions`, {
+      multipart: {
+        version: '1.1',
+        note: 'Infografia invalida',
+        file: { name: 'version-con-infografia.pdf', mimeType: 'application/pdf', buffer: fixtureBuffer },
+        infographic: { name: 'infografia-version.svg', mimeType: 'image/svg+xml', buffer: Buffer.from('<svg/>') },
+      },
+    });
+    await expectStatus(invalidInfographic, 400);
+
+    const unexpectedFile = await api.post(`/api/documents/${documentId}/versions`, {
+      multipart: {
+        version: '1.1',
+        note: 'Archivo adicional no permitido',
+        file: { name: 'version-valida.pdf', mimeType: 'application/pdf', buffer: fixtureBuffer },
+        infographic: infographicPart('infografia-version-valida.png'),
+        attachment: { name: 'archivo-adicional.pdf', mimeType: 'application/pdf', buffer: fixtureBuffer },
+      },
+    });
+    await expectStatus(unexpectedFile, 400);
+    const unexpectedFilePayload = await unexpectedFile.json();
+    expect(unexpectedFilePayload).toEqual(expect.objectContaining({
+      code: 'LIMIT_UNEXPECTED_FILE',
+    }));
+    expect(unexpectedFilePayload.message).toContain('Adjunta únicamente el documento y la infografía');
+    expect(unexpectedFilePayload.message).not.toContain('Too many files');
+
+    const sameVersion = await api.post(`/api/documents/${documentId}/versions`, {
+      multipart: {
+        version: '1.0',
+        note: 'Numero de version repetido',
+        file: { name: 'version-repetida.pdf', mimeType: 'application/pdf', buffer: fixtureBuffer },
+      },
+    });
+    await expectStatus(sameVersion, 409);
+
+    const { rows: previousInfographicRows } = await query(
+      'SELECT stored_name FROM document_infographics WHERE doc_id = $1',
+      [documentId],
+    );
+    const previousInfographicStoredName = previousInfographicRows[0].stored_name;
+    const { rows: previousFileRows } = await query(
+      'SELECT stored_name, original_name FROM document_files WHERE doc_id = $1',
+      [documentId],
+    );
+    const previousFileStoredName = previousFileRows[0].stored_name;
+
     const response = await api.post(`/api/documents/${documentId}/versions`, {
       multipart: {
         version: '1.1', note: 'Versión automatizada E2E',
         file: { name: 'ANS-ACV-001-v1.1.pdf', mimeType: 'application/pdf', buffer: fixtureBuffer },
+        infographic: infographicPart('infografia-ans-v1.1.png'),
       },
     });
     expect(response.status()).toBe(201);
     const updated = await response.json();
-    const version = updated.versions.find(item => item.version === '1.1');
-    expect(version).toBeTruthy();
-    expect((await api.get(`/api/documents/${documentId}/versions/${version.id}/file`)).status()).toBe(200);
+    const archivedVersion = updated.versions.find(item => item.version === '1.0');
+    expect(archivedVersion).toEqual(expect.objectContaining({
+      originalName: previousFileRows[0].original_name,
+      storedName: previousFileStoredName,
+    }));
+    expectDocumentStoragePath(archivedVersion.storedName, documentId, '1.0');
+    expect(updated.versions.some(item => item.version === '1.1')).toBeFalsy();
+    expect(updated.infographic).toEqual(expect.objectContaining({
+      available: true,
+      originalName: 'infografia-ans-v1.1.png',
+      mimeType: 'image/png',
+      documentVersion: '1.1',
+    }));
+    const { rows: currentInfographicRows } = await query(
+      'SELECT * FROM document_infographics WHERE doc_id = $1',
+      [documentId],
+    );
+    expect(currentInfographicRows).toHaveLength(1);
+    expect(currentInfographicRows[0].original_name).toBe('infografia-ans-v1.1.png');
+    expect(currentInfographicRows[0].document_version).toBe('1.1');
+    expectDocumentStoragePath(currentInfographicRows[0].stored_name, documentId, '1.1', { infographic: true });
+    expect(await fileStorage.exists(currentInfographicRows[0].stored_name)).toBeTruthy();
+    expect(await fileStorage.exists(previousInfographicStoredName)).toBeFalsy();
+    const { rows: currentVersionFileRows } = await query(
+      'SELECT stored_name FROM document_files WHERE doc_id = $1',
+      [documentId],
+    );
+    expectDocumentStoragePath(currentVersionFileRows[0].stored_name, documentId, '1.1');
+    expect(currentVersionFileRows[0].stored_name).not.toBe(previousFileStoredName);
+    expect((await api.get(`/api/documents/${documentId}/infographic`)).status()).toBe(200);
+    expect((await api.get(`/api/documents/${documentId}/versions/${archivedVersion.id}/file`)).status()).toBe(200);
+    const { rows: versionDownloadRows } = await query(`
+      SELECT interaction_type, document_version, source, user_id
+      FROM document_interactions
+      WHERE doc_id = $1 AND source = 'version_file'
+      ORDER BY occurred_at DESC, id DESC
+      LIMIT 1
+    `, [documentId]);
+    expect(versionDownloadRows[0]).toEqual(expect.objectContaining({
+      interaction_type: 'download',
+      document_version: '1.0',
+      source: 'version_file',
+      user_id: admin.id,
+    }));
   });
 
   test('módulos, actividad, reportes y notificaciones responden', async () => {
@@ -969,6 +1266,47 @@ test.describe.serial('Acervo Operaciones - suite integral', () => {
     const payload = await notifications.json();
     expect(Array.isArray(payload.items)).toBeTruthy();
     expect((await api.post('/api/notifications/read-all')).status()).toBe(204);
+
+    expect(publishedDocumentId).toBeTruthy();
+    for (let index = 0; index < 6; index += 1) {
+      const response = await api.post(`/api/documents/${publishedDocumentId}/view`, {
+        data: { source: `e2e_analytics_pagination_${index + 1}` },
+      });
+      await expectStatus(response, 200);
+    }
+
+    const analyticsResponse = await api.get('/api/reports/analytics?period=all');
+    await expectStatus(analyticsResponse, 200);
+    const analytics = await analyticsResponse.json();
+    expect(analytics.period.key).toBe('all');
+    expect(analytics.totals).toEqual(expect.objectContaining({
+      documents: expect.any(Number),
+      views: expect.any(Number),
+      downloads: expect.any(Number),
+      publishedDocuments: expect.any(Number),
+      averageIntervalSamples: expect.any(Number),
+      lastViewedAt: expect.any(String),
+      lastDownloadedAt: expect.any(String),
+    }));
+    expect(Array.isArray(analytics.ranking)).toBeTruthy();
+    expect(Array.isArray(analytics.topViewed)).toBeTruthy();
+    expect(Array.isArray(analytics.topDownloaded)).toBeTruthy();
+    expect(Array.isArray(analytics.withoutViews)).toBeTruthy();
+    expect(Array.isArray(analytics.withoutUse)).toBeTruthy();
+    expect(Array.isArray(analytics.trend)).toBeTruthy();
+    expect(Array.isArray(analytics.monthlyTrend)).toBeTruthy();
+    expect(Array.isArray(analytics.recent)).toBeTruthy();
+    expect(Array.isArray(analytics.usageByArea)).toBeTruthy();
+    expect(Array.isArray(analytics.usageByCategory)).toBeTruthy();
+    expect(Array.isArray(analytics.usageByProcess)).toBeTruthy();
+    expect(Array.isArray(analytics.topUsers)).toBeTruthy();
+    expect(analytics.recent.length).toBeGreaterThan(5);
+    expect(analytics.monthlyTrend).toHaveLength(12);
+    expect(analytics.dimensionSources).toEqual({
+      category: 'document_type_provisional',
+      process: 'catalog_pending',
+    });
+    expect(analytics.ranking.some(item => Number(item.id) === documentId)).toBeTruthy();
   });
 
   test('navegación principal funciona en Chrome', async ({ browser }) => {
@@ -996,9 +1334,11 @@ test.describe.serial('Acervo Operaciones - suite integral', () => {
     }
     await page.getByRole('tab', { name: 'Mapa de áreas' }).click();
     await expect(page.getByText('Repositorio central')).toBeVisible();
-    await page.getByRole('button', { name: /Coordinación de Operación Académica/ }).click();
+    const operationAreaNode = page.locator('.area-map-node').filter({ hasText: 'COA' }).first();
+    await operationAreaNode.scrollIntoViewIfNeeded();
+    await operationAreaNode.click();
     await expect(page.getByText('Área seleccionada')).toBeVisible();
-    await expect(page.getByRole('button', { name: /General de Operación Académica/ })).toBeVisible();
+    await expect(page.locator('.operation-map-node').filter({ hasText: 'GENERAL' })).toBeVisible();
     await page.getByRole('button', { name: /Todas las áreas/ }).click();
     await expect(page.getByText('Repositorio central')).toBeVisible();
     await page.getByRole('tab', { name: 'Roles y responsabilidades' }).click();
@@ -1006,12 +1346,138 @@ test.describe.serial('Acervo Operaciones - suite integral', () => {
 
     await page.goto('/biblioteca');
     await expect(page.getByRole('heading', { name: 'Biblioteca documental' })).toBeVisible();
+    const documentCard = page.locator('.doc-card').filter({ hasText: `${runId}-ANS-ACERVO` });
+    await expect(documentCard).toBeVisible();
+    await page.mouse.move(0, 0);
+    await documentCard.scrollIntoViewIfNeeded();
+    await documentCard.hover();
+    await expect(page.getByTestId('document-hover-preview')).toBeVisible();
+    await expect(page.getByTestId('document-hover-preview').locator('img')).toBeVisible();
+    await expect(page.getByTestId('document-hover-preview')).toContainText(`${runId}-ANS-ACERVO`);
     await page.goto('/gestion/cargar');
     await expect(page.getByRole('heading', { name: 'Cargar nuevo documento' })).toBeVisible();
     await page.goto('/gestion/usuarios');
     await expect(page.getByRole('heading', { name: 'Administración de usuarios y roles' })).toBeVisible();
     await page.goto('/reportes');
-    await expect(page.getByRole('heading', { name: 'Reportes e indicadores de gestión' })).toBeVisible();
+    await expect(page.getByRole('heading', { name: 'Analítica documental' })).toBeVisible();
+    await expect(page.getByText('Consultas históricas')).toBeVisible();
+    await expect(page.getByText('Tendencia mensual')).toBeVisible();
+    await expect(page.getByText('Consultas por área')).toBeVisible();
+    const recentPagination = page.getByTestId('analytics-pagination-recent');
+    const recentRows = page.locator('.analytics-recent-list > button');
+    await expect(recentPagination).toBeVisible();
+    await expect(recentPagination).toContainText('1–5 de');
+    await expect(recentRows).toHaveCount(5);
+    await recentPagination.getByRole('button', { name: 'Página siguiente de interacciones recientes' }).click();
+    await expect(recentPagination.getByRole('button', { name: 'Página 2 de interacciones recientes' })).toHaveAttribute('aria-current', 'page');
+    await expect(recentPagination).toContainText('6–');
+    await recentPagination.getByRole('button', { name: 'Página anterior de interacciones recientes' }).click();
+    await expect(recentPagination.getByRole('button', { name: 'Página 1 de interacciones recientes' })).toHaveAttribute('aria-current', 'page');
+    await expect(page.getByTestId('analytics-pagination-users')).toBeVisible();
+    const exportButton = page.getByRole('button', { name: 'Exportar CSV' });
+    await expect(exportButton).toBeVisible();
+    await exportButton.click();
+    await expect(page.getByTestId('app-toast')).toContainText('Reporte exportado');
+
+    await page.goto(`/documentos/${documentId}`);
+    await expect(page.getByText('Infografía documental')).toBeVisible();
+    await expect(page.locator('.doc-info-sheet')).toBeVisible();
+    await expect(page.locator('.doc-info-image-visual img')).toBeVisible();
+    await expect(page.getByRole('button', { name: 'Ver documento' })).toBeVisible();
+    await expect(page.locator('.doc-preview-real')).toHaveCount(0);
+    await page.getByRole('button', { name: 'Ver documento' }).click();
+    await expect(page.locator('.doc-preview-real')).toBeVisible();
+
+    expect(publishedDocumentId).toBeTruthy();
+    await page.goto(`/documentos/${publishedDocumentId}`);
+
+    const storageFailurePattern = `**/api/documents/${publishedDocumentId}/file`;
+    const storageFailureHandler = async route => route.fulfill({
+      status: 503,
+      contentType: 'application/json',
+      body: JSON.stringify({
+        code: 'STORAGE_UNAVAILABLE',
+        message: 'Service Unavailable: credentials could not be loaded',
+      }),
+    });
+    await page.route(storageFailurePattern, storageFailureHandler);
+    await page.getByRole('button', { name: 'Descargar', exact: true }).first().click();
+    await expect(page.getByTestId('app-toast')).toContainText('No se pudo descargar el documento');
+    await expect(page.getByTestId('app-toast')).toContainText('El almacenamiento de archivos no está disponible');
+    await expect(page.getByTestId('app-toast')).not.toContainText('Service Unavailable');
+    await page.unroute(storageFailurePattern, storageFailureHandler);
+
+    const versionButton = page.getByRole('button', { name: 'Nueva versión' });
+    await expect(versionButton).toBeVisible();
+    await versionButton.click();
+
+    const versionModal = page.locator('.modal').filter({ hasText: 'Nueva versión' });
+    await expect(versionModal).toBeVisible();
+    await expect(versionModal.getByText('Archivo de la nueva versión *')).toBeVisible();
+    await expect(versionModal.getByText('Actualizar infografía')).toBeVisible();
+    await expect(versionModal.getByText('Opcional', { exact: true })).toBeVisible();
+    await expect(versionModal.locator('input.input:not([type])')).toHaveValue('1.1');
+
+    await versionModal.locator('input[type="file"][accept*=".pdf"]').setInputFiles({
+      name: 'archivo-no-permitido.exe',
+      mimeType: 'application/octet-stream',
+      buffer: Buffer.from('archivo invalido'),
+    });
+    await expect(page.getByTestId('app-toast')).toContainText('Archivo no válido');
+    await expect(page.getByTestId('app-toast')).toContainText('Formato no permitido');
+    await versionModal.locator('input[type="file"][accept*=".pdf"]').setInputFiles({
+      name: 'flujo-visual-v1.1.pdf',
+      mimeType: 'application/pdf',
+      buffer: fixtureBuffer,
+    });
+    await versionModal.locator('input[type="file"][accept*=".png"]').setInputFiles({
+      name: 'infografia-flujo-visual-v1.1.png',
+      mimeType: 'image/png',
+      buffer: infographicFixtureBuffer,
+    });
+    await versionModal
+      .locator('.form-row')
+      .filter({ hasText: 'Nota de versión' })
+      .locator('textarea')
+      .fill('Actualización integral creada desde la interfaz E2E');
+
+    const versionFailurePattern = `**/api/documents/${publishedDocumentId}/versions`;
+    const versionFailureHandler = async route => route.fulfill({
+      status: 400,
+      contentType: 'application/json',
+      body: JSON.stringify({ code: 'LIMIT_FILE_COUNT', message: 'Too many files' }),
+    });
+    await page.route(versionFailurePattern, versionFailureHandler);
+    await versionModal.getByRole('button', { name: 'Crear versión' }).click();
+    await expect(versionModal).toBeVisible();
+    await expect(page.getByTestId('app-toast')).toContainText('No se pudo crear la nueva versión');
+    await expect(page.getByTestId('app-toast')).toContainText('Solo puedes adjuntar un archivo documental y una infografía');
+    await expect(page.getByTestId('app-toast')).not.toContainText('Too many files');
+    await page.unroute(versionFailurePattern, versionFailureHandler);
+
+    const createVersionResponse = page.waitForResponse(response => (
+      response.request().method() === 'POST'
+      && /\/api\/documents\/\d+\/versions$/.test(response.url())
+    ));
+    await versionModal.getByRole('button', { name: 'Crear versión' }).click();
+    expect((await createVersionResponse).status()).toBe(201);
+    await expect(versionModal).toBeHidden();
+    await expect(page.getByTestId('app-toast')).toContainText('Versión 1.1 creada');
+    await expect(page.getByTestId('app-toast')).toContainText('quedó en Borrador');
+    await expect(page.locator('.doc-header-meta')).toContainText('Versión 1.1');
+
+    const { rows: uiVersionRows } = await query(`
+      SELECT d.version, d.state, di.original_name, di.document_version
+      FROM documents d
+      LEFT JOIN document_infographics di ON di.doc_id = d.id
+      WHERE d.id = $1
+    `, [publishedDocumentId]);
+    expect(uiVersionRows[0]).toEqual(expect.objectContaining({
+      version: '1.1',
+      state: 'borrador',
+      original_name: 'infografia-flujo-visual-v1.1.png',
+      document_version: '1.1',
+    }));
 
     await page.setViewportSize({ width: 390, height: 844 });
     await page.goto('/biblioteca');

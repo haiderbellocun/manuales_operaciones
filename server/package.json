@@ -5,7 +5,7 @@
   "type": "module",
   "description": "API REST — Acervo Operaciones",
   "scripts": {
-    "dev": "node src/index.js",
+    "dev": "node --watch src/index.js",
     "start": "node src/index.js",
     "db:migrate": "node -e \"import('./src/db/migrate.js').then(m=>m.migrate()).then(()=>{console.log('OK');process.exit(0)}).catch(e=>{console.error(e);process.exit(1)})\""
   },

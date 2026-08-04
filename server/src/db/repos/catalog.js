@@ -135,7 +135,7 @@ export async function listPeople() {
   }));
 }
 
-function addDocumentScope(conditions, params, auth, alias = 'd') {
+export function addDocumentScope(conditions, params, auth, alias = 'd') {
   if (!auth) return;
   const role = Number(auth.role ?? auth.role_id);
   const areaId = (auth.area ?? auth.area_id) ? Number(auth.area ?? auth.area_id) : null;

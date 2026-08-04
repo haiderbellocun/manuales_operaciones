@@ -1,10 +1,16 @@
 import path from 'path';
-import crypto from 'crypto';
+import fs from 'fs';
+import fsPromises from 'fs/promises';
 import { Storage } from '@google-cloud/storage';
 import '../config/env.js';
 
 const bucketName = process.env.GCS_BUCKET;
-const storage = new Storage();
+const storageMode = process.env.FILE_STORAGE_MODE === 'local' ? 'local' : 'gcs';
+const localStorageRoot = path.resolve(
+  process.env.FILE_STORAGE_LOCAL_DIR
+    || path.join(process.cwd(), 'test-results', 'file-storage'),
+);
+const storage = storageMode === 'gcs' ? new Storage() : null;
 
 function storageError(message, cause) {
   const err = new Error(message);
@@ -58,6 +64,33 @@ function getBucket() {
   return storage.bucket(bucketName);
 }
 
+function getLocalObjectPath(storedName) {
+  const objectPath = path.resolve(
+    localStorageRoot,
+    ...String(storedName || '').split('/').filter(Boolean),
+  );
+  const rootPrefix = `${localStorageRoot}${path.sep}`;
+  if (objectPath !== localStorageRoot && !objectPath.startsWith(rootPrefix)) {
+    throw storageError('La ruta local del archivo no es valida.');
+  }
+  return objectPath;
+}
+
+async function saveObject(storedName, file, cacheControl) {
+  if (storageMode === 'local') {
+    const objectPath = getLocalObjectPath(storedName);
+    await fsPromises.mkdir(path.dirname(objectPath), { recursive: true });
+    await fsPromises.writeFile(objectPath, file.buffer);
+    return;
+  }
+  const gcsFile = getBucket().file(storedName);
+  await runStorageOperation(() => gcsFile.save(file.buffer, {
+    resumable: false,
+    contentType: file.mimetype || 'application/octet-stream',
+    metadata: { cacheControl },
+  }));
+}
+
 function safeObjectPart(value) {
   return String(value || '')
     .normalize('NFD')
@@ -66,51 +99,78 @@ function safeObjectPart(value) {
     .replace(/^-+|-+$/g, '');
 }
 
+function objectTimestamp(date = new Date()) {
+  return date.toISOString().replace(/[-:.]/g, '');
+}
+
+function versionedObjectFileName(version, originalName, uploadedAt) {
+  const extension = path.extname(originalName).toLowerCase() || '.bin';
+  const originalBaseName = path.basename(originalName, path.extname(originalName));
+  const namePart = safeObjectPart(originalBaseName) || 'documento';
+  const versionPart = safeObjectPart(`v${version || '1.0'}`) || 'v1.0';
+  return `${namePart}_${versionPart}_${objectTimestamp(uploadedAt)}${extension}`;
+}
+
 export const fileStorage = {
   bucketName,
+  mode: storageMode,
 
-  objectName(docId, documentNumber, version, originalName) {
-    const ext = path.extname(originalName) || '.bin';
+  objectName(docId, version, originalName, uploadedAt = new Date()) {
     const idPart = safeObjectPart(docId);
-    const numberPart = safeObjectPart(documentNumber);
-    const versionPart = safeObjectPart(`v${version || '1.0'}`);
-    return `documents/${idPart}-${numberPart}-${versionPart}${ext}`;
+    if (!idPart) throw storageError('El ID documental es obligatorio para guardar el archivo.');
+    return `documents/${idPart}/${versionedObjectFileName(version, originalName, uploadedAt)}`;
   },
 
-  async save(docId, documentNumber, version, file) {
-    const storedName = fileStorage.objectName(docId, documentNumber, version, file.originalname);
-    const gcsFile = getBucket().file(storedName);
-    await runStorageOperation(() => gcsFile.save(file.buffer, {
-      resumable: false,
-      contentType: file.mimetype || 'application/octet-stream',
-      metadata: {
-        cacheControl: 'private, max-age=0, no-transform',
-      },
-    }));
+  infographicObjectName(docId, version, originalName, uploadedAt = new Date()) {
+    const idPart = safeObjectPart(docId);
+    if (!idPart) throw storageError('El ID documental es obligatorio para guardar la infografía.');
+    return `documents/${idPart}/infographics/${versionedObjectFileName(version, originalName, uploadedAt)}`;
+  },
+
+  async save(docId, version, file) {
+    const storedName = fileStorage.objectName(docId, version, file.originalname);
+    await saveObject(storedName, file, 'private, max-age=0, no-transform');
     return storedName;
   },
 
-  async savePending(version, file) {
-    return fileStorage.save(
-      `pending-${crypto.randomUUID()}`,
-      'documento',
+  async saveInfographic(docId, version, file) {
+    const storedName = fileStorage.infographicObjectName(
+      docId,
       version,
-      file,
+      file.originalname,
     );
+    await saveObject(storedName, file, 'private, max-age=300, no-transform');
+    return storedName;
   },
+
 
   async remove(storedName) {
     if (!storedName) return;
+    if (storageMode === 'local') {
+      await fsPromises.rm(getLocalObjectPath(storedName), { force: true });
+      return;
+    }
     await runStorageOperation(() => getBucket().file(storedName).delete({ ignoreNotFound: true }));
   },
 
   async exists(storedName) {
     if (!storedName) return false;
+    if (storageMode === 'local') {
+      try {
+        await fsPromises.access(getLocalObjectPath(storedName), fs.constants.F_OK);
+        return true;
+      } catch {
+        return false;
+      }
+    }
     const [exists] = await runStorageOperation(() => getBucket().file(storedName).exists());
     return exists;
   },
 
   stream(storedName) {
+    if (storageMode === 'local') {
+      return fs.createReadStream(getLocalObjectPath(storedName));
+    }
     return getBucket().file(storedName).createReadStream();
   },
 };

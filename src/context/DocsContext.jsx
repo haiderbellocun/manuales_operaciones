@@ -39,14 +39,16 @@ export function DocsProvider({ children }) {
     try {
       const isFav = await api.toggleFavorite(numericId);
       setDocs(prev => prev.map(d => Number(d.id) === numericId ? { ...d, fav: isFav } : d));
-    } catch {
+      return isFav;
+    } catch (error) {
       setDocs(prev => prev.map(d => Number(d.id) === numericId ? { ...d, fav: wasFav } : d));
+      throw error;
     }
   }, [docs]);
 
   const addDocument = useCallback(async (payload) => {
-    const { file, ...meta } = payload;
-    const doc = await api.uploadDocument(meta, file);
+    const { file, infographic, ...meta } = payload;
+    const doc = await api.uploadDocument(meta, file, infographic);
     await refresh();
     return doc;
   }, [refresh]);

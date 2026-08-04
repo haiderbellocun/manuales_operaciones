@@ -4,6 +4,7 @@ import { Icon } from '../components';
 import { getFile, getFileUrl, revokeFileUrl, formatFileSize, validateFile } from '../services/fileStore';
 import { useCatalogs } from '../context/CatalogContext';
 import { STATES, fmtDate } from '../utils/display';
+import { getUserErrorMessage } from '../utils/errors';
 
 function FallbackDocumentPreview({ doc, height = 420 }) {
   const { areaById, coordinationById, typeById, personById } = useCatalogs();
@@ -43,13 +44,18 @@ function FallbackDocumentPreview({ doc, height = 420 }) {
   );
 }
 
-export function DocumentPreview({ docId, doc, height = 420, onFullscreen, canDownload = true }) {
+export function DocumentPreview({ docId, doc, height = 420, onFullscreen, onDownload, onError, canDownload = true }) {
   const [fileRecord, setFileRecord] = useState(null);
   const [fileUrl, setFileUrl] = useState(null);
   const [docxHtml, setDocxHtml] = useState(null);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState(null);
   const urlRef = useRef(null);
+  const onErrorRef = useRef(onError);
+
+  useEffect(() => {
+    onErrorRef.current = onError;
+  }, [onError]);
 
   useEffect(() => {
     let cancelled = false;
@@ -97,7 +103,14 @@ export function DocumentPreview({ docId, doc, height = 420, onFullscreen, canDow
         }
       }
       if (!cancelled) setLoading(false);
-    })();
+    })().catch((loadError) => {
+      if (cancelled) return;
+      const message = getUserErrorMessage(loadError, 'No se pudo cargar la previsualización del documento.');
+      setFileRecord(null);
+      setError(message);
+      setLoading(false);
+      onErrorRef.current?.(message, loadError);
+    });
 
     return () => {
       cancelled = true;
@@ -136,7 +149,11 @@ export function DocumentPreview({ docId, doc, height = 420, onFullscreen, canDow
           <div className="doc-preview-unsupported" style={{ height }}>
             <Icon name="file" size={32} style={{ color: 'var(--ink-300)' }} />
             <p className="text-sm muted">Previsualización no disponible para este formato.</p>
-            {canDownload && <a href={fileUrl} download={fileRecord.name} className="btn btn-primary btn-sm mt-16">Descargar archivo</a>}
+            {canDownload && onDownload && (
+              <button type="button" className="btn btn-primary btn-sm mt-16" onClick={onDownload}>
+                <Icon name="download" size={14} />Descargar archivo
+              </button>
+            )}
           </div>
         )}
         {onFullscreen && isPdf && (
@@ -151,7 +168,7 @@ export function DocumentPreview({ docId, doc, height = 420, onFullscreen, canDow
   return <FallbackDocumentPreview doc={doc} height={height} />;
 }
 
-export function FileDropzone({ file, onFile, error: externalError }) {
+export function FileDropzone({ file, onFile, error: externalError, onError }) {
   const [dragOver, setDragOver] = useState(false);
   const [localError, setLocalError] = useState(null);
   const inputRef = useRef(null);
@@ -160,7 +177,7 @@ export function FileDropzone({ file, onFile, error: externalError }) {
     const f = files?.[0];
     if (!f) return;
     const err = validateFile(f);
-    if (err) { setLocalError(err); return; }
+    if (err) { setLocalError(err); onError?.(err); return; }
     setLocalError(null);
     onFile(f);
   };
@@ -196,6 +213,107 @@ export function FileDropzone({ file, onFile, error: externalError }) {
         </>
       )}
       {err && <p className="file-dropzone-error">{err}</p>}
+    </div>
+  );
+}
+
+const MAX_INFOGRAPHIC_SIZE = 10 * 1024 * 1024;
+
+export function validateInfographic(file) {
+  if (!file) return 'Selecciona una infografia.';
+  const extension = file.name.split('.').pop()?.toLowerCase();
+  const acceptedExtensions = ['png', 'jpg', 'jpeg', 'webp'];
+  const acceptedTypes = ['image/png', 'image/jpeg', 'image/webp'];
+  if (!acceptedExtensions.includes(extension) || !acceptedTypes.includes(file.type)) {
+    return 'Formato no permitido. Usa PNG, JPG o WEBP.';
+  }
+  if (file.size > MAX_INFOGRAPHIC_SIZE) {
+    return 'La infografia supera el limite de 10 MB.';
+  }
+  return null;
+}
+
+export function InfographicDropzone({ file, onFile, error: externalError, onError }) {
+  const [dragOver, setDragOver] = useState(false);
+  const [localError, setLocalError] = useState(null);
+  const [previewUrl, setPreviewUrl] = useState(null);
+  const inputRef = useRef(null);
+
+  useEffect(() => {
+    if (!file) {
+      setPreviewUrl(null);
+      return undefined;
+    }
+    const url = URL.createObjectURL(file);
+    setPreviewUrl(url);
+    return () => URL.revokeObjectURL(url);
+  }, [file]);
+
+  const handleFiles = (files) => {
+    const selected = files?.[0];
+    if (!selected) return;
+    const validationError = validateInfographic(selected);
+    if (validationError) {
+      setLocalError(validationError);
+      onError?.(validationError);
+      return;
+    }
+    setLocalError(null);
+    onFile(selected);
+  };
+
+  const error = externalError || localError;
+
+  return (
+    <div
+      className={`infographic-dropzone${dragOver ? ' drag-over' : ''}${file ? ' has-file' : ''}`}
+      onDragOver={(event) => { event.preventDefault(); setDragOver(true); }}
+      onDragLeave={() => setDragOver(false)}
+      onDrop={(event) => {
+        event.preventDefault();
+        setDragOver(false);
+        handleFiles(event.dataTransfer.files);
+      }}
+      onClick={() => inputRef.current?.click()}
+      role="button"
+      tabIndex={0}
+      onKeyDown={(event) => event.key === 'Enter' && inputRef.current?.click()}
+      aria-label="Seleccionar infografia del documento"
+    >
+      <input
+        ref={inputRef}
+        type="file"
+        accept=".png,.jpg,.jpeg,.webp,image/png,image/jpeg,image/webp"
+        style={{ display: 'none' }}
+        onChange={(event) => handleFiles(event.target.files)}
+      />
+      {file ? (
+        <div className="infographic-dropzone-selected" onClick={(event) => event.stopPropagation()}>
+          <img src={previewUrl || ''} alt="Vista previa de la infografia seleccionada" />
+          <div className="infographic-dropzone-copy">
+            <span className="infographic-dropzone-status"><Icon name="check" size={13} />Infografia lista</span>
+            <strong>{file.name}</strong>
+            <small>{formatFileSize(file.size)} · Se mostrara en la ficha y en la biblioteca</small>
+          </div>
+          <button
+            type="button"
+            className="btn btn-ghost btn-sm"
+            onClick={(event) => { event.stopPropagation(); onFile(null); }}
+          >
+            Cambiar
+          </button>
+        </div>
+      ) : (
+        <>
+          <span className="infographic-dropzone-icon"><Icon name="cards" size={25} /></span>
+          <div>
+            <strong>Agrega la infografia que acompana al documento</strong>
+            <p>Arrastra una imagen o haz clic para seleccionarla.</p>
+          </div>
+          <span className="infographic-dropzone-format">PNG, JPG o WEBP · max. 10 MB</span>
+        </>
+      )}
+      {error && <p className="file-dropzone-error">{error}</p>}
     </div>
   );
 }

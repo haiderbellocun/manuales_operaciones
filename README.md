@@ -106,6 +106,16 @@ GOOGLE_APPLICATION_CREDENTIALS=./secrets/acervo-storage-sa.json
 
 La cuenta de servicio debe tener permisos para crear, leer y eliminar objetos en el bucket.
 
+Los objetos nuevos se organizan por el ID estable del documento. Crear una nueva versión no
+cambia esta carpeta; únicamente agrega un objeto identificado por nombre, versión y fecha UTC:
+
+```text
+documents/{documentId}/{nombre}_v{version}_{fecha}.pdf
+documents/{documentId}/infographics/{nombre}_v{version}_{fecha}.png
+```
+
+Las rutas históricas almacenadas en la base de datos continúan siendo compatibles.
+
 6. Configurar Google OAuth:
 
 Frontend `.env`:
@@ -190,6 +200,25 @@ El esquema principal está en:
 
 ```text
 server/sql/schema.sql
+```
+
+Las migraciones incrementales que dejan trazabilidad de cambios en bases ya
+existentes se conservan en:
+
+```text
+server/sql/migrations/
+```
+
+La migración de métricas y analítica documental corresponde a:
+
+```text
+server/sql/migrations/20260804_001_document_usage_analytics.sql
+```
+
+La asociación de una infografía gráfica por documento corresponde a:
+
+```text
+server/sql/migrations/20260804_002_document_infographics.sql
 ```
 
 La migración se ejecuta desde:

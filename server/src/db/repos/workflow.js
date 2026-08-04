@@ -178,7 +178,7 @@ async function getWorkflowForUpdate(client, workflowId) {
     JOIN documents d ON d.id = wi.doc_id
     LEFT JOIN document_files df ON df.doc_id = d.id
     WHERE wi.id = $1 AND wi.completed_at IS NULL
-    FOR UPDATE
+    FOR UPDATE OF wi, d
   `, [Number(workflowId)]);
   return rows[0] || null;
 }

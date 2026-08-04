@@ -1,7 +1,7 @@
 import { api } from './api';
 
 export async function getFile(docId) {
-  const remote = await api.getDocumentFileUrl(docId);
+  const remote = await api.getDocumentFileUrl(docId, { preview: true });
   if (!remote?.blob) return null;
   const meta = await api.getDocumentFileMeta(docId);
   return {
