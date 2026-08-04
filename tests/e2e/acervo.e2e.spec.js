@@ -60,6 +60,8 @@ const fixtureBuffer = Buffer.concat([
 const infographicFixtureBuffer = fs.readFileSync(
   path.join(projectRoot, 'tests', 'fixtures', 'document-infographic-sample.png'),
 );
+const MAX_DOCUMENT_FILE_SIZE = 25 * 1024 * 1024;
+const MAX_INFOGRAPHIC_FILE_SIZE = 10 * 1024 * 1024;
 const infographicPart = (name = 'infografia-acervo.png') => ({
   name,
   mimeType: 'image/png',
@@ -86,6 +88,7 @@ test.describe.serial('Acervo Operaciones - suite integral', () => {
   let coordinationReviewer;
   let coordinationApprover;
   let consultant;
+  let auditor;
   let ownerId;
   let areaId;
   let coordinationAreaId;
@@ -98,7 +101,9 @@ test.describe.serial('Acervo Operaciones - suite integral', () => {
   let reviewerApi;
   let approverApi;
   let consultantApi;
+  let auditorApi;
   let adminToken;
+  let auditorToken;
   let documentId;
   let publishedDocumentId;
   let workflowId;
@@ -278,6 +283,7 @@ test.describe.serial('Acervo Operaciones - suite integral', () => {
       await reviewerApi?.dispose();
       await approverApi?.dispose();
       await consultantApi?.dispose();
+      await auditorApi?.dispose();
       await api?.dispose();
       await pool.end();
     }
@@ -319,6 +325,58 @@ test.describe.serial('Acervo Operaciones - suite integral', () => {
       && Number(user.area) === Number(areaId)
     ))).toBe(true);
     expect(areaAssignees.some(user => Number(user.id) === Number(consultant.id))).toBe(false);
+  });
+
+  test('verifica la estructura persistente de analítica e infografías', async () => {
+    const { rows: documentColumns } = await query(`
+      SELECT column_name, data_type, is_nullable
+      FROM information_schema.columns
+      WHERE table_schema = 'public'
+        AND table_name = 'documents'
+        AND column_name IN ('downloads', 'last_viewed_at', 'last_downloaded_at')
+      ORDER BY column_name
+    `);
+    expect(documentColumns.map(column => column.column_name).sort()).toEqual([
+      'downloads',
+      'last_downloaded_at',
+      'last_viewed_at',
+    ]);
+    expect(documentColumns.find(column => column.column_name === 'downloads')).toEqual(
+      expect.objectContaining({ data_type: 'integer', is_nullable: 'NO' }),
+    );
+
+    const { rows: interactionColumns } = await query(`
+      SELECT column_name
+      FROM information_schema.columns
+      WHERE table_schema = 'public' AND table_name = 'document_interactions'
+    `);
+    expect(interactionColumns.map(column => column.column_name)).toEqual(expect.arrayContaining([
+      'doc_id', 'user_id', 'interaction_type', 'document_version', 'source', 'metadata', 'occurred_at',
+    ]));
+
+    const { rows: infographicColumns } = await query(`
+      SELECT column_name
+      FROM information_schema.columns
+      WHERE table_schema = 'public' AND table_name = 'document_infographics'
+    `);
+    expect(infographicColumns.map(column => column.column_name)).toEqual(expect.arrayContaining([
+      'doc_id', 'original_name', 'stored_name', 'mime_type', 'file_size',
+      'document_version', 'uploaded_at', 'uploaded_by',
+    ]));
+
+    const { rows: analyticsIndexes } = await query(`
+      SELECT indexname
+      FROM pg_indexes
+      WHERE schemaname = 'public'
+        AND tablename IN ('document_interactions', 'document_infographics')
+    `);
+    expect(analyticsIndexes.map(index => index.indexname)).toEqual(expect.arrayContaining([
+      'idx_document_interactions_doc_type_date',
+      'idx_document_interactions_type_date',
+      'idx_document_interactions_user_date',
+      'idx_document_interactions_date',
+      'idx_document_infographics_uploaded_at',
+    ]));
   });
 
   test('bloquea sesiones invalidas, usuarios inactivos y escrituras CORS no permitidas', async () => {
@@ -396,6 +454,56 @@ test.describe.serial('Acervo Operaciones - suite integral', () => {
     });
     await expectStatus(invalidInfographic, 400);
     expect(await countDocuments(invalidInfographicName)).toBe(0);
+
+    const oversizedInfographicName = `${runId}-INFOGRAFIA-MUY-GRANDE`;
+    const oversizedInfographic = await api.post('/api/documents', {
+      multipart: {
+        type: String(typeId), area: String(areaId), name: oversizedInfographicName,
+        version: '1.0', revisor: String(reviewer.id), aprobador: String(approver.id),
+        file: { name: 'documento-valido.pdf', mimeType: 'application/pdf', buffer: fixtureBuffer },
+        infographic: {
+          name: 'infografia-muy-grande.png',
+          mimeType: 'image/png',
+          buffer: Buffer.alloc(MAX_INFOGRAPHIC_FILE_SIZE + 1, 0x61),
+        },
+      },
+    });
+    await expectStatus(oversizedInfographic, 400);
+    expect((await oversizedInfographic.json()).message).toContain('10 MB');
+    expect(await countDocuments(oversizedInfographicName)).toBe(0);
+
+    const oversizedDocumentName = `${runId}-ARCHIVO-MUY-GRANDE`;
+    const oversizedDocument = await api.post('/api/documents', {
+      multipart: {
+        type: String(typeId), area: String(areaId), name: oversizedDocumentName,
+        version: '1.0', revisor: String(reviewer.id), aprobador: String(approver.id),
+        file: {
+          name: 'documento-muy-grande.pdf',
+          mimeType: 'application/pdf',
+          buffer: Buffer.alloc(MAX_DOCUMENT_FILE_SIZE + 1, 0x20),
+        },
+        infographic: infographicPart(),
+      },
+    });
+    await expectStatus(oversizedDocument, 400);
+    const oversizedDocumentPayload = await oversizedDocument.json();
+    expect(oversizedDocumentPayload.code).toBe('LIMIT_FILE_SIZE');
+    expect(oversizedDocumentPayload.message).toContain('25 MB');
+    expect(await countDocuments(oversizedDocumentName)).toBe(0);
+
+    const longVersionName = `${runId}-VERSION-MUY-LARGA`;
+    const longVersion = await api.post('/api/documents', {
+      multipart: {
+        type: String(typeId), area: String(areaId), name: longVersionName,
+        version: '123456789012345678901',
+        revisor: String(reviewer.id), aprobador: String(approver.id),
+        file: { name: 'version-larga.pdf', mimeType: 'application/pdf', buffer: fixtureBuffer },
+        infographic: infographicPart(),
+      },
+    });
+    await expectStatus(longVersion, 400);
+    expect((await longVersion.json()).message).toContain('20 caracteres');
+    expect(await countDocuments(longVersionName)).toBe(0);
 
     const invalidName = `${runId}-FORMATO-INVALIDO`;
     const invalid = await api.post('/api/documents', {
@@ -850,7 +958,7 @@ test.describe.serial('Acervo Operaciones - suite integral', () => {
         initialState: 'revision',
         revisor: String(leader.id),
         aprobador: String(leader.id),
-        file: { name: 'flujo-lider.pdf', mimeType: 'application/pdf', buffer: fixtureBuffer },
+        file: { name: 'Flujo líder de área.pdf', mimeType: 'application/pdf', buffer: fixtureBuffer },
         infographic: infographicPart('infografia-flujo-lider.png'),
       },
     });
@@ -858,6 +966,13 @@ test.describe.serial('Acervo Operaciones - suite integral', () => {
     const document = await response.json();
     createdDocIds.push(Number(document.id));
     expect(document.state).toBe('revision');
+    const { rows: leaderFileRows } = await query(
+      'SELECT original_name, stored_name FROM document_files WHERE doc_id = $1',
+      [document.id],
+    );
+    expect(leaderFileRows[0].original_name).toBe('Flujo líder de área.pdf');
+    expectDocumentStoragePath(leaderFileRows[0].stored_name, document.id, '1.0');
+    expect(leaderFileRows[0].stored_name).not.toMatch(/[ áí]/i);
     expect((await consultantApi.get(`/api/documents/${document.id}`)).status()).toBe(404);
 
     const reviewInboxResponse = await leaderApi.get('/api/workflow');
@@ -1125,19 +1240,44 @@ test.describe.serial('Acervo Operaciones - suite integral', () => {
       `Auditor ${runId}`, `auditor.e2e.${suffix}@cun.edu.co`,
     ]);
     createdUserIds.push(...rows.map(user => user.id));
-    const consultant = rows.find(user => Number(user.role_id) === 6);
-    const auditor = rows.find(user => Number(user.role_id) === 7);
-    const consultantApi = await makeApiFor(consultant);
-    const auditorApi = await makeApiFor(auditor);
+    const downloadConsultant = rows.find(user => Number(user.role_id) === 6);
+    auditor = rows.find(user => Number(user.role_id) === 7);
+    const downloadConsultantApi = await makeApiFor(downloadConsultant);
+    auditorApi = await makeApiFor(auditor);
+    auditorToken = signToken({ id: auditor.id, email: auditor.email, role: auditor.role_id });
 
-    expect((await consultantApi.get(`/api/documents/${documentId}/file`)).status()).toBe(200);
+    const { rows: metricsBeforePreview } = await query(
+      'SELECT views, downloads FROM documents WHERE id = $1',
+      [documentId],
+    );
+    expect((await downloadConsultantApi.get(`/api/documents/${documentId}/file`)).status()).toBe(200);
+    const preview = await auditorApi.get(`/api/documents/${documentId}/file?mode=preview`);
+    await expectStatus(preview, 200);
+    expect((await preview.body()).length).toBeGreaterThan(1000);
+    expect(preview.headers()['content-disposition']).toContain('inline');
+    expect(preview.headers()['x-document-downloads']).toBeUndefined();
     expect((await auditorApi.get(`/api/documents/${documentId}/file`)).status()).toBe(403);
+    expect((await auditorApi.get(`/api/documents/${documentId}/infographic`)).status()).toBe(200);
     expect((await auditorApi.get(`/api/documents/${documentId}`)).status()).toBe(200);
     expect((await auditorApi.get('/api/users')).status()).toBe(403);
     expect((await api.get('/api/users')).status()).toBe(200);
 
-    await consultantApi.dispose();
-    await auditorApi.dispose();
+    const { rows: metricsAfterPreview } = await query(
+      'SELECT views, downloads FROM documents WHERE id = $1',
+      [documentId],
+    );
+    expect(Number(metricsAfterPreview[0].views)).toBe(Number(metricsBeforePreview[0].views));
+    expect(Number(metricsAfterPreview[0].downloads)).toBe(Number(metricsBeforePreview[0].downloads) + 1);
+
+    const interactionActors = [api, leaderApi, reviewerApi, approverApi, consultantApi, auditorApi];
+    for (let index = 0; index < interactionActors.length; index += 1) {
+      const interaction = await interactionActors[index].post(`/api/documents/${documentId}/view`, {
+        data: { source: `e2e_actor_${index + 1}` },
+      });
+      await expectStatus(interaction, 200);
+    }
+
+    await downloadConsultantApi.dispose();
   });
 
   test('crea y descarga una nueva versión', async () => {
@@ -1181,6 +1321,24 @@ test.describe.serial('Acervo Operaciones - suite integral', () => {
     }));
     expect(unexpectedFilePayload.message).toContain('Adjunta únicamente el documento y la infografía');
     expect(unexpectedFilePayload.message).not.toContain('Too many files');
+
+    const longVersion = await api.post(`/api/documents/${documentId}/versions`, {
+      multipart: {
+        version: '123456789012345678901',
+        note: 'Version fuera del limite permitido',
+        file: { name: 'version-muy-larga.pdf', mimeType: 'application/pdf', buffer: fixtureBuffer },
+      },
+    });
+    await expectStatus(longVersion, 400);
+    expect((await longVersion.json()).message).toContain('20 caracteres');
+    const { rows: unchangedVersionRows } = await query(
+      'SELECT version, state FROM documents WHERE id = $1',
+      [documentId],
+    );
+    expect(unchangedVersionRows[0]).toEqual(expect.objectContaining({
+      version: '1.0',
+      state: 'publicado',
+    }));
 
     const sameVersion = await api.post(`/api/documents/${documentId}/versions`, {
       multipart: {
@@ -1309,6 +1467,119 @@ test.describe.serial('Acervo Operaciones - suite integral', () => {
     expect(analytics.ranking.some(item => Number(item.id) === documentId)).toBeTruthy();
   });
 
+  test('valida acumulados, filtros, alcance y privacidad de la analítica por rol', async () => {
+    const { rows: databaseTotalsRows } = await query(`
+      SELECT
+        COUNT(*)::int AS documents,
+        COALESCE(SUM(views), 0)::bigint AS views,
+        COALESCE(SUM(downloads), 0)::bigint AS downloads,
+        COUNT(*) FILTER (WHERE state = 'publicado')::int AS published_documents
+      FROM documents
+    `);
+    const databaseTotals = databaseTotalsRows[0];
+
+    const allResponse = await api.get('/api/reports/analytics?period=all');
+    await expectStatus(allResponse, 200);
+    const all = await allResponse.json();
+    expect(all.canIdentifyUsers).toBe(true);
+    expect(all.totals.documents).toBe(Number(databaseTotals.documents));
+    expect(all.totals.views).toBe(Number(databaseTotals.views));
+    expect(all.totals.downloads).toBe(Number(databaseTotals.downloads));
+    expect(all.totals.publishedDocuments).toBe(Number(databaseTotals.published_documents));
+    expect(all.totals.periodViews).toBe(all.totals.views);
+    expect(all.totals.periodDownloads).toBe(all.totals.downloads);
+    expect(all.topUsers.length).toBeGreaterThan(5);
+    expect(all.recent.length).toBeLessThanOrEqual(15);
+    expect(all.recent.some(item => item.userId && item.userName)).toBe(true);
+    expect(all.recent.every((item, index, items) => (
+      index === 0 || new Date(items[index - 1].occurredAt) >= new Date(item.occurredAt)
+    ))).toBe(true);
+    expect(all.monthlyTrend).toHaveLength(12);
+
+    const invalidPeriodResponse = await api.get('/api/reports/analytics?period=no-valido');
+    await expectStatus(invalidPeriodResponse, 200);
+    expect((await invalidPeriodResponse.json()).period.key).toBe('30');
+
+    const sevenDaysResponse = await api.get('/api/reports/analytics?period=7');
+    await expectStatus(sevenDaysResponse, 200);
+    const sevenDays = await sevenDaysResponse.json();
+    expect(sevenDays.period.key).toBe('7');
+    expect(sevenDays.trend).toHaveLength(7);
+
+    const filteredResponse = await api.get(
+      `/api/reports/analytics?period=all&area=${areaId}&type=${typeId}`,
+    );
+    await expectStatus(filteredResponse, 200);
+    const filtered = await filteredResponse.json();
+    expect(filtered.filters).toEqual(expect.objectContaining({
+      area: Number(areaId),
+      type: Number(typeId),
+    }));
+    expect(filtered.usageByArea.every(item => Number(item.id) === Number(areaId))).toBe(true);
+    for (const collection of [
+      filtered.ranking,
+      filtered.topViewed,
+      filtered.topDownloaded,
+      filtered.withoutViews,
+      filtered.withoutUse,
+    ]) {
+      expect(collection.every(item => (
+        Number(item.area) === Number(areaId) && Number(item.type) === Number(typeId)
+      ))).toBe(true);
+    }
+
+    if (coordinationAreaId && coordinationId) {
+      const coordinationResponse = await api.get(
+        `/api/reports/analytics?period=all&area=${coordinationAreaId}&coordination=${coordinationId}`,
+      );
+      await expectStatus(coordinationResponse, 200);
+      const coordinationAnalytics = await coordinationResponse.json();
+      for (const collection of [
+        coordinationAnalytics.ranking,
+        coordinationAnalytics.topViewed,
+        coordinationAnalytics.topDownloaded,
+        coordinationAnalytics.withoutViews,
+        coordinationAnalytics.withoutUse,
+      ]) {
+        expect(collection.every(item => Number(item.coordination) === Number(coordinationId))).toBe(true);
+      }
+    }
+
+    const consultantResponse = await consultantApi.get('/api/reports/analytics?period=all');
+    await expectStatus(consultantResponse, 200);
+    const consultantAnalytics = await consultantResponse.json();
+    const { rows: publishedRows } = await query(
+      "SELECT COUNT(*)::int AS n FROM documents WHERE state = 'publicado'",
+    );
+    expect(consultantAnalytics.totals.documents).toBe(publishedRows[0].n);
+    expect(consultantAnalytics.canIdentifyUsers).toBe(false);
+    expect(consultantAnalytics.topUsers).toEqual([]);
+    expect(consultantAnalytics.recent.every(item => (
+      item.userId === null && item.userName === null
+    ))).toBe(true);
+    expect(consultantAnalytics.ranking.every(item => item.state === 'publicado')).toBe(true);
+
+    const leaderResponse = await leaderApi.get('/api/reports/analytics?period=all');
+    await expectStatus(leaderResponse, 200);
+    const leaderAnalytics = await leaderResponse.json();
+    expect(leaderAnalytics.canIdentifyUsers).toBe(true);
+    expect(leaderAnalytics.usageByArea.every(item => Number(item.id) === Number(areaId))).toBe(true);
+
+    const auditorResponse = await auditorApi.get('/api/reports/analytics?period=all');
+    await expectStatus(auditorResponse, 200);
+    const auditorAnalytics = await auditorResponse.json();
+    expect(auditorAnalytics.totals.documents).toBe(Number(databaseTotals.documents));
+    expect(auditorAnalytics.canIdentifyUsers).toBe(false);
+    expect(auditorAnalytics.topUsers).toEqual([]);
+
+    const { rows: actorRows } = await query(`
+      SELECT COUNT(DISTINCT user_id)::int AS users
+      FROM document_interactions
+      WHERE source LIKE 'e2e_actor_%'
+    `);
+    expect(actorRows[0].users).toBe(6);
+  });
+
   test('navegación principal funciona en Chrome', async ({ browser }) => {
     const context = await browser.newContext({ viewport: { width: 1440, height: 900 } });
     await context.addCookies([{
@@ -1321,6 +1592,8 @@ test.describe.serial('Acervo Operaciones - suite integral', () => {
       sameSite: 'Strict',
     }]);
     const page = await context.newPage();
+    const pageErrors = [];
+    page.on('pageerror', error => pageErrors.push(error.message));
 
     await page.goto('/');
     await expect(page.getByText('Acervo', { exact: true })).toBeVisible();
@@ -1373,7 +1646,23 @@ test.describe.serial('Acervo Operaciones - suite integral', () => {
     await expect(recentPagination).toContainText('6–');
     await recentPagination.getByRole('button', { name: 'Página anterior de interacciones recientes' }).click();
     await expect(recentPagination.getByRole('button', { name: 'Página 1 de interacciones recientes' })).toHaveAttribute('aria-current', 'page');
-    await expect(page.getByTestId('analytics-pagination-users')).toBeVisible();
+    const usersPagination = page.getByTestId('analytics-pagination-users');
+    const userRows = page.locator('.analytics-users-list > .analytics-user-row');
+    await expect(usersPagination).toBeVisible();
+    await expect(usersPagination).toContainText('1–5 de');
+    await expect(userRows).toHaveCount(5);
+    await usersPagination.getByRole('button', { name: 'Página siguiente de usuarios más activos' }).click();
+    await expect(usersPagination.getByRole('button', { name: 'Página 2 de usuarios más activos' })).toHaveAttribute('aria-current', 'page');
+    await expect(usersPagination).toContainText('6–');
+    const analyticsRefresh = page.waitForResponse(response => (
+      response.url().includes('/api/reports/analytics')
+      && response.url().includes('period=all')
+      && response.request().method() === 'GET'
+    ));
+    await page.locator('.analytics-filter-bar .custom-select-trigger').first().click();
+    await page.getByRole('option', { name: 'Todo el histórico' }).click();
+    expect((await analyticsRefresh).status()).toBe(200);
+    await expect(usersPagination.getByRole('button', { name: 'Página 1 de usuarios más activos' })).toHaveAttribute('aria-current', 'page');
     const exportButton = page.getByRole('button', { name: 'Exportar CSV' });
     await expect(exportButton).toBeVisible();
     await exportButton.click();
@@ -1407,6 +1696,10 @@ test.describe.serial('Acervo Operaciones - suite integral', () => {
     await expect(page.getByTestId('app-toast')).not.toContainText('Service Unavailable');
     await page.unroute(storageFailurePattern, storageFailureHandler);
 
+    const successfulDownload = page.waitForEvent('download');
+    await page.getByRole('button', { name: 'Descargar', exact: true }).first().click();
+    expect((await successfulDownload).suggestedFilename()).toBe('Flujo líder de área.pdf');
+
     const versionButton = page.getByRole('button', { name: 'Nueva versión' });
     await expect(versionButton).toBeVisible();
     await versionButton.click();
@@ -1417,6 +1710,7 @@ test.describe.serial('Acervo Operaciones - suite integral', () => {
     await expect(versionModal.getByText('Actualizar infografía')).toBeVisible();
     await expect(versionModal.getByText('Opcional', { exact: true })).toBeVisible();
     await expect(versionModal.locator('input.input:not([type])')).toHaveValue('1.1');
+    await expect(versionModal.locator('input.input:not([type])')).toHaveAttribute('maxlength', '20');
 
     await versionModal.locator('input[type="file"][accept*=".pdf"]').setInputFiles({
       name: 'archivo-no-permitido.exe',
@@ -1482,6 +1776,49 @@ test.describe.serial('Acervo Operaciones - suite integral', () => {
     await page.setViewportSize({ width: 390, height: 844 });
     await page.goto('/biblioteca');
     await expect(page.getByRole('heading', { name: 'Biblioteca documental' })).toBeVisible();
+    expect(await page.evaluate(() => document.documentElement.scrollWidth <= window.innerWidth + 1)).toBe(true);
+    await page.goto('/reportes');
+    await expect(page.getByRole('heading', { name: 'Analítica documental' })).toBeVisible();
+    expect(await page.evaluate(() => document.documentElement.scrollWidth <= window.innerWidth + 1)).toBe(true);
+    expect(pageErrors).toEqual([]);
+    await context.close();
+  });
+
+  test('el auditor consulta analítica y previsualiza sin permiso de descarga', async ({ browser }) => {
+    expect(auditorToken).toBeTruthy();
+    const context = await browser.newContext({ viewport: { width: 1280, height: 800 } });
+    await context.addCookies([{
+      name: SESSION_COOKIE_NAME,
+      value: auditorToken,
+      domain: '127.0.0.1',
+      path: '/',
+      httpOnly: true,
+      secure: false,
+      sameSite: 'Strict',
+    }]);
+    const page = await context.newPage();
+    const pageErrors = [];
+    page.on('pageerror', error => pageErrors.push(error.message));
+
+    await page.goto('/reportes');
+    await expect(page.getByRole('heading', { name: 'Analítica documental' })).toBeVisible();
+    await expect(page.getByText('La identificación de usuarios está restringida para tu rol.')).toBeVisible();
+    await expect(page.getByTestId('analytics-pagination-users')).toHaveCount(0);
+
+    await page.goto(`/documentos/${documentId}`);
+    await expect(page.getByText('Infografía documental')).toBeVisible();
+    await expect(page.getByRole('button', { name: 'Descargar', exact: true })).toHaveCount(0);
+    const previewResponse = page.waitForResponse(response => (
+      response.url().includes(`/api/documents/${documentId}/file?mode=preview`)
+      && response.request().method() === 'GET'
+    ));
+    await page.getByRole('button', { name: 'Ver documento' }).click();
+    expect((await previewResponse).status()).toBe(200);
+    await expect(page.locator('.doc-preview-real')).toBeVisible();
+    await expect(page.locator('.doc-preview-iframe')).toBeVisible();
+    await expect(page.getByRole('button', { name: 'Descargar', exact: true })).toHaveCount(0);
+    expect(pageErrors).toEqual([]);
+
     await context.close();
   });
 });

@@ -35,6 +35,13 @@ async function notifySafely(recipients, payload) {
   }
 }
 
+function normalizeUploadFileName(value) {
+  const originalName = String(value || '').trim();
+  if (!/[ÃÂâð]/.test(originalName)) return originalName;
+  const decoded = Buffer.from(originalName, 'latin1').toString('utf8');
+  return decoded.includes('\uFFFD') ? originalName : decoded;
+}
+
 const upload = multer({
   storage: multer.memoryStorage(),
   limits: {
@@ -44,6 +51,7 @@ const upload = multer({
     fieldSize: 10 * 1024,
   },
   fileFilter: (_req, file, cb) => {
+    file.originalname = normalizeUploadFileName(file.originalname);
     if (file.fieldname === 'infographic') {
       const infographicFormats = {
         '.png': ['image/png'],
@@ -107,6 +115,26 @@ function operationErrorPayload(error, fallback) {
   };
 }
 
+function validateDocumentVersion(value, { defaultValue = '', required = true } = {}) {
+  const version = String(value ?? '').trim() || defaultValue;
+  if (required && !version) {
+    const error = new Error('La version es obligatoria.');
+    error.statusCode = 400;
+    throw error;
+  }
+  if (version.length > 20) {
+    const error = new Error('La version no puede superar 20 caracteres.');
+    error.statusCode = 400;
+    throw error;
+  }
+  if (/[\u0000-\u001F\u007F]/.test(version)) {
+    const error = new Error('La version contiene caracteres no permitidos.');
+    error.statusCode = 400;
+    throw error;
+  }
+  return version;
+}
+
 router.get('/', requirePermission('consultar'), async (req, res, next) => {
   try {
     const { area, coordination, type, state, search, page, limit } = req.query;
@@ -128,10 +156,14 @@ router.get('/:id/file/meta', requirePermission('consultar'), async (req, res, ne
   }
 });
 
-router.get('/:id/file', requirePermission('descargar'), async (req, res, next) => {
+router.get('/:id/file', requirePermission('consultar'), async (req, res, next) => {
   try {
     const doc = await getDocument(req.params.id, req.auth);
     if (!doc) return res.status(404).json({ message: 'Documento no encontrado.' });
+    const isPreview = req.query.mode === 'preview';
+    if (!isPreview && req.auth.perms?.descargar !== true) {
+      return res.status(403).json({ message: 'No tienes permisos para descargar documentos.' });
+    }
     const meta = await getFileMeta(req.params.id);
     if (!meta?.storedName) {
       return res.status(404).json({ message: 'Este documento no tiene archivo adjunto.' });
@@ -139,7 +171,6 @@ router.get('/:id/file', requirePermission('descargar'), async (req, res, next) =
     if (!(await fileStorage.exists(meta.storedName))) {
       return res.status(404).json({ message: 'Archivo no encontrado en Cloud Storage.' });
     }
-    const isPreview = req.query.mode === 'preview';
     res.setHeader('Content-Type', meta.mimeType || 'application/octet-stream');
     res.setHeader(
       'Content-Disposition',
@@ -271,8 +302,7 @@ router.post('/:id/versions', requirePermission('editar'), (req, res) => {
         return res.status(400).json({ message: 'La infografia no puede superar 10 MB.' });
       }
 
-      const version = String(req.body?.version || '').trim();
-      if (!version) return res.status(400).json({ message: 'La version es obligatoria.' });
+      const version = validateDocumentVersion(req.body?.version);
       if (version === String(doc.version || '').trim()) {
         return res.status(409).json({ message: 'La nueva version debe ser distinta de la version vigente.' });
       }
@@ -365,6 +395,10 @@ router.post('/', requirePermission('crear'), (req, res) => {
       if (!['borrador', 'revision'].includes(initialState)) {
         return res.status(400).json({ message: 'El estado inicial debe ser borrador o revision.' });
       }
+      const version = validateDocumentVersion(payload.version, {
+        defaultValue: '1.0',
+        required: false,
+      });
 
       assertCanCreateInArea(req.auth, area, coordination || null);
       const canCreateGeneralOperationAcademic = (
@@ -395,17 +429,18 @@ router.post('/', requirePermission('crear'), (req, res) => {
       reservedDocumentId = await reserveDocumentId();
       storedName = await fileStorage.save(
         reservedDocumentId,
-        payload.version || '1.0',
+        version,
         documentFile,
       );
       infographicStoredName = await fileStorage.saveInfographic(
         reservedDocumentId,
-        payload.version || '1.0',
+        version,
         infographicFile,
       );
       const newDoc = await createDocumentWithFile(
         {
           ...payload,
+          version,
           reservedDocumentId,
           owner: responsiblePerson.id,
           initialState,
@@ -537,6 +572,8 @@ router.post('/:id/update-request', requirePermission('consultar'), async (req, r
 router.post('/:id/file', requirePermission('crear'), (req, res) => {
   upload.single('file')(req, res, async (err) => {
     if (err) return respondUploadError(res, err, 'No se pudo recibir el archivo del documento.');
+    let newStoredName;
+    let metadataSaved = false;
     try {
       const routeDocId = Number(req.params.id);
       const doc = await getDocument(routeDocId, req.auth);
@@ -553,10 +590,13 @@ router.post('/:id/file', requirePermission('crear'), (req, res) => {
       if (!req.file) return res.status(400).json({ message: 'No se recibio ningun archivo.' });
 
       const prev = await getFileMeta(doc.id);
-      const storedName = await fileStorage.save(routeDocId, doc.version, req.file);
-      const meta = await upsertFile(doc.id, req.file, req.user.sub, storedName);
-      if (prev?.storedName && prev.storedName !== storedName) {
-        await fileStorage.remove(prev.storedName);
+      newStoredName = await fileStorage.save(routeDocId, doc.version, req.file);
+      const meta = await upsertFile(doc.id, req.file, req.user.sub, newStoredName);
+      metadataSaved = true;
+      if (prev?.storedName && prev.storedName !== newStoredName) {
+        await fileStorage.remove(prev.storedName).catch(error => {
+          console.error('No se pudo retirar el archivo documental anterior:', error.message);
+        });
       }
       const owner = await findDocumentOwnerRecipient(doc.owner, doc.area);
       await notifySafely([owner?.id], {
@@ -567,7 +607,9 @@ router.post('/:id/file', requirePermission('crear'), (req, res) => {
       });
       res.json(meta);
     } catch (e) {
-      console.error(e);
+      if (newStoredName && !metadataSaved) {
+        await fileStorage.remove(newStoredName).catch(() => {});
+      }
       res.status(e.statusCode || 500).json(
         operationErrorPayload(e, 'No se pudo guardar el archivo.'),
       );

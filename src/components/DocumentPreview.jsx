@@ -64,12 +64,6 @@ export function DocumentPreview({ docId, doc, height = 420, onFullscreen, onDown
       setError(null);
       setDocxHtml(null);
       if (urlRef.current) { revokeFileUrl(urlRef.current); urlRef.current = null; setFileUrl(null); }
-      if (!canDownload) {
-        setFileRecord(null);
-        setLoading(false);
-        return;
-      }
-
       const record = await getFile(docId);
       if (cancelled) return;
       setFileRecord(record);

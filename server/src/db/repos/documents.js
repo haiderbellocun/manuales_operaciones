@@ -766,7 +766,7 @@ export async function upsertFile(docId, file, uploadedBy, storedName) {
       mimeType: file.mimetype,
       size: file.size,
     },
-  });
+  }).catch(() => {});
   return getFileMeta(docId);
 }
 

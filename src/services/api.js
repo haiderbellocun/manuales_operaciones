@@ -34,6 +34,18 @@ async function request(path, options = {}) {
   return res;
 }
 
+function responseFileName(res, fallback = 'documento') {
+  const disposition = res.headers.get('content-disposition') || '';
+  const encoded = disposition.match(/filename\*=UTF-8''([^;]+)/i)?.[1]
+    || disposition.match(/filename="([^"]+)"/i)?.[1];
+  if (!encoded) return fallback;
+  try {
+    return decodeURIComponent(encoded);
+  } catch {
+    return encoded;
+  }
+}
+
 export const api = {
   config: { baseUrl: API_BASE },
 
@@ -114,7 +126,7 @@ export const api = {
     const blob = await res.blob();
     return {
       blob,
-      name: res.headers.get('content-disposition')?.match(/filename="(.+)"/)?.[1] || 'documento',
+      name: responseFileName(res),
       downloads: Number(res.headers.get('x-document-downloads')) || null,
       lastDownloadedAt: res.headers.get('x-last-downloaded-at') || null,
     };
@@ -129,7 +141,7 @@ export const api = {
     const blob = await res.blob();
     return {
       blob,
-      name: res.headers.get('content-disposition')?.match(/filename="(.+)"/)?.[1] || 'documento',
+      name: responseFileName(res),
       downloads: Number(res.headers.get('x-document-downloads')) || null,
       lastDownloadedAt: res.headers.get('x-last-downloaded-at') || null,
     };

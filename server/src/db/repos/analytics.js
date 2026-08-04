@@ -2,6 +2,8 @@ import { pool, query } from '../pool.js';
 import { addDocumentScope } from './catalog.js';
 
 const INTERACTION_TYPES = new Set(['view', 'download']);
+const ANALYTICS_TIME_ZONE = 'America/Bogota';
+const ANALYTICS_UTC_OFFSET_HOURS = -5;
 const PERIODS = {
   7: { days: 7, label: 'Últimos 7 días', bucket: 'day', interval: '1 day' },
   30: { days: 30, label: 'Últimos 30 días', bucket: 'day', interval: '1 day' },
@@ -22,10 +24,12 @@ function periodConfig(value) {
 
 function periodStart(period) {
   if (!period.days) return null;
-  const date = new Date();
-  date.setUTCDate(date.getUTCDate() - (period.days - 1));
-  date.setUTCHours(0, 0, 0, 0);
-  return date.toISOString();
+  const localCalendar = new Date(Date.now() + (ANALYTICS_UTC_OFFSET_HOURS * 60 * 60 * 1000));
+  localCalendar.setUTCDate(localCalendar.getUTCDate() - (period.days - 1));
+  const year = localCalendar.getUTCFullYear();
+  const month = String(localCalendar.getUTCMonth() + 1).padStart(2, '0');
+  const day = String(localCalendar.getUTCDate()).padStart(2, '0');
+  return new Date(`${year}-${month}-${day}T00:00:00-05:00`).toISOString();
 }
 
 function numberValue(value) {
@@ -308,23 +312,23 @@ export async function getDocumentAnalytics(auth, filters = {}) {
       bounds AS (
         SELECT
           date_trunc('${period.bucket}', COALESCE(
-            $${startParam}::timestamptz,
-            (SELECT MIN(occurred_at) FROM scoped_events),
-            NOW()
+            $${startParam}::timestamptz AT TIME ZONE '${ANALYTICS_TIME_ZONE}',
+            (SELECT MIN(occurred_at) FROM scoped_events) AT TIME ZONE '${ANALYTICS_TIME_ZONE}',
+            NOW() AT TIME ZONE '${ANALYTICS_TIME_ZONE}'
           )) AS start_bucket,
-          date_trunc('${period.bucket}', NOW()) AS end_bucket
+          date_trunc('${period.bucket}', NOW() AT TIME ZONE '${ANALYTICS_TIME_ZONE}') AS end_bucket
       ),
       buckets AS (
         SELECT generate_series(start_bucket, end_bucket, INTERVAL '${period.interval}') AS bucket
         FROM bounds
       )
       SELECT
-        bucket,
+        bucket AT TIME ZONE '${ANALYTICS_TIME_ZONE}' AS bucket,
         COUNT(events.id) FILTER (WHERE events.interaction_type = 'view')::int AS views,
         COUNT(events.id) FILTER (WHERE events.interaction_type = 'download')::int AS downloads
       FROM buckets
       LEFT JOIN scoped_events events
-        ON date_trunc('${period.bucket}', events.occurred_at) = bucket
+        ON date_trunc('${period.bucket}', events.occurred_at AT TIME ZONE '${ANALYTICS_TIME_ZONE}') = bucket
       GROUP BY bucket
       ORDER BY bucket
     `, periodParams),
@@ -412,8 +416,8 @@ export async function getDocumentAnalytics(auth, filters = {}) {
       WITH ${scopedDocumentsCte},
       months AS (
         SELECT generate_series(
-          date_trunc('month', NOW()) - INTERVAL '11 months',
-          date_trunc('month', NOW()),
+          date_trunc('month', NOW() AT TIME ZONE '${ANALYTICS_TIME_ZONE}') - INTERVAL '11 months',
+          date_trunc('month', NOW() AT TIME ZONE '${ANALYTICS_TIME_ZONE}'),
           INTERVAL '1 month'
         ) AS bucket
       ),
@@ -421,14 +425,17 @@ export async function getDocumentAnalytics(auth, filters = {}) {
         SELECT i.*
         FROM document_interactions i
         JOIN scoped_docs d ON d.id = i.doc_id
-        WHERE i.occurred_at >= date_trunc('month', NOW()) - INTERVAL '11 months'
+        WHERE i.occurred_at >= (
+          date_trunc('month', NOW() AT TIME ZONE '${ANALYTICS_TIME_ZONE}') - INTERVAL '11 months'
+        ) AT TIME ZONE '${ANALYTICS_TIME_ZONE}'
       )
       SELECT
-        months.bucket,
+        months.bucket AT TIME ZONE '${ANALYTICS_TIME_ZONE}' AS bucket,
         COUNT(events.id) FILTER (WHERE events.interaction_type = 'view')::int AS views,
         COUNT(events.id) FILTER (WHERE events.interaction_type = 'download')::int AS downloads
       FROM months
-      LEFT JOIN events ON date_trunc('month', events.occurred_at) = months.bucket
+      LEFT JOIN events
+        ON date_trunc('month', events.occurred_at AT TIME ZONE '${ANALYTICS_TIME_ZONE}') = months.bucket
       GROUP BY months.bucket
       ORDER BY months.bucket
     `, scope.params),

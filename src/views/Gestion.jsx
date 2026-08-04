@@ -451,7 +451,7 @@ export function UploadFlow({ nav, showToast, onUploaded }) {
               </div>
             </div>
             <div className="form-grid">
-              <div className="form-row"><label>Versión inicial</label><input className="input" value={f.version} onChange={e => set('version', e.target.value)} /></div>
+              <div className="form-row"><label>Versión inicial</label><input className="input" maxLength={20} value={f.version} onChange={e => set('version', e.target.value)} /></div>
               <div className="form-row"><label>Estado inicial</label><SelectField value={f.initialState} onChange={value => set('initialState', value)} options={[{ value: 'borrador', label: 'Borrador' }, { value: 'revision', label: 'Enviar a revisión' }]} /></div>
             </div>
             <div className="form-row"><label>Descripción de la versión</label><textarea className="input" value={f.versionNote} onChange={e => set('versionNote', e.target.value)} placeholder="Ej. Versión inicial del documento."></textarea></div>

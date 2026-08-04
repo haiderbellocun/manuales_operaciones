@@ -973,7 +973,7 @@ export function DocDetail({ nav, docId, docs, toggleFav, requestUpdate, showToas
               <div className="form-grid">
                 <div className="form-row">
                   <label>Versión *</label>
-                  <input className="input" value={versionForm.version} onChange={e => setVersionForm(f => ({ ...f, version: e.target.value }))} />
+                  <input className="input" maxLength={20} value={versionForm.version} onChange={e => setVersionForm(f => ({ ...f, version: e.target.value }))} />
                 </div>
                 <div className="form-row">
                   <label>Vigencia hasta</label>
