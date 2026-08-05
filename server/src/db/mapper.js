@@ -35,6 +35,7 @@ export function mapDocument(
     app: row.app_ref || undefined,
     created: fmtDate(row.created),
     updated: fmtDate(row.updated),
+    publishedAt: row.published_at || null,
     infographic: infographic ? {
       available: true,
       originalName: infographic.original_name,

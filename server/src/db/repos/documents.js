@@ -946,6 +946,7 @@ export async function createDocumentVersion(
       SET version = $2,
           state = 'borrador',
           updated = $3,
+          published_at = NULL,
           vigencia = COALESCE(NULLIF($4, ''), vigencia),
           description = COALESCE(NULLIF($5, ''), description)
       WHERE id = $1

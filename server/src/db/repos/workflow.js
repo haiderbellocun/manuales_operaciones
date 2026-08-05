@@ -219,7 +219,7 @@ export async function transitionWorkflow(workflowId, action, authUser, comments 
       }
       await client.query(`
         UPDATE documents
-        SET state = 'borrador', updated = $2
+        SET state = 'borrador', updated = $2, published_at = NULL
         WHERE id = $1
       `, [workflow.doc_id, now]);
       await client.query(`
@@ -347,7 +347,7 @@ export async function transitionWorkflow(workflowId, action, authUser, comments 
     } else if (normalizedAction === 'publish' && workflow.stage === 'aprobacion') {
       await client.query(`
         UPDATE documents
-        SET state = 'publicado', updated = $2
+        SET state = 'publicado', updated = $2, published_at = NOW()
         WHERE id = $1
       `, [workflow.doc_id, now]);
       await client.query(`

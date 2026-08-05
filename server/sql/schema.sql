@@ -77,7 +77,8 @@ CREATE TABLE IF NOT EXISTS documents (
   cargo_ref       VARCHAR(10),
   app_ref         VARCHAR(10),
   created         DATE,
-  updated         DATE
+  updated         DATE,
+  published_at    TIMESTAMPTZ
 );
 
 CREATE INDEX IF NOT EXISTS idx_documents_area ON documents(area_id);

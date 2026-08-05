@@ -9,11 +9,28 @@ function informativeValue(value, fallback = 'Contenido pendiente') {
 }
 
 function publicationDate(doc) {
+  if (doc.publishedAt) return doc.publishedAt;
   const event = (doc.activity || []).find(item => (
     item.details?.status === 'published'
     || item.details?.action === 'publish'
   ));
   return event?.createdAt || null;
+}
+
+/** Categoría provisional: tipo documental hasta existir catálogo institucional. */
+function resolveCategory(doc, infographic, type) {
+  return informativeValue(infographic.category || doc.category || type?.name);
+}
+
+/**
+ * Proceso provisional hasta catálogo institucional:
+ * coordinación del área si aplica; si no, el área responsable.
+ */
+function resolveProcess(doc, infographic, area, coordination) {
+  return informativeValue(
+    infographic.process || doc.process || coordination?.name || area?.name,
+    'Pendiente de catálogo institucional',
+  );
 }
 
 function InfoFact({ icon, label, value, pending = false, mono = false }) {
@@ -142,8 +159,8 @@ export function DocumentInfographic({
   onReplace,
 }) {
   const infographic = doc.infographic || {};
-  const category = informativeValue(infographic.category || doc.category);
-  const process = informativeValue(infographic.process || doc.process);
+  const category = resolveCategory(doc, infographic, type);
+  const process = resolveProcess(doc, infographic, area, coordination);
   const objective = informativeValue(infographic.objective || doc.objective, 'Objetivo pendiente de contenido');
   const description = informativeValue(infographic.description || doc.desc, 'Descripción pendiente de contenido');
   const publishedAt = infographic.publicationDate || publicationDate(doc);

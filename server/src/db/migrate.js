@@ -175,6 +175,40 @@ export async function migrate() {
   await addColumn('documents', 'downloads', 'INTEGER NOT NULL DEFAULT 0');
   await addColumn('documents', 'last_viewed_at', 'TIMESTAMPTZ');
   await addColumn('documents', 'last_downloaded_at', 'TIMESTAMPTZ');
+  await addColumn('documents', 'published_at', 'TIMESTAMPTZ');
+
+  await query(`
+    UPDATE documents d
+    SET published_at = COALESCE(
+      (
+        SELECT wi.completed_at
+        FROM workflow_items wi
+        WHERE wi.doc_id = d.id
+          AND wi.decision = 'published'
+          AND wi.completed_at IS NOT NULL
+        ORDER BY wi.completed_at DESC
+        LIMIT 1
+      ),
+      (
+        SELECT al.created_at
+        FROM activity_log al
+        WHERE al.doc_id = d.id
+          AND (
+            al.details->>'status' = 'published'
+            OR al.details->>'action' = 'publish'
+          )
+        ORDER BY al.created_at DESC
+        LIMIT 1
+      ),
+      CASE
+        WHEN d.state IN ('publicado', 'vencido', 'archivado')
+          THEN COALESCE(d.updated::timestamptz, d.created::timestamptz)
+        ELSE NULL
+      END
+    )
+    WHERE d.published_at IS NULL
+      AND d.state IN ('publicado', 'vencido', 'archivado')
+  `);
 
   await addColumn('areas', 'requires_coordination', 'BOOLEAN NOT NULL DEFAULT false');
 
