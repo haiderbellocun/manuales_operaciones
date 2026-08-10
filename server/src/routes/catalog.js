@@ -5,13 +5,14 @@ import {
 } from '../db/repos/catalog.js';
 import { createUser, listAssignableUsers, listUsers, updateUser } from '../db/repos/users.js';
 import { getDocumentAnalytics } from '../db/repos/analytics.js';
+import { hasGlobalReadScope } from '../config/accessRoles.js';
 
 const router = Router();
 const OPERATION_ACADEMIC_AREA_ID = 1;
 
 function scopedByArea(auth, items, areaOf) {
   const role = Number(auth.role);
-  if (auth.perms?.administrar === true || [5, 6, 7].includes(role)) return items;
+  if (hasGlobalReadScope(auth) || [5, 6].includes(role)) return items;
   if (!auth.area) return [];
   return items.filter((item) => {
     const rawItemArea = areaOf(item);
@@ -41,7 +42,7 @@ router.get('/coordinations', authRequired, requirePermission('consultar'), async
   try {
     const areaId = req.query.areaId || req.query.area;
     const items = await listCoordinations(areaId || null);
-    if (req.auth.perms?.administrar === true || !req.auth.area) {
+    if (hasGlobalReadScope(req.auth) || !req.auth.area) {
       return res.json(items);
     }
     if (Number(req.auth.area) === OPERATION_ACADEMIC_AREA_ID) {

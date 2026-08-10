@@ -1,5 +1,6 @@
 import { pool, query } from '../pool.js';
 import { addDocumentScope } from './catalog.js';
+import { canIdentifyAnalyticsUsers } from '../../config/accessRoles.js';
 
 const INTERACTION_TYPES = new Set(['view', 'download']);
 const ANALYTICS_TIME_ZONE = 'America/Bogota';
@@ -442,8 +443,7 @@ export async function getDocumentAnalytics(auth, filters = {}) {
   ]);
 
   const summaryRow = summaryResult.rows[0] || {};
-  const role = Number(auth.role ?? auth.role_id);
-  const canIdentifyUsers = auth.perms?.administrar === true || [2, 8].includes(role);
+  const canIdentifyUsers = canIdentifyAnalyticsUsers(auth);
   const isAllHistory = period.key === 'all';
 
   return {

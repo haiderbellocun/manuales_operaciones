@@ -10,6 +10,7 @@ import {
   REVIEWER_ROLE_IDS,
   WORKFLOW_ASSIGNABLE_ROLE_IDS,
 } from '../../config/workflowRoles.js';
+import { GLOBAL_ANALYTICS_ROLE_ID } from '../../config/accessRoles.js';
 
 const DEFAULT_GOOGLE_ROLE_ID = Number(process.env.GOOGLE_DEFAULT_ROLE_ID || 7);
 const OPERATION_ACADEMIC_AREA_ID = 1;
@@ -164,6 +165,10 @@ export async function createUser(payload) {
   const data = normalizeUserPayload(payload);
   validateUserPayload(data, { creating: true });
   await assertRoleExists(data.roleId);
+  if (data.roleId === GLOBAL_ANALYTICS_ROLE_ID) {
+    data.areaId = null;
+    data.coordinationId = null;
+  }
   await assertAreaAssignment(data.areaId, data.coordinationId ?? null, data.roleId);
 
   try {
@@ -243,8 +248,12 @@ export async function updateUser(id, payload) {
   if ('roleId' in data) await assertRoleExists(data.roleId);
 
   const nextRoleId = data.roleId ?? current.role_id;
-  const nextAreaId = ('areaId' in data) ? data.areaId : current.area_id;
+  let nextAreaId = ('areaId' in data) ? data.areaId : current.area_id;
   let nextCoordinationId = ('coordinationId' in data) ? data.coordinationId : current.coordination_id;
+  if (nextRoleId === GLOBAL_ANALYTICS_ROLE_ID) {
+    nextAreaId = null;
+    nextCoordinationId = null;
+  }
   if (nextAreaId) {
     const area = await getAreaById(nextAreaId);
     if (!areaRequiresCoordination(area)) nextCoordinationId = null;

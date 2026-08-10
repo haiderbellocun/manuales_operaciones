@@ -6,6 +6,7 @@ import {
   APPROVER_ROLE_IDS,
   REVIEWER_ROLE_IDS,
 } from '../../config/workflowRoles.js';
+import { hasGlobalReadScope } from '../../config/accessRoles.js';
 
 const OPERATION_ACADEMIC_FULL_ROLE_ID = 8;
 const OPERATION_ACADEMIC_AREA_ID = 1;
@@ -62,7 +63,7 @@ function addDocumentScope(conditions, params, auth, alias = 'documents') {
   const coordinationId = (auth.coordination ?? auth.coordination_id) ? Number(auth.coordination ?? auth.coordination_id) : null;
   const col = (name) => `${alias}.${name}`;
 
-  if (auth.perms?.administrar === true || role === 7) return;
+  if (hasGlobalReadScope(auth)) return;
 
   if (role === 2 || role === 3 || role === OPERATION_ACADEMIC_FULL_ROLE_ID) {
     if (!areaId) {

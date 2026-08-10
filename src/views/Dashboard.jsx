@@ -137,6 +137,15 @@ const ROLE_REFERENCE = [
     permissions: ['crear', 'editar', 'aprobar', 'publicar', 'archivar', 'consultar', 'descargar'],
     stages: ['buscar', 'crear', 'revisar', 'aprobar', 'publicar', 'actualizar'],
   },
+  {
+    id: 9,
+    name: 'Analista institucional de métricas',
+    icon: 'report',
+    summary: 'Consulta el comportamiento documental de toda la institución sin modificar la información.',
+    scope: 'Todos los documentos, áreas, subcoordinaciones, métricas e identidades analíticas en modo de solo lectura.',
+    permissions: ['consultar'],
+    stages: ['buscar'],
+  },
 ];
 
 const PROCESS_ROUTES = [

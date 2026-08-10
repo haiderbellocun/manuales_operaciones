@@ -1,4 +1,8 @@
 import { query } from '../pool.js';
+import {
+  GLOBAL_ANALYTICS_ROLE_ID,
+  hasGlobalReadScope,
+} from '../../config/accessRoles.js';
 
 const OPERATION_ACADEMIC_FULL_ROLE_ID = 8;
 const OPERATION_ACADEMIC_AREA_ID = 1;
@@ -89,6 +93,10 @@ export async function updateRole(id, payload = {}) {
     nextPerms.administrar = true;
     nextPerms.consultar = true;
   }
+  if (roleId === GLOBAL_ANALYTICS_ROLE_ID) {
+    for (const key of PERMISSION_KEYS) nextPerms[key] = false;
+    nextPerms.consultar = true;
+  }
 
   const { rows } = await query(`
     UPDATE roles
@@ -143,7 +151,7 @@ export function addDocumentScope(conditions, params, auth, alias = 'd') {
   const userId = Number(auth.id);
   const col = (name) => `${alias}.${name}`;
 
-  if (auth.perms?.administrar === true || role === 7) return;
+  if (hasGlobalReadScope(auth)) return;
   if (role === 2 || role === 3 || role === OPERATION_ACADEMIC_FULL_ROLE_ID) {
     if (!areaId) {
       conditions.push('FALSE');

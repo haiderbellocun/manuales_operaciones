@@ -221,6 +221,12 @@ La asociación de una infografía gráfica por documento corresponde a:
 server/sql/migrations/20260804_002_document_infographics.sql
 ```
 
+El rol institucional de consulta global de métricas corresponde a:
+
+```text
+server/sql/migrations/20260810_004_global_analytics_role.sql
+```
+
 La migración se ejecuta desde:
 
 ```bash

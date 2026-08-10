@@ -28,6 +28,7 @@ import {
 const AREA_LEADER_ROLE_ID = 2;
 const REVIEWER_ROLE_ID = 4;
 const APPROVER_ROLE_ID = 5;
+const GLOBAL_ANALYTICS_ROLE_ID = 9;
 const REVIEWER_ROLE_IDS = [
   REVIEWER_ROLE_ID,
   AREA_LEADER_ROLE_ID,
@@ -908,6 +909,17 @@ export function UsersView({ nav, showToast }) {
         },
       };
     }
+    if (key === 'role' && Number(value) === GLOBAL_ANALYTICS_ROLE_ID) {
+      return {
+        ...prev,
+        form: {
+          ...prev.form,
+          role: value,
+          area: '',
+          coordination: '',
+        },
+      };
+    }
     return { ...prev, form: { ...prev.form, [key]: value } };
   });
 
@@ -1199,7 +1211,10 @@ export function UsersView({ nav, showToast }) {
                   onAreaChange={value => setForm('area', value)}
                   onCoordinationChange={value => setForm('coordination', value)}
                   areaLabel={WORKFLOW_AREA_REQUIRED_ROLE_IDS.includes(Number(modal.form.role)) ? 'Área *' : 'Área'}
-                  areaDisabled={Number(modal.form.role) === OPERATION_ACADEMIC_FULL_ROLE_ID}
+                  areaDisabled={[
+                    OPERATION_ACADEMIC_FULL_ROLE_ID,
+                    GLOBAL_ANALYTICS_ROLE_ID,
+                  ].includes(Number(modal.form.role))}
                   allowEmptyArea={!WORKFLOW_AREA_REQUIRED_ROLE_IDS.includes(Number(modal.form.role))}
                   areaPlaceholder={WORKFLOW_AREA_REQUIRED_ROLE_IDS.includes(Number(modal.form.role)) ? 'Seleccionar área...' : 'Sin área'}
                   allowEmptyCoordination={Number(modal.form.role) === OPERATION_ACADEMIC_FULL_ROLE_ID && Number(modal.form.area) === OPERATION_ACADEMIC_AREA_ID}
@@ -1235,10 +1250,21 @@ export function UsersView({ nav, showToast }) {
                 <label>Descripción</label>
                 <textarea className="input" value={roleModal.form.desc} onChange={e => setRoleForm('desc', e.target.value)} />
               </div>
+              {Number(roleModal.role.id) === GLOBAL_ANALYTICS_ROLE_ID && (
+                <div className="form-note"><Icon name="shield" size={15} />Este rol conserva exclusivamente el permiso de consulta y su alcance institucional.</div>
+              )}
               <div className="permissions-grid">
                 {permKeys.map(k => (
                   <label key={k} className="permission-toggle">
-                    <input type="checkbox" checked={!!roleModal.form.perms[k]} onChange={() => togglePerm(k)} disabled={Number(roleModal.role.id) === 1 && ['administrar', 'consultar'].includes(k)} />
+                    <input
+                      type="checkbox"
+                      checked={!!roleModal.form.perms[k]}
+                      onChange={() => togglePerm(k)}
+                      disabled={
+                        Number(roleModal.role.id) === GLOBAL_ANALYTICS_ROLE_ID
+                        || (Number(roleModal.role.id) === 1 && ['administrar', 'consultar'].includes(k))
+                      }
+                    />
                     <span><strong>{permLabels[k]}</strong><small>{k}</small></span>
                   </label>
                 ))}

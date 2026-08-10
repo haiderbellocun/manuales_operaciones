@@ -271,7 +271,8 @@ INSERT INTO roles (id, name, description, perms) VALUES
   (5, 'Aprobador', 'Toma la decision final y publica los documentos aprobados que tiene asignados.', '{"crear":false,"editar":false,"aprobar":true,"publicar":true,"archivar":false,"consultar":true,"descargar":true,"administrar":false}'::jsonb),
   (6, 'Usuario consultor', 'Consulta y descarga documentos publicados.', '{"crear":false,"editar":false,"aprobar":false,"publicar":false,"archivar":false,"consultar":true,"descargar":true,"administrar":false}'::jsonb),
   (7, 'Auditor / lector institucional', 'Lectura y trazabilidad sin descarga.', '{"crear":false,"editar":false,"aprobar":false,"publicar":false,"archivar":false,"consultar":true,"descargar":false,"administrar":false}'::jsonb),
-  (8, 'Coordinador Operacion Academica', 'Gestiona documentos de Operacion Academica y sus subcoordinaciones, y puede revisar, aprobar y publicar aquellos que tenga asignados.', '{"crear":true,"editar":true,"aprobar":true,"publicar":true,"archivar":true,"consultar":true,"descargar":true,"administrar":false}'::jsonb)
+  (8, 'Coordinador Operacion Academica', 'Gestiona documentos de Operacion Academica y sus subcoordinaciones, y puede revisar, aprobar y publicar aquellos que tenga asignados.', '{"crear":true,"editar":true,"aprobar":true,"publicar":true,"archivar":true,"consultar":true,"descargar":true,"administrar":false}'::jsonb),
+  (9, 'Analista institucional de métricas', 'Consulta documentos, métricas, áreas y coordinaciones de toda la institución en modo de solo lectura.', '{"crear":false,"editar":false,"aprobar":false,"publicar":false,"archivar":false,"consultar":true,"descargar":false,"administrar":false}'::jsonb)
 ON CONFLICT (id) DO UPDATE SET
   name = EXCLUDED.name,
   description = EXCLUDED.description,

@@ -102,6 +102,7 @@ test.describe.serial('Acervo Operaciones - suite integral', () => {
   let approverApi;
   let consultantApi;
   let auditorApi;
+  let analyticsReaderApi;
   let adminToken;
   let auditorToken;
   let documentId;
@@ -284,6 +285,7 @@ test.describe.serial('Acervo Operaciones - suite integral', () => {
       await approverApi?.dispose();
       await consultantApi?.dispose();
       await auditorApi?.dispose();
+      await analyticsReaderApi?.dispose();
       await api?.dispose();
       await pool.end();
     }
@@ -1578,6 +1580,163 @@ test.describe.serial('Acervo Operaciones - suite integral', () => {
       WHERE source LIKE 'e2e_actor_%'
     `);
     expect(actorRows[0].users).toBe(6);
+  });
+
+  test('el analista institucional consulta todas las metricas y coordinaciones sin administrar', async ({ browser }) => {
+    const rolesResponse = await api.get('/api/roles');
+    await expectStatus(rolesResponse, 200);
+    const analyticsRole = (await rolesResponse.json()).find(role => Number(role.id) === 9);
+    expect(analyticsRole).toEqual(expect.objectContaining({
+      name: 'Analista institucional de métricas',
+      perms: {
+        crear: false,
+        editar: false,
+        aprobar: false,
+        publicar: false,
+        archivar: false,
+        consultar: true,
+        descargar: false,
+        administrar: false,
+      },
+    }));
+
+    const protectedRoleResponse = await api.put('/api/roles/9', {
+      data: {
+        name: analyticsRole.name,
+        desc: analyticsRole.desc,
+        perms: {
+          crear: true,
+          editar: true,
+          aprobar: true,
+          publicar: true,
+          archivar: true,
+          consultar: false,
+          descargar: true,
+          administrar: true,
+        },
+      },
+    });
+    await expectStatus(protectedRoleResponse, 200);
+    expect((await protectedRoleResponse.json()).perms).toEqual({
+      crear: false,
+      editar: false,
+      aprobar: false,
+      publicar: false,
+      archivar: false,
+      consultar: true,
+      descargar: false,
+      administrar: false,
+    });
+
+    const suffix = Date.now();
+    const userName = `Analista metricas ${runId}`;
+    const createResponse = await api.post('/api/users', {
+      data: {
+        name: userName,
+        email: `analista.metricas.e2e.${suffix}@cun.edu.co`,
+        role: 9,
+        area: areaId,
+        coordination: coordinationId || '',
+        status: 'Activo',
+      },
+    });
+    await expectStatus(createResponse, 201);
+    const analyticsReader = await createResponse.json();
+    createdUserIds.push(analyticsReader.id);
+    expect(analyticsReader).toEqual(expect.objectContaining({
+      role: 9,
+      area: null,
+      roleName: 'Analista institucional de métricas',
+    }));
+    expect(analyticsReader.coordination).toBeUndefined();
+    analyticsReaderApi = await makeApiFor({
+      id: analyticsReader.id,
+      email: analyticsReader.email,
+      role_id: analyticsReader.role,
+    });
+
+    const [adminAreasResponse, readerAreasResponse, adminCoordinationsResponse, readerCoordinationsResponse] = await Promise.all([
+      api.get('/api/areas'),
+      analyticsReaderApi.get('/api/areas'),
+      api.get('/api/coordinations'),
+      analyticsReaderApi.get('/api/coordinations'),
+    ]);
+    for (const response of [adminAreasResponse, readerAreasResponse, adminCoordinationsResponse, readerCoordinationsResponse]) {
+      await expectStatus(response, 200);
+    }
+    const adminAreas = await adminAreasResponse.json();
+    const readerAreas = await readerAreasResponse.json();
+    const adminCoordinations = await adminCoordinationsResponse.json();
+    const readerCoordinations = await readerCoordinationsResponse.json();
+    expect(readerAreas.map(area => area.id)).toEqual(adminAreas.map(area => area.id));
+    expect(readerCoordinations.map(coordination => coordination.id))
+      .toEqual(adminCoordinations.map(coordination => coordination.id));
+
+    const [adminDocumentsResponse, readerDocumentsResponse] = await Promise.all([
+      api.get('/api/documents?limit=100'),
+      analyticsReaderApi.get('/api/documents?limit=100'),
+    ]);
+    await expectStatus(adminDocumentsResponse, 200);
+    await expectStatus(readerDocumentsResponse, 200);
+    const adminDocuments = await adminDocumentsResponse.json();
+    const readerDocuments = await readerDocumentsResponse.json();
+    expect(readerDocuments.total).toBe(adminDocuments.total);
+    expect(readerDocuments.data.map(document => document.id).sort((a, b) => a - b))
+      .toEqual(adminDocuments.data.map(document => document.id).sort((a, b) => a - b));
+    expect(readerDocuments.data.some(document => document.state !== 'publicado')).toBe(true);
+
+    for (let index = 1; index <= 3; index += 1) {
+      const readerInteraction = await analyticsReaderApi.post(`/api/documents/${documentId}/view`, {
+        data: { source: `e2e_global_analytics_role_${index}` },
+      });
+      await expectStatus(readerInteraction, 200);
+    }
+    const [adminAnalyticsResponse, readerAnalyticsResponse] = await Promise.all([
+      api.get('/api/reports/analytics?period=all'),
+      analyticsReaderApi.get('/api/reports/analytics?period=all'),
+    ]);
+    await expectStatus(adminAnalyticsResponse, 200);
+    await expectStatus(readerAnalyticsResponse, 200);
+    const adminAnalytics = await adminAnalyticsResponse.json();
+    const readerAnalytics = await readerAnalyticsResponse.json();
+    expect(readerAnalytics.canIdentifyUsers).toBe(true);
+    expect(readerAnalytics.totals).toEqual(adminAnalytics.totals);
+    expect(readerAnalytics.usageByArea).toEqual(adminAnalytics.usageByArea);
+    expect(readerAnalytics.ranking).toEqual(adminAnalytics.ranking);
+    expect(readerAnalytics.topUsers.some(user => user.name === userName)).toBe(true);
+    expect(readerAnalytics.recent.some(item => item.userName === userName)).toBe(true);
+
+    expect((await analyticsReaderApi.get(`/api/documents/${documentId}/file?mode=preview`)).status()).toBe(200);
+    expect((await analyticsReaderApi.get(`/api/documents/${documentId}/file`)).status()).toBe(403);
+    expect((await analyticsReaderApi.get('/api/users')).status()).toBe(403);
+    expect((await analyticsReaderApi.get('/api/roles')).status()).toBe(403);
+    expect((await analyticsReaderApi.post('/api/documents', { data: {} })).status()).toBe(403);
+
+    const analyticsReaderToken = signToken({
+      id: analyticsReader.id,
+      email: analyticsReader.email,
+      role: analyticsReader.role,
+    });
+    const context = await browser.newContext({ viewport: { width: 1366, height: 820 } });
+    await context.addCookies([{
+      name: SESSION_COOKIE_NAME,
+      value: analyticsReaderToken,
+      domain: '127.0.0.1',
+      path: '/',
+      httpOnly: true,
+      secure: false,
+      sameSite: 'Strict',
+    }]);
+    const page = await context.newPage();
+    const pageErrors = [];
+    page.on('pageerror', error => pageErrors.push(error.message));
+    await page.goto('/reportes');
+    await expect(page.getByRole('heading', { name: 'Analítica documental' })).toBeVisible();
+    await expect(page.getByText('La identificación de usuarios está restringida para tu rol.')).toHaveCount(0);
+    await expect(page.locator('.analytics-users-list')).toContainText(userName);
+    await expect(page.getByText('Usuarios y roles', { exact: true })).toHaveCount(0);
+    expect(pageErrors).toEqual([]);
+    await context.close();
   });
 
   test('navegación principal funciona en Chrome', async ({ browser }) => {
