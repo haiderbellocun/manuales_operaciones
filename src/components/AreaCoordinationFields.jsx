@@ -1,5 +1,6 @@
 import { SelectField } from '../components';
 import { areaRequiresCoordination, coordinationsForArea } from '../utils/areas';
+import { AREA_VISUALS } from '../utils/areaVisuals';
 
 export function AreaCoordinationFields({
   areas = [],
@@ -33,7 +34,13 @@ export function AreaCoordinationFields({
           placeholder={areaPlaceholder}
           options={[
             ...(allowEmptyArea ? [{ value: '', label: 'Sin área' }] : []),
-            ...areas.map(a => ({ value: a.id, label: a.name })),
+            ...areas.map(a => ({
+              value: a.id,
+              label: a.name,
+              description: a.abbreviation,
+              color: AREA_VISUALS[Number(a.id)]?.color || a.color,
+              image: AREA_VISUALS[Number(a.id)]?.mascot,
+            })),
           ]}
         />
       </div>

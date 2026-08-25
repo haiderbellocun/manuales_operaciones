@@ -86,19 +86,19 @@ async function refreshAreaCatalog() {
   await query(`
     UPDATE documents
     SET area_id = 1, coordination_id = NULL
-    WHERE area_id IS NULL OR area_id NOT IN (SELECT id FROM areas WHERE id BETWEEN 1 AND 8)
+    WHERE area_id IS NULL OR area_id NOT IN (SELECT id FROM areas WHERE id BETWEEN 1 AND 9)
   `);
   await query(`
     UPDATE users
     SET area_id = NULL, coordination_id = NULL
-    WHERE area_id IS NOT NULL AND area_id NOT IN (SELECT id FROM areas WHERE id BETWEEN 1 AND 8)
+    WHERE area_id IS NOT NULL AND area_id NOT IN (SELECT id FROM areas WHERE id BETWEEN 1 AND 9)
   `);
   await query(`
     UPDATE people
     SET area_id = NULL, coordination_id = NULL
-    WHERE area_id IS NOT NULL AND area_id NOT IN (SELECT id FROM areas WHERE id BETWEEN 1 AND 8)
+    WHERE area_id IS NOT NULL AND area_id NOT IN (SELECT id FROM areas WHERE id BETWEEN 1 AND 9)
   `);
-  await query('DELETE FROM areas WHERE id > 8');
+  await query('DELETE FROM areas WHERE id > 9');
 
   await query(`
     INSERT INTO areas (id, name, abbreviation, color, lead_name, requires_coordination) VALUES
@@ -109,7 +109,8 @@ async function refreshAreaCatalog() {
       (5, 'Coordinacion de Servicio', 'CSE', '#c51a78', NULL, false),
       (6, 'Coordinacion Pruebas Saber', 'CPS', '#70b52b', NULL, false),
       (7, 'Coordinacion de Proyeccion Social', 'CPSO', '#08743e', NULL, false),
-      (8, 'Coordinacion de Desarrollo Profesional', 'CDP', '#9f559b', NULL, false)
+      (8, 'Coordinacion de Desarrollo Profesional', 'CDP', '#9f559b', NULL, false),
+      (9, 'Coordinacion General', 'CG', '#f5a000', NULL, false)
     ON CONFLICT (id) DO UPDATE SET
       name = EXCLUDED.name,
       abbreviation = EXCLUDED.abbreviation,
@@ -176,6 +177,7 @@ export async function migrate() {
   await addColumn('documents', 'last_viewed_at', 'TIMESTAMPTZ');
   await addColumn('documents', 'last_downloaded_at', 'TIMESTAMPTZ');
   await addColumn('documents', 'published_at', 'TIMESTAMPTZ');
+  await addColumn('documents', 'visible_to_all', 'BOOLEAN NOT NULL DEFAULT false');
 
   await query(`
     UPDATE documents d

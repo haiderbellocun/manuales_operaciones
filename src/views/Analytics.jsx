@@ -37,14 +37,16 @@ function formatBucket(value, bucket) {
 function AnalyticsKpi({ icon, label, value, detail, meta, tone = 'green' }) {
   const displayValue = typeof value === 'string' ? value : formatNumber(value);
   return (
-    <article className={`analytics-kpi analytics-kpi-${tone}`}>
-      <div className="analytics-kpi-head">
-        <span className="analytics-kpi-icon"><Icon name={icon} size={19} /></span>
-        <span className="analytics-kpi-label">{label}</span>
+    <article className={`bento-card bento-card-stat bento-stat-${tone}`}>
+      <div className="bento-stat-head">
+        <span className="bento-stat-label">{label}</span>
+        <span className="bento-stat-icon"><Icon name={icon} size={18} /></span>
       </div>
-      <strong className="analytics-kpi-value">{displayValue}</strong>
-      <span className="analytics-kpi-detail">{detail}</span>
-      {meta && <span className="analytics-kpi-meta">{meta}</span>}
+      <div>
+        <div className="bento-stat-num">{displayValue}</div>
+        <div className="bento-stat-detail">{detail}</div>
+      </div>
+      {meta && <div className="bento-stat-detail" style={{ opacity: 0.75 }}>{meta}</div>}
     </article>
   );
 }
@@ -465,13 +467,28 @@ export function ReportsView({ nav, showToast }) {
         <div className="card analytics-loading"><span className="spinner" /><strong>Consolidando interacciones documentales…</strong><small>Consultas, descargas y tendencias del período.</small></div>
       ) : analytics && (
         <>
-          <div className="analytics-kpi-grid">
-            <AnalyticsKpi icon="eye" label="Consultas históricas" value={totals.views} detail={`${formatNumber(totals.periodViews)} en ${periodLabel.toLowerCase()}`} meta={`Última: ${fmtDateTime(totals.lastViewedAt)}`} />
+          <div className="bento-grid bento-grid-3" style={{ marginBottom: 'var(--bento-gap)' }}>
+            <div className="bento-card bento-card-hero bento-span-3">
+              <span className="bento-hero-eyebrow"><Icon name="sparkles" size={13} />Resumen de Rendimiento Documental</span>
+              <h2 className="bento-hero-title">
+                {formatNumber((totals.views || 0) + (totals.downloads || 0))} interacciones registradas
+              </h2>
+              <p className="bento-hero-subtitle">
+                Cobertura del {coverage}% del acervo consultado durante {periodLabel.toLowerCase()}. Monitorea la actividad y el impacto de los manuales y procedimientos.
+              </p>
+              <div className="bento-hero-meta">
+                <span className="bento-pill bento-pill-green"><Icon name="eye" size={12} />{formatNumber(totals.views)} consultas</span>
+                <span className="bento-pill bento-pill-blue"><Icon name="download" size={12} />{formatNumber(totals.downloads)} descargas</span>
+                <span className="bento-pill"><Icon name="doc" size={12} />{formatNumber(totals.publishedDocuments)} documentos vigentes</span>
+                <span className="bento-pill"><Icon name="users" size={12} />{formatNumber(totals.activeUsers)} usuarios activos</span>
+              </div>
+            </div>
+            <AnalyticsKpi icon="eye" label="Consultas históricas" value={totals.views} detail={`${formatNumber(totals.periodViews)} en ${periodLabel.toLowerCase()}`} meta={`Última: ${fmtDateTime(totals.lastViewedAt)}`} tone="green" />
             <AnalyticsKpi icon="download" label="Descargas históricas" value={totals.downloads} detail={`${formatNumber(totals.periodDownloads)} en ${periodLabel.toLowerCase()}`} meta={`Última: ${fmtDateTime(totals.lastDownloadedAt)}`} tone="blue" />
             <AnalyticsKpi icon="users" label="Usuarios activos" value={totals.activeUsers} detail={`${formatNumber(totals.viewedDocuments)} documentos consultados`} meta="Usuarios únicos en el período" tone="purple" />
-            <AnalyticsKpi icon="check" label="Documentos publicados" value={totals.publishedDocuments} detail={`${formatNumber(totals.documents)} documentos dentro del alcance`} meta="Versiones vigentes disponibles" />
-            <AnalyticsKpi icon="clock" label="Intervalo entre consultas" value={formatDuration(totals.averageSecondsBetweenViews)} detail={`${formatNumber(totals.averageIntervalSamples)} intervalos analizados`} meta="Promedio entre consultas del mismo documento" tone="blue" />
-            <AnalyticsKpi icon="doc" label="Cobertura documental" value={`${coverage}%`} detail={`${formatNumber(totals.withoutViews)} documentos sin consultas`} meta={`${formatNumber(totals.documents)} documentos analizados`} tone="amber" />
+            <AnalyticsKpi icon="check" label="Documentos publicados" value={totals.publishedDocuments} detail={`${formatNumber(totals.documents)} documentos dentro del alcance`} meta="Versiones vigentes disponibles" tone="cyan" />
+            <AnalyticsKpi icon="clock" label="Intervalo entre consultas" value={formatDuration(totals.averageSecondsBetweenViews)} detail={`${formatNumber(totals.averageIntervalSamples)} intervalos analizados`} meta="Promedio entre consultas" tone="amber" />
+            <AnalyticsKpi icon="doc" label="Cobertura documental" value={`${coverage}%`} detail={`${formatNumber(totals.withoutViews)} documentos sin consultas`} meta={`${formatNumber(totals.documents)} documentos analizados`} tone="coral" />
           </div>
 
           <section className="card analytics-trend-card">

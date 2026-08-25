@@ -6,10 +6,14 @@ import {
   APPROVER_ROLE_IDS,
   REVIEWER_ROLE_IDS,
 } from '../../config/workflowRoles.js';
-import { hasGlobalReadScope } from '../../config/accessRoles.js';
+import { addDocumentScope, parseVisibleToAll } from '../documentScope.js';
+import {
+  GENERAL_COORDINATION_AREA_ID,
+  OPERATION_ACADEMIC_AREA_ID,
+  isGeneralCoordinationArea,
+} from '../../config/areas.js';
 
 const OPERATION_ACADEMIC_FULL_ROLE_ID = 8;
-const OPERATION_ACADEMIC_AREA_ID = 1;
 
 async function getHistory(docId) {
   const { rows } = await query(
@@ -56,100 +60,16 @@ async function getFavSet(userId) {
   return new Set(rows.map(r => r.doc_id));
 }
 
-function addDocumentScope(conditions, params, auth, alias = 'documents') {
-  const role = Number(auth.role ?? auth.role_id);
-  const userId = Number(auth.id);
-  const areaId = (auth.area ?? auth.area_id) ? Number(auth.area ?? auth.area_id) : null;
-  const coordinationId = (auth.coordination ?? auth.coordination_id) ? Number(auth.coordination ?? auth.coordination_id) : null;
-  const col = (name) => `${alias}.${name}`;
-
-  if (hasGlobalReadScope(auth)) return;
-
-  if (role === 2 || role === 3 || role === OPERATION_ACADEMIC_FULL_ROLE_ID) {
-    if (!areaId) {
-      conditions.push('FALSE');
-      return;
-    }
-    params.push(areaId);
-    conditions.push(`${col('area_id')} = $${params.length}`);
-    if (coordinationId && areaId !== OPERATION_ACADEMIC_AREA_ID) {
-      params.push(coordinationId);
-      conditions.push(`${col('coordination_id')} = $${params.length}`);
-    }
-    return;
-  }
-
-  if (role === 4) {
-    params.push(userId);
-    const userParam = params.length;
-    if (areaId) {
-      params.push(areaId);
-      const areaParam = params.length;
-      conditions.push(`(
-        ${col('area_id')} = $${areaParam}
-        OR EXISTS (
-          SELECT 1 FROM workflow_items wi
-          WHERE wi.doc_id = ${col('id')}
-            AND (
-              wi.assignee_user_id = $${userParam}
-              OR wi.reviewed_by = $${userParam}
-              OR wi.completed_by = $${userParam}
-            )
-        )
-      )`);
-    } else {
-      conditions.push(`EXISTS (
-        SELECT 1 FROM workflow_items wi
-        WHERE wi.doc_id = ${col('id')}
-          AND (
-            wi.assignee_user_id = $${userParam}
-            OR wi.reviewed_by = $${userParam}
-            OR wi.completed_by = $${userParam}
-          )
-      )`);
-    }
-    return;
-  }
-
-  if (role === 5) {
-    params.push(userId);
-    const userParam = params.length;
-    if (areaId === OPERATION_ACADEMIC_AREA_ID) {
-      params.push(areaId);
-      const areaParam = params.length;
-      conditions.push(`(
-        ${col('area_id')} = $${areaParam}
-        OR EXISTS (
-          SELECT 1 FROM workflow_items wi
-          WHERE wi.doc_id = ${col('id')}
-            AND (
-              wi.assignee_user_id = $${userParam}
-              OR wi.completed_by = $${userParam}
-            )
-        )
-      )`);
-    } else {
-      conditions.push(`EXISTS (
-        SELECT 1 FROM workflow_items wi
-        WHERE wi.doc_id = ${col('id')}
-          AND (
-            wi.assignee_user_id = $${userParam}
-            OR wi.completed_by = $${userParam}
-          )
-      )`);
-    }
-    return;
-  }
-
-  params.push('publicado');
-  conditions.push(`${col('state')} = $${params.length}`);
-}
-
 function canCreateInArea(auth, areaId, coordinationId = null) {
   if (auth.perms?.administrar === true) return true;
   if (!auth.perms?.crear) return false;
   const role = Number(auth.role ?? auth.role_id);
   const authArea = auth.area ?? auth.area_id;
+  if (isGeneralCoordinationArea(areaId)) {
+    return Boolean(authArea)
+      && Number(authArea) !== GENERAL_COORDINATION_AREA_ID
+      && !coordinationId;
+  }
   if (!authArea || Number(authArea) !== Number(areaId)) return false;
   const authCoordination = auth.coordination ?? auth.coordination_id;
   if (Number(areaId) === OPERATION_ACADEMIC_AREA_ID) {
@@ -163,7 +83,19 @@ function canCreateInArea(auth, areaId, coordinationId = null) {
 }
 
 async function mapDocumentById(id, userId) {
-  const { rows } = await query('SELECT * FROM documents WHERE id = $1', [Number(id)]);
+  const { rows } = await query(`
+    SELECT d.*,
+           COALESCE(
+             (SELECT al.who_user_id
+              FROM activity_log al
+              WHERE al.doc_id = d.id AND al.event_type = 'document_created'
+              ORDER BY al.id
+              LIMIT 1),
+             (SELECT df.uploaded_by FROM document_files df WHERE df.doc_id = d.id)
+           ) AS creator_user_id
+    FROM documents d
+    WHERE d.id = $1
+  `, [Number(id)]);
   if (!rows[0]) return null;
   const history = await getHistory(rows[0].id);
   const versions = await getVersions(rows[0].id);
@@ -228,7 +160,16 @@ export async function listDocuments(auth, filters = {}) {
   const offset = (pageNum - 1) * limitNum;
   const dataParams = [...params, limitNum, offset];
   const { rows } = await query(
-    `SELECT * FROM documents ${where} ORDER BY created DESC, id
+    `SELECT documents.*,
+            COALESCE(
+              (SELECT al.who_user_id
+               FROM activity_log al
+               WHERE al.doc_id = documents.id AND al.event_type = 'document_created'
+               ORDER BY al.id
+               LIMIT 1),
+              (SELECT df.uploaded_by FROM document_files df WHERE df.doc_id = documents.id)
+            ) AS creator_user_id
+     FROM documents ${where} ORDER BY created DESC, id
      LIMIT $${dataParams.length - 1} OFFSET $${dataParams.length}`,
     dataParams,
   );
@@ -272,7 +213,19 @@ export async function getDocument(id, auth) {
   const conditions = ['documents.id = $1'];
   const params = [Number(id)];
   addDocumentScope(conditions, params, auth);
-  const { rows } = await query(`SELECT * FROM documents WHERE ${conditions.join(' AND ')}`, params);
+  const { rows } = await query(`
+    SELECT documents.*,
+           COALESCE(
+             (SELECT al.who_user_id
+              FROM activity_log al
+              WHERE al.doc_id = documents.id AND al.event_type = 'document_created'
+              ORDER BY al.id
+              LIMIT 1),
+             (SELECT df.uploaded_by FROM document_files df WHERE df.doc_id = documents.id)
+           ) AS creator_user_id
+    FROM documents
+    WHERE ${conditions.join(' AND ')}
+  `, params);
   if (!rows[0]) return null;
   const history = await getHistory(rows[0].id);
   const versions = await getVersions(rows[0].id);
@@ -303,8 +256,8 @@ export async function createDocument(payload, areaObj, typeObj, coordinationObj 
   const { rows } = await query(`
     INSERT INTO documents (
       area_id, coordination_id, type_id, document_number, name, version, state, owner_id,
-      vigencia, views, description, tags, related, created, updated
-    ) VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,0,$10,$11,$12,$13,$13)
+      vigencia, views, description, tags, related, created, updated, visible_to_all
+    ) VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,0,$10,$11,$12,$13,$13,$14)
     RETURNING id
   `, [
     Number(payload.area),
@@ -322,6 +275,8 @@ export async function createDocument(payload, areaObj, typeObj, coordinationObj 
       : (payload.tags || [])),
     JSON.stringify([]),
     now,
+    isGeneralCoordinationArea(payload.area)
+      || parseVisibleToAll(payload.visibleToAll ?? payload.visible_to_all),
   ]);
   const id = rows[0].id;
 
@@ -408,12 +363,14 @@ export async function createDocumentWithFile(
     const tags = typeof payload.tags === 'string'
       ? payload.tags.split(',').map(tag => tag.trim()).filter(Boolean)
       : (payload.tags || []);
+    const visibleToAll = isGeneralCoordinationArea(payload.area)
+      || parseVisibleToAll(payload.visibleToAll ?? payload.visible_to_all);
 
     const { rows: documentRows } = await client.query(`
       INSERT INTO documents (
         id, area_id, coordination_id, type_id, document_number, name, version, state, owner_id,
-        vigencia, views, description, tags, related, created, updated
-      ) VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,0,$11,$12,$13,$14,$14)
+        vigencia, views, description, tags, related, created, updated, visible_to_all
+      ) VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,0,$11,$12,$13,$14,$14,$15)
       RETURNING *
     `, [
       documentId,
@@ -430,6 +387,7 @@ export async function createDocumentWithFile(
       JSON.stringify(tags),
       JSON.stringify([]),
       now,
+      visibleToAll,
     ]);
     const document = documentRows[0];
 
@@ -528,7 +486,14 @@ export async function createDocumentWithFile(
     ]);
 
     await client.query('COMMIT');
-    return mapDocument(document, historyRows, false, [], [], infographicRows[0]);
+    return mapDocument(
+      { ...document, creator_user_id: Number(payload.userId) },
+      historyRows,
+      false,
+      [],
+      [],
+      infographicRows[0],
+    );
   } catch (err) {
     await client.query('ROLLBACK');
     throw err;
@@ -553,7 +518,7 @@ export async function updateDocument(doc, payload, auth) {
     err.statusCode = 409;
     throw err;
   }
-  assertCanEditInArea(auth, doc.area, doc.coordination);
+  await assertCanEditDocument(auth, doc);
   const name = String(payload.name ?? doc.name ?? '').trim();
   const ownerId = Number(payload.owner ?? doc.owner);
   if (!name) {
@@ -577,6 +542,10 @@ export async function updateDocument(doc, payload, auth) {
   const desc = String(payload.desc ?? payload.description ?? doc.desc ?? '').trim();
   const vigencia = String(payload.vigencia ?? doc.vigencia ?? '').trim();
   const tags = normalizeTags(payload.tags ?? doc.tags);
+  const visibleToAll = isGeneralCoordinationArea(doc.area) || parseVisibleToAll(
+    payload.visibleToAll ?? payload.visible_to_all,
+    doc.visibleToAll === true,
+  );
   const now = today();
 
   const { rows } = await query(`
@@ -586,7 +555,8 @@ export async function updateDocument(doc, payload, auth) {
         vigencia = NULLIF($4, ''),
         description = $5,
         tags = $6,
-        updated = $7
+        updated = $7,
+        visible_to_all = $8
     WHERE id = $1
     RETURNING id
   `, [
@@ -597,6 +567,7 @@ export async function updateDocument(doc, payload, auth) {
     desc,
     JSON.stringify(tags),
     now,
+    visibleToAll,
   ]);
 
   if (!rows[0]) {
@@ -813,13 +784,48 @@ export function assertCanEditInArea(auth, areaId, coordinationId = null) {
   }
 }
 
+export async function assertCanEditDocument(auth, doc) {
+  if (!isGeneralCoordinationArea(doc?.area)) {
+    assertCanEditInArea(auth, doc?.area, doc?.coordination);
+    return;
+  }
+  if (auth.perms?.administrar === true) return;
+  if (!auth.perms?.editar) {
+    const err = new Error('No tienes permisos para editar documentos.');
+    err.statusCode = 403;
+    throw err;
+  }
+
+  const { rows } = await query(`
+    SELECT 1
+    WHERE EXISTS (
+      SELECT 1
+      FROM activity_log al
+      WHERE al.doc_id = $1
+        AND al.who_user_id = $2
+        AND al.event_type = 'document_created'
+    ) OR EXISTS (
+      SELECT 1
+      FROM document_files df
+      WHERE df.doc_id = $1
+        AND df.uploaded_by = $2
+    )
+    LIMIT 1
+  `, [Number(doc.id), Number(auth.id)]);
+  if (!rows[0]) {
+    const err = new Error('Solo el usuario que cargo el documento general puede editarlo o crear una nueva version.');
+    err.statusCode = 403;
+    throw err;
+  }
+}
+
 async function findVersionWorkflowUser(client, roleIds, preferredUserId, areaId) {
   const { rows } = await client.query(`
     SELECT id, name
     FROM users
     WHERE role_id = ANY($1::int[])
       AND status = 'Activo'
-      AND area_id = $3
+      AND ($3::int IS NULL OR area_id = $3)
     ORDER BY
       CASE WHEN id = $2 THEN 0 ELSE 1 END,
       array_position($1::int[], role_id),
@@ -828,7 +834,7 @@ async function findVersionWorkflowUser(client, roleIds, preferredUserId, areaId)
   `, [
     roleIds,
     preferredUserId ? Number(preferredUserId) : null,
-    Number(areaId),
+    areaId ? Number(areaId) : null,
   ]);
   return rows[0] || null;
 }
@@ -977,17 +983,20 @@ export async function createDocumentVersion(
       LIMIT 1
     `, [doc.id]);
     const previousWorkflow = previousWorkflowRows[0] || {};
+    const workflowAreaId = isGeneralCoordinationArea(doc.area)
+      ? (auth.area ?? auth.area_id ?? null)
+      : doc.area;
     const reviewer = await findVersionWorkflowUser(
       client,
       REVIEWER_ROLE_IDS,
       previousWorkflow.reviewer_user_id,
-      doc.area,
+      workflowAreaId,
     );
     const approver = await findVersionWorkflowUser(
       client,
       APPROVER_ROLE_IDS,
       previousWorkflow.approver_user_id,
-      doc.area,
+      workflowAreaId,
     );
 
     const { rows: openWorkflow } = await client.query(

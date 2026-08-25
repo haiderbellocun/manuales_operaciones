@@ -1,11 +1,8 @@
 import { query } from '../pool.js';
-import {
-  GLOBAL_ANALYTICS_ROLE_ID,
-  hasGlobalReadScope,
-} from '../../config/accessRoles.js';
+import { GLOBAL_ANALYTICS_ROLE_ID } from '../../config/accessRoles.js';
+import { addDocumentScope } from '../documentScope.js';
 
-const OPERATION_ACADEMIC_FULL_ROLE_ID = 8;
-const OPERATION_ACADEMIC_AREA_ID = 1;
+export { addDocumentScope };
 
 export async function listAreas() {
   const { rows } = await query('SELECT * FROM areas ORDER BY name');
@@ -143,79 +140,10 @@ export async function listPeople() {
   }));
 }
 
-export function addDocumentScope(conditions, params, auth, alias = 'd') {
-  if (!auth) return;
-  const role = Number(auth.role ?? auth.role_id);
-  const areaId = (auth.area ?? auth.area_id) ? Number(auth.area ?? auth.area_id) : null;
-  const coordinationId = (auth.coordination ?? auth.coordination_id) ? Number(auth.coordination ?? auth.coordination_id) : null;
-  const userId = Number(auth.id);
-  const col = (name) => `${alias}.${name}`;
-
-  if (hasGlobalReadScope(auth)) return;
-  if (role === 2 || role === 3 || role === OPERATION_ACADEMIC_FULL_ROLE_ID) {
-    if (!areaId) {
-      conditions.push('FALSE');
-      return;
-    }
-    params.push(areaId);
-    conditions.push(`${col('area_id')} = $${params.length}`);
-    if (coordinationId && areaId !== OPERATION_ACADEMIC_AREA_ID) {
-      params.push(coordinationId);
-      conditions.push(`${col('coordination_id')} = $${params.length}`);
-    }
-    return;
-  }
-  if (role === 4) {
-    params.push(userId);
-    const userParam = params.length;
-    if (areaId) {
-      params.push(areaId);
-      const areaParam = params.length;
-      conditions.push(`(${col('area_id')} = $${areaParam} OR EXISTS (
-        SELECT 1 FROM workflow_items wi
-        WHERE wi.doc_id = ${col('id')}
-          AND (wi.assignee_user_id = $${userParam} OR wi.reviewed_by = $${userParam} OR wi.completed_by = $${userParam})
-      ))`);
-    } else {
-      conditions.push(`EXISTS (
-        SELECT 1 FROM workflow_items wi
-        WHERE wi.doc_id = ${col('id')}
-          AND (wi.assignee_user_id = $${userParam} OR wi.reviewed_by = $${userParam} OR wi.completed_by = $${userParam})
-      )`);
-    }
-    return;
-  }
-  if (role === 5) {
-    params.push(userId);
-    const userParam = params.length;
-    if (areaId === OPERATION_ACADEMIC_AREA_ID) {
-      params.push(areaId);
-      const areaParam = params.length;
-      conditions.push(`(
-        ${col('area_id')} = $${areaParam}
-        OR EXISTS (
-          SELECT 1 FROM workflow_items wi
-          WHERE wi.doc_id = ${col('id')}
-            AND (wi.assignee_user_id = $${userParam} OR wi.completed_by = $${userParam})
-        )
-      )`);
-    } else {
-      conditions.push(`EXISTS (
-        SELECT 1 FROM workflow_items wi
-        WHERE wi.doc_id = ${col('id')}
-          AND (wi.assignee_user_id = $${userParam} OR wi.completed_by = $${userParam})
-      )`);
-    }
-    return;
-  }
-  params.push('publicado');
-  conditions.push(`${col('state')} = $${params.length}`);
-}
-
 export async function listActivity(auth, limit = 30) {
   const conditions = [];
   const params = [];
-  addDocumentScope(conditions, params, auth);
+  addDocumentScope(conditions, params, auth, 'd');
   params.push(limit);
   const limitParam = params.length;
   const where = conditions.length ? `WHERE ${conditions.join(' AND ')}` : '';
@@ -263,7 +191,7 @@ export async function logActivity(who, action, docId, options = {}) {
 export async function getStats(auth) {
   const conditions = [];
   const params = [];
-  addDocumentScope(conditions, params, auth);
+  addDocumentScope(conditions, params, auth, 'd');
   const where = conditions.length ? `WHERE ${conditions.join(' AND ')}` : '';
   const { rows } = await query(`
     SELECT
@@ -328,7 +256,7 @@ export async function getMapDocumentCounts(auth) {
 export async function getReportSummary(auth) {
   const conditions = [];
   const params = [];
-  addDocumentScope(conditions, params, auth);
+  addDocumentScope(conditions, params, auth, 'd');
   const where = conditions.length ? `WHERE ${conditions.join(' AND ')}` : '';
 
   const [areaRows, stateRows, typeRows, topRows, avgRows] = await Promise.all([

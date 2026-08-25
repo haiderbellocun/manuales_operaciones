@@ -6,9 +6,12 @@ import {
 import { createUser, listAssignableUsers, listUsers, updateUser } from '../db/repos/users.js';
 import { getDocumentAnalytics } from '../db/repos/analytics.js';
 import { hasGlobalReadScope } from '../config/accessRoles.js';
+import {
+  GENERAL_COORDINATION_AREA_ID,
+  OPERATION_ACADEMIC_AREA_ID,
+} from '../config/areas.js';
 
 const router = Router();
-const OPERATION_ACADEMIC_AREA_ID = 1;
 
 function scopedByArea(auth, items, areaOf) {
   const role = Number(auth.role);
@@ -32,7 +35,13 @@ function scopedByArea(auth, items, areaOf) {
 
 router.get('/areas', authRequired, requirePermission('consultar'), async (req, res, next) => {
   try {
-    res.json(scopedByArea(req.auth, await listAreas(), item => item.id));
+    const areas = await listAreas();
+    const scoped = scopedByArea(req.auth, areas, item => item.id);
+    const general = areas.find(area => Number(area.id) === GENERAL_COORDINATION_AREA_ID);
+    if (general && !scoped.some(area => Number(area.id) === GENERAL_COORDINATION_AREA_ID)) {
+      scoped.push(general);
+    }
+    res.json(scoped);
   } catch (err) {
     next(err);
   }
@@ -128,6 +137,15 @@ router.get('/assignees', authRequired, requirePermission('consultar'), async (re
   try {
     const requestedAreaId = req.query.areaId ?? req.query.area ?? null;
     const isAdmin = req.auth.perms?.administrar === true;
+    const isGeneralDocument = Number(requestedAreaId) === GENERAL_COORDINATION_AREA_ID;
+    if (isGeneralDocument) {
+      if (!isAdmin && (req.auth.perms?.crear !== true || !req.auth.area)) {
+        return res.status(403).json({
+          message: 'No tienes un area de origen habilitada para asignar el flujo de un documento general.',
+        });
+      }
+      return res.json(await listAssignableUsers(isAdmin ? null : req.auth.area));
+    }
     if (
       requestedAreaId
       && !isAdmin

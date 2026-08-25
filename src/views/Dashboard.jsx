@@ -4,6 +4,7 @@ import { useAuth } from '../context/AuthContext';
 import { useCatalogs } from '../context/CatalogContext';
 import { api } from '../services/api';
 import {
+  GENERAL_COORDINATION_AREA_ID,
   OPERATION_ACADEMIC_AREA_ID,
   OPERATION_ACADEMIC_FULL_ROLE_ID,
 } from '../utils/areas';
@@ -43,6 +44,7 @@ const AREA_REFERENCE = [
   { id: 6, name: 'Coordinación Pruebas Saber', abbreviation: 'CPS', color: '#70b52b' },
   { id: 7, name: 'Coordinación de Proyección Social', abbreviation: 'CPSO', color: '#08743e' },
   { id: 8, name: 'Coordinación de Desarrollo Profesional', abbreviation: 'CDP', color: '#9f559b' },
+  { id: 9, name: 'Coordinación General', abbreviation: 'CG', color: '#f5a000' },
 ];
 
 const COORDINATION_REFERENCE = [
@@ -698,6 +700,12 @@ export function Dashboard({ nav, userName = 'Usuario' }) {
     })),
     [areas],
   );
+  const generalCoordinationArea = areaCatalog.find(
+    area => Number(area.id) === GENERAL_COORDINATION_AREA_ID,
+  );
+  const coordinationAreas = areaCatalog.filter(
+    area => Number(area.id) !== GENERAL_COORDINATION_AREA_ID,
+  );
   const coordinationCatalog = useMemo(
     () => mergeCatalog(COORDINATION_REFERENCE, coordinations),
     [coordinations],
@@ -711,7 +719,11 @@ export function Dashboard({ nav, userName = 'Usuario' }) {
   const canAdmin = hasPermission('administrar');
   const currentRoleId = Number(user?.role);
   const areaScopedRole = !canAdmin && [2, 3, 4, OPERATION_ACADEMIC_FULL_ROLE_ID].includes(currentRoleId);
-  const canOpenArea = area => !areaScopedRole || Number(user?.area) === Number(area.id);
+  const canOpenArea = area => (
+    Number(area.id) === GENERAL_COORDINATION_AREA_ID
+    || !areaScopedRole
+    || Number(user?.area) === Number(area.id)
+  );
   const operationCoordinations = coordinationCatalog
     .filter(coordination => Number(coordination.areaId) === OPERATION_ACADEMIC_AREA_ID)
     .sort((a, b) => Number(a.sortOrder) - Number(b.sortOrder));
@@ -978,6 +990,83 @@ export function Dashboard({ nav, userName = 'Usuario' }) {
     ? `${count} ${count === 1 ? 'archivo cargado' : 'archivos cargados'}`
     : 'conteo de archivos en curso';
 
+  const renderAreaMapNode = (area, index, { hierarchyParent = false } = {}) => {
+    const isCurrent = Number(user?.area) === Number(area.id);
+    const accessible = canOpenArea(area);
+    const selected = Number(selectedAreaId) === Number(area.id);
+    const isOperationArea = Number(area.id) === OPERATION_ACADEMIC_AREA_ID;
+    const isGeneralArea = Number(area.id) === GENERAL_COORDINATION_AREA_ID;
+    const documentCount = Number(mapCounts.byArea[Number(area.id)]) || 0;
+    const preview = {
+      type: 'area',
+      id: area.id,
+      name: area.name,
+      abbreviation: area.abbreviation,
+      color: area.color,
+      contrast: area.contrast,
+      mascot: area.mascot,
+      accessible,
+      isCurrent,
+      description: isGeneralArea
+        ? 'Nivel institucional para manuales, lineamientos y documentos operativos que aplican a todas las coordinaciones.'
+        : isOperationArea
+        ? 'Combina documentos generales, compartidos por todas las escuelas, con documentos propios de cada subcoordinación.'
+        : `Reúne los documentos, procedimientos, formatos y manuales asociados a ${area.name}.`,
+      actionLabel: isGeneralArea
+        ? 'Abrir documentación general'
+        : isOperationArea
+        ? 'Explorar escuelas y documentos'
+        : 'Abrir biblioteca del área',
+    };
+
+    return (
+      <button
+        key={area.id}
+        type="button"
+        className={`area-map-node ${hierarchyParent ? 'macro-node hierarchy-parent' : 'hierarchy-child'} ${selected ? 'selected' : ''} ${accessible ? '' : 'informative'}`}
+        style={{
+          '--area-color': area.color,
+          '--area-delay': `${index * 55}ms`,
+        }}
+        data-hierarchy-level={hierarchyParent ? '1' : '2'}
+        onMouseEnter={(event) => showMapPreview(event, preview)}
+        onFocus={(event) => showMapPreview(event, preview)}
+        onClick={(event) => {
+          showMapPreview(event, preview);
+          selectAreaNode(area);
+        }}
+        aria-pressed={selected}
+        aria-label={`${area.name}, nivel ${hierarchyParent ? 'institucional' : 'de coordinación'}, ${documentCountAria(documentCount)}${isCurrent ? ', tu área' : ''}${accessible ? '' : ', vista informativa'}`}
+      >
+        <span className="area-map-node-line" aria-hidden="true"></span>
+        <span className="area-map-node-icon">
+          <img src={area.mascot} alt="" aria-hidden="true" />
+        </span>
+        <span className="area-map-node-copy">
+          <strong>{area.name}</strong>
+          <small className="mono">{area.abbreviation}</small>
+        </span>
+        {isCurrent && (
+          <span className="area-map-node-status">
+            <Icon name="check" size={10} />Tu área
+          </span>
+        )}
+        {isGeneralArea && (
+          <span className="area-map-node-status macro">
+            <Icon name="sparkles" size={10} />Alcance institucional
+          </span>
+        )}
+        <span
+          className={`area-map-node-access ${accessible || isOperationArea ? 'available' : 'restricted'}`}
+          title={isOperationArea ? 'Explorar sus escuelas' : accessible ? 'Ver detalle del área' : 'Vista informativa'}
+          aria-hidden="true"
+        >
+          <Icon name={accessible || isOperationArea ? 'chevRight' : 'lock'} size={accessible || isOperationArea ? 14 : 12} />
+        </span>
+      </button>
+    );
+  };
+
   return (
     <div className="page fade-in map-home">
       <section className="map-home-hero" aria-labelledby="map-home-title">
@@ -986,7 +1075,7 @@ export function Dashboard({ nav, userName = 'Usuario' }) {
           <h1 id="map-home-title">Hola, {firstName}. ¿Qué necesitas hacer hoy?</h1>
           <p>Recorre el mapa de Acervo para encontrar documentos, entender el ciclo documental y conocer cómo se organizan las áreas y responsabilidades.</p>
           <form className="map-home-search" onSubmit={submitSearch} role="search">
-            <Icon name="search" size={20} />
+            <Icon name="search" size={18} />
             <input
               value={searchQuery}
               onChange={event => setSearchQuery(event.target.value)}
@@ -999,9 +1088,23 @@ export function Dashboard({ nav, userName = 'Usuario' }) {
               className="btn map-home-search-button"
               disabled={!searchQuery.trim() || !hasPermission('consultar')}
             >
-              Buscar <Icon name="arrowRight" size={15} />
+              Buscar <Icon name="arrowRight" size={14} />
             </button>
           </form>
+          <div className="bento-hero-meta" style={{ marginTop: 16 }}>
+            <button type="button" className="bento-pill clickable" onClick={() => nav('library')}>
+              <Icon name="folder" size={12} />Biblioteca Documental
+            </button>
+            <button type="button" className="bento-pill clickable" onClick={() => nav('analytics')}>
+              <Icon name="trend" size={12} />Analítica de Uso
+            </button>
+            <button type="button" className="bento-pill clickable" onClick={() => selectLayer('process')}>
+              <Icon name="flow" size={12} />Ciclo de Procesos
+            </button>
+            <button type="button" className="bento-pill clickable" onClick={() => selectLayer('areas')}>
+              <Icon name="building" size={12} />Mapa de Áreas
+            </button>
+          </div>
         </div>
 
         <aside className="map-home-profile" aria-label="Tu punto de partida">
@@ -1146,7 +1249,7 @@ export function Dashboard({ nav, userName = 'Usuario' }) {
           >
             <div
               ref={areaMapCanvasRef}
-              className={`card area-map-canvas ${areaMapLevel === 'operation' ? 'is-operation' : ''}`}
+              className={`card area-map-canvas ${areaMapLevel === 'operation' ? 'is-operation' : 'is-hierarchy'}`}
               style={{
                 '--map-core-color': areaMapLevel === 'operation'
                   ? AREA_VISUALS[OPERATION_ACADEMIC_AREA_ID].color
@@ -1197,15 +1300,15 @@ export function Dashboard({ nav, userName = 'Usuario' }) {
                   <i></i>
                   {areaMapLevel === 'operation'
                     ? `${operationCoordinations.length} escuelas + general`
-                    : `${areaCatalog.length} áreas conectadas`}
+                    : `1 nivel general · ${coordinationAreas.length} coordinaciones`}
                 </span>
               </div>
 
               <div key={`connector-${areaMapLevel}`} className="area-map-connector" aria-hidden="true"></div>
 
-              <div ref={areaMapGridRef} key={`grid-${areaMapLevel}`} className="area-map-grid">
-                {areaMapLevel === 'operation' ? (
-                  operationMapNodes.map((node, index) => {
+              {areaMapLevel === 'operation' ? (
+                <div ref={areaMapGridRef} key="grid-operation" className="area-map-grid">
+                  {operationMapNodes.map((node, index) => {
                     const isCurrent = node.kind === 'school'
                       && Number(user?.coordination) === Number(node.coordinationId);
                     const selected = node.id === selectedOperationNodeId;
@@ -1271,74 +1374,32 @@ export function Dashboard({ nav, userName = 'Usuario' }) {
                         </span>
                       </button>
                     );
-                  })
-                ) : (
-                  areaCatalog.map((area, index) => {
-                    const isCurrent = Number(user?.area) === Number(area.id);
-                    const accessible = canOpenArea(area);
-                    const selected = Number(selectedAreaId) === Number(area.id);
-                    const isOperationArea = Number(area.id) === OPERATION_ACADEMIC_AREA_ID;
-                    const documentCount = Number(mapCounts.byArea[Number(area.id)]) || 0;
-                    const preview = {
-                      type: 'area',
-                      id: area.id,
-                      name: area.name,
-                      abbreviation: area.abbreviation,
-                      color: area.color,
-                      contrast: area.contrast,
-                      mascot: area.mascot,
-                      accessible,
-                      isCurrent,
-                      description: isOperationArea
-                        ? 'Combina documentos generales, compartidos por todas las escuelas, con documentos propios de cada subcoordinación.'
-                        : `Reúne los documentos, procedimientos, formatos y manuales asociados a ${area.name}.`,
-                      actionLabel: isOperationArea
-                        ? 'Explorar escuelas y documentos'
-                        : 'Abrir biblioteca del área',
-                    };
-                    return (
-                      <button
-                        key={area.id}
-                        type="button"
-                        className={`area-map-node ${selected ? 'selected' : ''} ${accessible ? '' : 'informative'}`}
-                        style={{
-                          '--area-color': area.color,
-                          '--area-delay': `${index * 55}ms`,
-                        }}
-                        onMouseEnter={(event) => showMapPreview(event, preview)}
-                        onFocus={(event) => showMapPreview(event, preview)}
-                        onClick={(event) => {
-                          showMapPreview(event, preview);
-                          selectAreaNode(area);
-                        }}
-                        aria-pressed={selected}
-                        aria-label={`${area.name}, ${documentCountAria(documentCount)}${isCurrent ? ', tu área' : ''}${accessible ? '' : ', vista informativa'}`}
-                      >
-                        <span className="area-map-node-line" aria-hidden="true"></span>
-                        <span className="area-map-node-icon">
-                          <img src={area.mascot} alt="" aria-hidden="true" />
-                        </span>
-                        <span className="area-map-node-copy">
-                          <strong>{area.name}</strong>
-                          <small className="mono">{area.abbreviation}</small>
-                        </span>
-                        {isCurrent && (
-                          <span className="area-map-node-status">
-                            <Icon name="check" size={10} />Tu área
-                          </span>
-                        )}
-                        <span
-                          className={`area-map-node-access ${accessible || isOperationArea ? 'available' : 'restricted'}`}
-                          title={isOperationArea ? 'Explorar sus escuelas' : accessible ? 'Ver detalle del área' : 'Vista informativa'}
-                          aria-hidden="true"
-                        >
-                          <Icon name={accessible || isOperationArea ? 'chevRight' : 'lock'} size={accessible || isOperationArea ? 14 : 12} />
-                        </span>
-                      </button>
-                    );
-                  })
-                )}
-              </div>
+                  })}
+                </div>
+              ) : (
+                <div key="area-hierarchy" className="area-map-hierarchy" aria-label="Jerarquía de áreas">
+                  <section className="area-map-general-tier" aria-labelledby="general-tier-label">
+                    <span id="general-tier-label" className="area-map-tier-label">
+                      <Icon name="sparkles" size={11} />Nivel institucional
+                    </span>
+                    <span className="area-map-parent-entry" aria-hidden="true"></span>
+                    {generalCoordinationArea && renderAreaMapNode(
+                      generalCoordinationArea,
+                      0,
+                      { hierarchyParent: true },
+                    )}
+                  </section>
+
+                  <section className="area-map-coordination-tier" aria-labelledby="coordination-tier-label">
+                    <span id="coordination-tier-label" className="area-map-tier-label coordination-label">
+                      <Icon name="building" size={11} />Coordinaciones
+                    </span>
+                    <div ref={areaMapGridRef} className="area-map-grid area-map-coordination-grid">
+                      {coordinationAreas.map((area, index) => renderAreaMapNode(area, index + 1))}
+                    </div>
+                  </section>
+                </div>
+              )}
 
               {mapPreview && (
                 <aside

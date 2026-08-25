@@ -4,7 +4,10 @@ import { useAuth } from './context/AuthContext';
 import { useDocs } from './context/DocsContext';
 import { useCatalogs } from './context/CatalogContext';
 import { api } from './services/api';
-import { OPERATION_ACADEMIC_AREA_ID } from './utils/areas';
+import {
+  GENERAL_COORDINATION_AREA_ID,
+  OPERATION_ACADEMIC_AREA_ID,
+} from './utils/areas';
 import { AREA_VISUALS, OPERATION_VISUALS } from './utils/areaVisuals';
 import { getErrorToastType, getUserErrorMessage } from './utils/errors';
 
@@ -213,7 +216,10 @@ function filterNav(nav, access) {
         if (link.permission && !access.hasPermission(link.permission)) return false;
         if (link.role && !access.hasRole(link.role)) return false;
         if (link.params?.area && [2, 3, 4, 8].includes(Number(access.user?.role))) {
-          if (Number(access.user?.area) !== Number(link.params.area)) return false;
+          if (
+            Number(link.params.area) !== GENERAL_COORDINATION_AREA_ID
+            && Number(access.user?.area) !== Number(link.params.area)
+          ) return false;
           if (
             link.params?.coordination
             && access.user?.coordination

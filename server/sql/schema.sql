@@ -78,7 +78,8 @@ CREATE TABLE IF NOT EXISTS documents (
   app_ref         VARCHAR(10),
   created         DATE,
   updated         DATE,
-  published_at    TIMESTAMPTZ
+  published_at    TIMESTAMPTZ,
+  visible_to_all  BOOLEAN NOT NULL DEFAULT false
 );
 
 CREATE INDEX IF NOT EXISTS idx_documents_area ON documents(area_id);
@@ -228,7 +229,8 @@ INSERT INTO areas (id, name, abbreviation, color, lead_name, requires_coordinati
   (5, 'Coordinacion de Servicio', 'CSE', '#c51a78', NULL, false),
   (6, 'Coordinacion Pruebas Saber', 'CPS', '#70b52b', NULL, false),
   (7, 'Coordinacion de Proyeccion Social', 'CPSO', '#08743e', NULL, false),
-  (8, 'Coordinacion de Desarrollo Profesional', 'CDP', '#9f559b', NULL, false)
+  (8, 'Coordinacion de Desarrollo Profesional', 'CDP', '#9f559b', NULL, false),
+  (9, 'Coordinacion General', 'CG', '#f5a000', NULL, false)
 ON CONFLICT (id) DO UPDATE SET
   name = EXCLUDED.name,
   abbreviation = EXCLUDED.abbreviation,

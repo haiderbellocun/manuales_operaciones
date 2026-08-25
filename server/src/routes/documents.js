@@ -18,12 +18,15 @@ import {
   createUpdateRequest, getFileMeta, upsertFile,
   getInfographicMeta, upsertInfographic,
   getVersionFileMeta, updateDocument,
-  assertCanCreateInArea, assertCanEditInArea, createDocumentVersion, reserveDocumentId,
+  assertCanCreateInArea, assertCanEditDocument, createDocumentVersion, reserveDocumentId,
 } from '../db/repos/documents.js';
+import {
+  GENERAL_COORDINATION_AREA_ID,
+  OPERATION_ACADEMIC_AREA_ID,
+} from '../config/areas.js';
 
 const router = Router();
 router.use(authRequired);
-const OPERATION_ACADEMIC_AREA_ID = 1;
 const OPERATION_ACADEMIC_FULL_ROLE_ID = 8;
 
 async function notifySafely(recipients, payload) {
@@ -289,7 +292,7 @@ router.post('/:id/versions', requirePermission('editar'), (req, res) => {
     try {
       const doc = await getDocument(req.params.id, req.auth);
       if (!doc) return res.status(404).json({ message: 'Documento no encontrado.' });
-      assertCanEditInArea(req.auth, doc.area, doc.coordination);
+      await assertCanEditDocument(req.auth, doc);
       if (!['publicado', 'vencido', 'archivado'].includes(doc.state)) {
         return res.status(409).json({
           message: 'Solo puedes crear una nueva version desde un documento publicado, vencido o archivado.',
@@ -423,7 +426,9 @@ router.post('/', requirePermission('crear'), (req, res) => {
       const workflowAssignments = await validateWorkflowAssignments(
         revisor,
         aprobador,
-        areaObj.id,
+        Number(areaObj.id) === GENERAL_COORDINATION_AREA_ID
+          ? (req.auth.perms?.administrar === true ? null : req.auth.area)
+          : areaObj.id,
       );
       const responsiblePerson = await resolveResponsiblePerson(req.auth.id);
       reservedDocumentId = await reserveDocumentId();
@@ -446,6 +451,9 @@ router.post('/', requirePermission('crear'), (req, res) => {
           initialState,
           userId: req.user.sub,
           userName: req.auth.name || req.user.email,
+          visibleToAll: Number(areaObj.id) === GENERAL_COORDINATION_AREA_ID
+            ? true
+            : payload.visibleToAll,
         },
         areaObj,
         typeObj,
@@ -486,7 +494,7 @@ router.post('/:id/infographic', requirePermission('editar'), (req, res) => {
     try {
       const doc = await getDocument(req.params.id, req.auth);
       if (!doc) return res.status(404).json({ message: 'Documento no encontrado.' });
-      assertCanEditInArea(req.auth, doc.area, doc.coordination);
+      await assertCanEditDocument(req.auth, doc);
       if (doc.state !== 'borrador') {
         return res.status(409).json({
           message: 'La infografia solo se puede reemplazar mientras el documento esta en Borrador.',

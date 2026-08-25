@@ -1,5 +1,10 @@
 export const OPERATION_ACADEMIC_AREA_ID = 1;
 export const OPERATION_ACADEMIC_FULL_ROLE_ID = 8;
+export const GENERAL_COORDINATION_AREA_ID = 9;
+
+export function isGeneralCoordinationArea(areaId) {
+  return Number(areaId) === GENERAL_COORDINATION_AREA_ID;
+}
 
 export function areaRequiresCoordination(area) {
   return Boolean(area?.requiresCoordination);

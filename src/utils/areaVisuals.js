@@ -4,6 +4,7 @@ import businessTransformationMascot from '../assets/mascots/business-transformat
 import engineeringMascot from '../assets/mascots/engineering.png';
 import factoryDevelopmentMascot from '../assets/mascots/factory-development.png';
 import fineArtsMascot from '../assets/mascots/fine-arts.png';
+import generalCoordinationMascot from '../assets/mascots/general-coordination.png';
 import operationAcademicMascot from '../assets/mascots/operation-academic.png';
 import professionalDevelopmentMascot from '../assets/mascots/professional-development.png';
 import saberMascot from '../assets/mascots/saber.png';
@@ -21,6 +22,7 @@ export const AREA_VISUALS = {
   6: { color: '#70b52b', contrast: '#17370a', mascot: saberMascot },
   7: { color: '#08743e', mascot: socialProjectionMascot },
   8: { color: '#9f559b', mascot: professionalDevelopmentMascot },
+  9: { color: '#f5a000', contrast: '#4a2b00', mascot: generalCoordinationMascot },
 };
 
 export const OPERATION_VISUALS = {

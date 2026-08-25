@@ -21,6 +21,7 @@ import { getErrorToastType, getUserErrorMessage } from '../utils/errors';
 import {
   areaAssignmentValid,
   documentCodePrefix,
+  GENERAL_COORDINATION_AREA_ID,
   OPERATION_ACADEMIC_AREA_ID,
   OPERATION_ACADEMIC_FULL_ROLE_ID,
 } from '../utils/areas';
@@ -217,6 +218,7 @@ export function UploadFlow({ nav, showToast, onUploaded }) {
     revisor: '',
     aprobador: '',
     versionNote: '',
+    visibleToAll: false,
   });
   const set = (k, v) => setF(prev => ({ ...prev, [k]: v }));
   const setArea = (value) => setF(prev => ({
@@ -225,17 +227,29 @@ export function UploadFlow({ nav, showToast, onUploaded }) {
     coordination: '',
     revisor: '',
     aprobador: '',
+    visibleToAll: Number(value) === GENERAL_COORDINATION_AREA_ID
+      ? true
+      : (Number(prev.area) === GENERAL_COORDINATION_AREA_ID ? false : prev.visibleToAll),
   }));
   const canAdmin = hasPermission('administrar');
-  const visibleAreas = canAdmin || !user?.area
+  const visibleAreas = canAdmin
     ? catalogs.areas
-    : catalogs.areas.filter(a => Number(a.id) === Number(user.area));
+    : user?.area
+      ? catalogs.areas.filter(a => (
+        Number(a.id) === Number(user.area)
+        || Number(a.id) === GENERAL_COORDINATION_AREA_ID
+      ))
+      : [];
   const targetArea = f.area || (!canAdmin ? user?.area : '');
+  const isGeneralDocument = Number(targetArea) === GENERAL_COORDINATION_AREA_ID;
+  const workflowArea = isGeneralDocument
+    ? (canAdmin ? null : user?.area)
+    : targetArea;
   const reviewerOptions = catalogs.users
     .filter(userOption => (
       REVIEWER_ROLE_IDS.includes(Number(userOption.role))
       && Boolean(targetArea)
-      && Number(userOption.area) === Number(targetArea)
+      && (workflowArea === null || Number(userOption.area) === Number(workflowArea))
     ))
     .map(userOption => ({
       value: userOption.id,
@@ -246,7 +260,7 @@ export function UploadFlow({ nav, showToast, onUploaded }) {
     .filter(userOption => (
       APPROVER_ROLE_IDS.includes(Number(userOption.role))
       && Boolean(targetArea)
-      && Number(userOption.area) === Number(targetArea)
+      && (workflowArea === null || Number(userOption.area) === Number(workflowArea))
     ))
     .map(userOption => ({
       value: userOption.id,
@@ -404,7 +418,7 @@ export function UploadFlow({ nav, showToast, onUploaded }) {
                 coordinationValue={f.coordination}
                 onAreaChange={setArea}
                 onCoordinationChange={value => set('coordination', value)}
-                areaDisabled={catalogLoading || visibleAreas.length === 0 || (!canAdmin && !!user?.area)}
+                areaDisabled={catalogLoading || visibleAreas.length === 0 || (!canAdmin && !!user?.area && visibleAreas.length < 2)}
                 coordinationDisabled={catalogLoading || (!canAdmin && !!user?.coordination)}
                 areaPlaceholder={catalogLoading ? 'Cargando...' : 'Seleccionar...'}
                 coordinationLabel="Alcance dentro de Operación Académica *"
@@ -418,6 +432,14 @@ export function UploadFlow({ nav, showToast, onUploaded }) {
                 El documento será general de Operación Académica y estará disponible en todas sus subcoordinaciones.
               </div>
             )}
+            {isGeneralDocument && (
+              <div className="form-note general-document-note" style={{ marginBottom: 18 }}>
+                <Icon name="building" size={15} />
+                <span>
+                  <strong>Documento de Coordinación General.</strong> Será gestionado por el flujo de tu área de origen y, cuando se publique, podrá consultarlo toda la organización.
+                </span>
+              </div>
+            )}
             <div className="form-row"><label>Nombre del documento *</label><input className="input" value={f.name} onChange={e => set('name', e.target.value)} placeholder="Ej. Procedimiento de matrícula de pregrado" /></div>
             <div className="form-row"><label>Descripción corta</label><textarea className="input" value={f.desc} onChange={e => set('desc', e.target.value)} placeholder="Resumen del propósito y alcance del documento…"></textarea></div>
             <div className="form-grid">
@@ -429,6 +451,26 @@ export function UploadFlow({ nav, showToast, onUploaded }) {
               <div className="form-row"><label>Vigencia hasta</label><input className="input" type="date" value={f.vigencia} onChange={e => set('vigencia', e.target.value)} /></div>
             </div>
             <div className="form-row"><label>Palabras clave <span className="hint">— separadas por coma</span></label><input className="input" value={f.tags} onChange={e => set('tags', e.target.value)} placeholder="matrícula, pregrado, procedimiento" /></div>
+            <div className="form-row">
+              <label className="permission-toggle">
+                <input
+                  type="checkbox"
+                  checked={f.visibleToAll}
+                  disabled={isGeneralDocument}
+                  onChange={e => set('visibleToAll', e.target.checked)}
+                />
+                <span>
+                  <strong>Visible para todos los roles</strong>
+                  <small>
+                    {isGeneralDocument
+                      ? 'Este alcance es institucional por definición y no puede limitarse a una sola coordinación.'
+                      : f.visibleToAll
+                      ? 'Al publicarse, cualquier usuario de la aplicación podrá consultarlo.'
+                      : 'Solo será visible para los usuarios del área seleccionada (y roles con alcance global).'}
+                  </small>
+                </span>
+              </label>
+            </div>
             <div className="number-preview"><Icon name="sparkles" size={16} style={{ color: 'var(--brand-700)' }} />Número documental asignado automáticamente: <strong className="mono" style={{ color: 'var(--brand-700)' }}>{autoCode}</strong></div>
           </div>
         )}
@@ -487,6 +529,7 @@ export function UploadFlow({ nav, showToast, onUploaded }) {
                 <div className="spec-row"><span className="k">Número documental</span><span className="v mono">{autoCode}</span></div>
                 <div className="spec-row"><span className="k">Versión</span><span className="v">v{f.version}</span></div>
                 <div className="spec-row"><span className="k">Infografía</span><span className="v">{infographic?.name || '—'}</span></div>
+                <div className="spec-row"><span className="k">Visibilidad</span><span className="v">{isGeneralDocument ? 'Institucional (al publicar)' : f.visibleToAll ? 'Todos los roles (al publicar)' : 'Solo el área'}</span></div>
                 <div className="spec-row"><span className="k">Estado inicial</span><span className="v">{f.initialState === 'revision' ? 'En revisión' : 'Borrador'}</span></div>
               </div>
             </div>
@@ -776,14 +819,18 @@ export function UsersView({ nav, showToast }) {
   const permLabels = { crear: 'Crear', editar: 'Editar', aprobar: 'Aprobar', publicar: 'Publicar', archivar: 'Archivar', consultar: 'Consultar', descargar: 'Descargar', administrar: 'Administrar' };
   const permKeys = Object.keys(permLabels);
   const emptyForm = { name: '', email: '', role: '', area: '', coordination: '', status: 'Activo' };
+  const assignableAreas = useMemo(
+    () => areas.filter(area => Number(area.id) !== GENERAL_COORDINATION_AREA_ID),
+    [areas],
+  );
   const userAreaOptions = useMemo(() => [
     {
       value: 'all',
       label: 'Todas las áreas',
-      description: `${areas.length} áreas disponibles`,
+      description: `${assignableAreas.length} áreas asignables`,
       color: 'var(--brand-700)',
     },
-    ...areas.map(area => ({
+    ...assignableAreas.map(area => ({
       value: area.id,
       label: area.name,
       description: area.abbreviation,
@@ -795,7 +842,7 @@ export function UsersView({ nav, showToast }) {
       description: 'Usuarios pendientes de asignación',
       color: '#9aa59e',
     },
-  ], [areas]);
+  ], [assignableAreas]);
   const filteredUsers = useMemo(() => {
     const search = normalizeUserSearch(userSearch);
     return users.filter((listedUser) => {
@@ -1204,7 +1251,7 @@ export function UsersView({ nav, showToast }) {
                 <div className="form-row"><label>Correo CUN *</label><input className="input" type="email" value={modal.form.email} onChange={e => setForm('email', e.target.value)} placeholder="usuario@cun.edu.co" /></div>
                 <div className="form-row"><label>Rol *</label><SelectField value={modal.form.role} onChange={value => setForm('role', value)} placeholder="Seleccionar..." options={roles.map(r => ({ value: r.id, label: r.name }))} /></div>
                 <AreaCoordinationFields
-                  areas={areas}
+                  areas={assignableAreas}
                   coordinations={coordinations}
                   areaValue={modal.form.area || ''}
                   coordinationValue={modal.form.coordination || ''}

@@ -14,6 +14,7 @@ import {
 import { DocumentInfographic } from '../components/DocumentInfographic';
 import { DocumentHoverPreview } from '../components/DocumentHoverPreview';
 import {
+  GENERAL_COORDINATION_AREA_ID,
   OPERATION_ACADEMIC_AREA_ID,
   OPERATION_ACADEMIC_FULL_ROLE_ID,
 } from '../utils/areas';
@@ -440,6 +441,10 @@ function nextVersion(current) {
 
 function canEditDocumentScope(user, doc, canAdmin) {
   if (canAdmin) return true;
+  if (Number(doc?.area) === GENERAL_COORDINATION_AREA_ID) {
+    return Boolean(user?.id)
+      && Number(user.id) === Number(doc.creatorUserId);
+  }
   if (!user || !doc || Number(user.area) !== Number(doc.area)) return false;
 
   if (Number(doc.area) === OPERATION_ACADEMIC_AREA_ID) {
@@ -469,7 +474,7 @@ export function DocDetail({ nav, docId, docs, toggleFav, requestUpdate, showToas
   const [versionInfographic, setVersionInfographic] = useState(null);
   const [savingVersion, setSavingVersion] = useState(false);
   const [editModal, setEditModal] = useState(false);
-  const [editForm, setEditForm] = useState({ name: '', owner: '', vigencia: '', desc: '', tags: '' });
+  const [editForm, setEditForm] = useState({ name: '', owner: '', vigencia: '', desc: '', tags: '', visibleToAll: false });
   const [savingEdit, setSavingEdit] = useState(false);
   const [savingInfographic, setSavingInfographic] = useState(false);
   const viewed = useRef(false);
@@ -641,6 +646,7 @@ export function DocDetail({ nav, docId, docs, toggleFav, requestUpdate, showToas
       vigencia: doc.vigencia && doc.vigencia !== '—' ? doc.vigencia : '',
       desc: doc.desc || '',
       tags: (doc.tags || []).join(', '),
+      visibleToAll: doc.visibleToAll === true,
     });
     setEditModal(true);
   };
@@ -889,6 +895,7 @@ export function DocDetail({ nav, docId, docs, toggleFav, requestUpdate, showToas
               <div className="spec-row"><span className="k">Número documental</span><span className="v mono">{doc.documentNumber}</span></div>
               <div className="spec-row"><span className="k">Tipo documental</span><span className="v">{type?.name || 'Tipo no disponible'}</span></div>
               <div className="spec-row"><span className="k">Área responsable</span><span className="v">{area?.name || 'No disponible'}{coordination ? ` · ${coordination.name}` : Number(doc.area) === OPERATION_ACADEMIC_AREA_ID ? ' · General' : ''}</span></div>
+              <div className="spec-row"><span className="k">Visibilidad</span><span className="v">{Number(doc.area) === GENERAL_COORDINATION_AREA_ID ? 'Institucional al publicar' : doc.visibleToAll ? 'Todos los roles' : 'Solo el área'}</span></div>
               <div className="spec-row"><span className="k">Versión vigente</span><span className="v">v{doc.version}</span></div>
               <div className="spec-row"><span className="k">Estado</span><span className="v"><StateBadge state={doc.state} /></span></div>
               <div className="spec-row"><span className="k">Creación</span><span className="v">{fmtDate(doc.created)}</span></div>
@@ -1036,7 +1043,14 @@ export function DocDetail({ nav, docId, docs, toggleFav, requestUpdate, showToas
                     value={editForm.owner}
                     onChange={value => setEditForm(f => ({ ...f, owner: value }))}
                     placeholder="Seleccionar..."
-                    options={people.filter(p => !p.area || Number(p.area) === Number(doc.area)).map(p => ({ value: p.id, label: p.name }))}
+                    options={people.filter(p => (
+                      !p.area
+                      || Number(p.area) === Number(doc.area)
+                      || (
+                        Number(doc.area) === GENERAL_COORDINATION_AREA_ID
+                        && Number(p.area) === Number(user?.area)
+                      )
+                    )).map(p => ({ value: p.id, label: p.name }))}
                   />
                 </div>
                 <div className="form-row">
@@ -1051,6 +1065,26 @@ export function DocDetail({ nav, docId, docs, toggleFav, requestUpdate, showToas
               <div className="form-row">
                 <label>Palabras clave <span className="hint">separadas por coma</span></label>
                 <input className="input" value={editForm.tags} onChange={e => setEditForm(f => ({ ...f, tags: e.target.value }))} />
+              </div>
+              <div className="form-row">
+                <label className="permission-toggle">
+                  <input
+                    type="checkbox"
+                    checked={editForm.visibleToAll}
+                    disabled={Number(doc.area) === GENERAL_COORDINATION_AREA_ID}
+                    onChange={e => setEditForm(f => ({ ...f, visibleToAll: e.target.checked }))}
+                  />
+                  <span>
+                    <strong>Visible para todos los roles</strong>
+                    <small>
+                      {Number(doc.area) === GENERAL_COORDINATION_AREA_ID
+                        ? 'Coordinación General siempre será institucional cuando el documento se publique.'
+                        : editForm.visibleToAll
+                        ? 'Al publicarse, cualquier usuario de la aplicación podrá consultarlo.'
+                        : 'Solo será visible para los usuarios del área del documento.'}
+                    </small>
+                  </span>
+                </label>
               </div>
             </div>
             <div className="modal-foot">

@@ -11,9 +11,12 @@ import {
   WORKFLOW_ASSIGNABLE_ROLE_IDS,
 } from '../../config/workflowRoles.js';
 import { GLOBAL_ANALYTICS_ROLE_ID } from '../../config/accessRoles.js';
+import {
+  GENERAL_COORDINATION_AREA_ID,
+  OPERATION_ACADEMIC_AREA_ID,
+} from '../../config/areas.js';
 
 const DEFAULT_GOOGLE_ROLE_ID = Number(process.env.GOOGLE_DEFAULT_ROLE_ID || 7);
-const OPERATION_ACADEMIC_AREA_ID = 1;
 const OPERATION_ACADEMIC_FULL_ROLE_ID = OPERATION_ACADEMIC_COORDINATOR_ROLE_ID;
 
 export async function findByEmail(email) {
@@ -130,6 +133,11 @@ async function assertRoleExists(roleId) {
 
 async function assertAreaAssignment(areaId, coordinationId, roleId = null) {
   const normalizedRoleId = Number(roleId);
+  if (Number(areaId) === GENERAL_COORDINATION_AREA_ID) {
+    const err = new Error('Coordinacion General es un alcance documental compartido y no se asigna como area principal de un usuario.');
+    err.statusCode = 400;
+    throw err;
+  }
   if (WORKFLOW_ASSIGNABLE_ROLE_IDS.includes(normalizedRoleId) && !areaId) {
     const err = new Error('Este rol debe tener un area asignada para participar en el flujo documental.');
     err.statusCode = 400;
@@ -337,7 +345,9 @@ function workflowAssignmentError(message) {
 export async function validateWorkflowAssignments(reviewerId, approverId, areaId) {
   const normalizedReviewerId = Number(reviewerId);
   const normalizedApproverId = Number(approverId);
-  const normalizedAreaId = Number(areaId);
+  const normalizedAreaId = areaId === null || areaId === undefined || areaId === ''
+    ? null
+    : Number(areaId);
   if (!Number.isInteger(normalizedReviewerId) || normalizedReviewerId <= 0) {
     throw workflowAssignmentError('Debes seleccionar un usuario activo y habilitado como revisor.');
   }
@@ -367,10 +377,10 @@ export async function validateWorkflowAssignments(reviewerId, approverId, areaId
   ) {
     throw workflowAssignmentError('El aprobador debe estar activo y tener rol Aprobador, Lider de area o Coordinador de Operacion Academica.');
   }
-  if (Number(reviewer.area_id) !== normalizedAreaId) {
+  if (normalizedAreaId !== null && Number(reviewer.area_id) !== normalizedAreaId) {
     throw workflowAssignmentError('El revisor seleccionado debe pertenecer al area responsable del documento.');
   }
-  if (Number(approver.area_id) !== normalizedAreaId) {
+  if (normalizedAreaId !== null && Number(approver.area_id) !== normalizedAreaId) {
     throw workflowAssignmentError('El aprobador seleccionado debe pertenecer al area responsable del documento.');
   }
 

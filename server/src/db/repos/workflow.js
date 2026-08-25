@@ -10,6 +10,12 @@ import {
   isApproverRole,
   isReviewerRole,
 } from '../../config/workflowRoles.js';
+import { GENERAL_COORDINATION_AREA_ID } from '../../config/areas.js';
+
+function matchesWorkflowArea(userAreaId, documentAreaId) {
+  return Number(documentAreaId) === GENERAL_COORDINATION_AREA_ID
+    || Number(userAreaId) === Number(documentAreaId);
+}
 
 function fmtDate(d) {
   if (!d) return null;
@@ -71,10 +77,10 @@ export async function listWorkflow(authUser) {
     const isOpen = !w.completed_at;
     const isReviewerAssignment = isAssigned
       && Number(w.reviewer_user_id) === authUserId
-      && Number(authUser.area ?? authUser.area_id) === Number(doc?.area);
+      && matchesWorkflowArea(authUser.area ?? authUser.area_id, doc?.area);
     const isApproverAssignment = isAssigned
       && Number(w.approver_user_id) === authUserId
-      && Number(authUser.area ?? authUser.area_id) === Number(doc?.area);
+      && matchesWorkflowArea(authUser.area ?? authUser.area_id, doc?.area);
     const canMarkApproved = isOpen
       && w.stage === 'revision'
       && isReviewerAssignment
@@ -122,7 +128,10 @@ export async function listWorkflow(authUser) {
 function assertCanAct(workflow, authUser, action) {
   const isAssigned = Number(workflow.assignee_user_id) === Number(authUser.id);
   const role = Number(authUser.role ?? authUser.role_id);
-  const isSameArea = Number(authUser.area ?? authUser.area_id) === Number(workflow.area_id);
+  const isSameArea = matchesWorkflowArea(
+    authUser.area ?? authUser.area_id,
+    workflow.area_id,
+  );
   const isAssignedReviewer = isAssigned
     && Number(workflow.reviewer_user_id) === Number(authUser.id)
     && isSameArea;
@@ -256,13 +265,20 @@ export async function transitionWorkflow(workflowId, action, authUser, comments 
           FROM users
           WHERE id = $1
             AND role_id = ANY($2::int[])
-            AND area_id = $3
+            AND ($3::int = $4 OR area_id = $3)
             AND status = 'Activo'
           LIMIT 1
-        `, [workflow.reviewer_user_id, REVIEWER_ROLE_IDS, workflow.area_id]);
+        `, [
+          workflow.reviewer_user_id,
+          REVIEWER_ROLE_IDS,
+          workflow.area_id,
+          GENERAL_COORDINATION_AREA_ID,
+        ]);
         reviewer = reviewerRows[0] || null;
       }
-      if (!reviewer) reviewer = await findAreaReviewer(workflow.area_id);
+      if (!reviewer && Number(workflow.area_id) !== GENERAL_COORDINATION_AREA_ID) {
+        reviewer = await findAreaReviewer(workflow.area_id);
+      }
       if (!reviewer) {
         const err = new Error('El documento no tiene un revisor activo y habilitado asignado.');
         err.statusCode = 409;
@@ -306,10 +322,15 @@ export async function transitionWorkflow(workflowId, action, authUser, comments 
         FROM users
         WHERE id = $1
           AND role_id = ANY($2::int[])
-          AND area_id = $3
+          AND ($3::int = $4 OR area_id = $3)
           AND status = 'Activo'
         LIMIT 1
-      `, [workflow.approver_user_id, APPROVER_ROLE_IDS, workflow.area_id]);
+      `, [
+        workflow.approver_user_id,
+        APPROVER_ROLE_IDS,
+        workflow.area_id,
+        GENERAL_COORDINATION_AREA_ID,
+      ]);
       const approver = approverRows[0] || null;
       if (!approver) {
         const err = new Error('El documento no tiene un aprobador activo y habilitado asignado.');
@@ -347,9 +368,15 @@ export async function transitionWorkflow(workflowId, action, authUser, comments 
     } else if (normalizedAction === 'publish' && workflow.stage === 'aprobacion') {
       await client.query(`
         UPDATE documents
-        SET state = 'publicado', updated = $2, published_at = NOW()
+        SET state = 'publicado',
+            updated = $2,
+            published_at = NOW(),
+            visible_to_all = CASE
+              WHEN area_id = $3 THEN true
+              ELSE visible_to_all
+            END
         WHERE id = $1
-      `, [workflow.doc_id, now]);
+      `, [workflow.doc_id, now, GENERAL_COORDINATION_AREA_ID]);
       await client.query(`
         UPDATE workflow_items
         SET completed_at = NOW(),

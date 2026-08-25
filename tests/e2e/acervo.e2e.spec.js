@@ -52,6 +52,7 @@ const fileStorage = {
 
 const apiBase = 'http://127.0.0.1:3100';
 const OPERATION_ACADEMIC_AREA_ID = 1;
+const GENERAL_COORDINATION_AREA_ID = 9;
 const fixtureBuffer = Buffer.concat([
   Buffer.from('%PDF-1.4\n% Acervo Operaciones E2E\n', 'utf8'),
   Buffer.alloc(4096, 0x20),
@@ -269,6 +270,19 @@ test.describe.serial('Acervo Operaciones - suite integral', () => {
         await query('DELETE FROM documents WHERE id = ANY($1::int[])', [createdDocIds]);
       }
       if (createdUserIds.length) {
+        await query(`
+          UPDATE workflow_items
+          SET assignee_user_id = CASE WHEN assignee_user_id = ANY($1::int[]) THEN NULL ELSE assignee_user_id END,
+              reviewer_user_id = CASE WHEN reviewer_user_id = ANY($1::int[]) THEN NULL ELSE reviewer_user_id END,
+              approver_user_id = CASE WHEN approver_user_id = ANY($1::int[]) THEN NULL ELSE approver_user_id END,
+              reviewed_by = CASE WHEN reviewed_by = ANY($1::int[]) THEN NULL ELSE reviewed_by END,
+              completed_by = CASE WHEN completed_by = ANY($1::int[]) THEN NULL ELSE completed_by END
+          WHERE assignee_user_id = ANY($1::int[])
+             OR reviewer_user_id = ANY($1::int[])
+             OR approver_user_id = ANY($1::int[])
+             OR reviewed_by = ANY($1::int[])
+             OR completed_by = ANY($1::int[])
+        `, [createdUserIds]);
         await query('DELETE FROM notifications WHERE user_id = ANY($1::int[])', [createdUserIds]);
         await query(`
           DELETE FROM people p
@@ -379,6 +393,19 @@ test.describe.serial('Acervo Operaciones - suite integral', () => {
       'idx_document_interactions_date',
       'idx_document_infographics_uploaded_at',
     ]));
+
+    const { rows: generalAreaRows } = await query(`
+      SELECT id, name, abbreviation, color, requires_coordination
+      FROM areas
+      WHERE id = $1
+    `, [GENERAL_COORDINATION_AREA_ID]);
+    expect(generalAreaRows[0]).toEqual(expect.objectContaining({
+      id: GENERAL_COORDINATION_AREA_ID,
+      name: 'Coordinacion General',
+      abbreviation: 'CG',
+      color: '#f5a000',
+      requires_coordination: false,
+    }));
   });
 
   test('bloquea sesiones invalidas, usuarios inactivos y escrituras CORS no permitidas', async () => {
@@ -845,6 +872,132 @@ test.describe.serial('Acervo Operaciones - suite integral', () => {
       await coordinatorApi.dispose();
       await schoolEditorApi.dispose();
     }
+  });
+
+  test('permite a una coordinacion cargar, tramitar y publicar un documento general institucional', async () => {
+    const areasResponse = await leaderApi.get('/api/areas');
+    await expectStatus(areasResponse, 200);
+    const leaderAreas = await areasResponse.json();
+    expect(leaderAreas).toEqual(expect.arrayContaining([
+      expect.objectContaining({ id: areaId }),
+      expect.objectContaining({
+        id: GENERAL_COORDINATION_AREA_ID,
+        abbreviation: 'CG',
+        requiresCoordination: false,
+      }),
+    ]));
+
+    const assigneesResponse = await leaderApi.get(
+      `/api/assignees?areaId=${GENERAL_COORDINATION_AREA_ID}`,
+    );
+    await expectStatus(assigneesResponse, 200);
+    const generalAssignees = await assigneesResponse.json();
+    expect(generalAssignees).toEqual(expect.arrayContaining([
+      expect.objectContaining({ id: reviewer.id, role: 4, area: areaId }),
+      expect.objectContaining({ id: approver.id, role: 5, area: areaId }),
+    ]));
+    expect(generalAssignees.every(user => Number(user.area) === Number(areaId))).toBe(true);
+
+    const invalidAssignmentEmail = `macro.area.e2e.${Date.now()}@cun.edu.co`;
+    const invalidAssignment = await api.post('/api/users', {
+      data: {
+        name: `Usuario macro ${runId}`,
+        email: invalidAssignmentEmail,
+        role: 3,
+        area: GENERAL_COORDINATION_AREA_ID,
+        status: 'Activo',
+      },
+    });
+    await expectStatus(invalidAssignment, 400);
+    const { rows: invalidUsers } = await query(
+      'SELECT id FROM users WHERE email = $1',
+      [invalidAssignmentEmail],
+    );
+    expect(invalidUsers).toHaveLength(0);
+
+    const documentName = `${runId}-COORDINACION-GENERAL`;
+    const createResponse = await leaderApi.post('/api/documents', {
+      multipart: {
+        type: String(typeId),
+        area: String(GENERAL_COORDINATION_AREA_ID),
+        name: documentName,
+        version: '1.0',
+        initialState: 'revision',
+        visibleToAll: 'false',
+        revisor: String(reviewer.id),
+        aprobador: String(approver.id),
+        file: {
+          name: 'manual-conductas-operativas.pdf',
+          mimeType: 'application/pdf',
+          buffer: fixtureBuffer,
+        },
+        infographic: infographicPart('infografia-coordinacion-general.png'),
+      },
+    });
+    await expectStatus(createResponse, 201);
+    const document = await createResponse.json();
+    createdDocIds.push(Number(document.id));
+    expect(Number(document.area)).toBe(GENERAL_COORDINATION_AREA_ID);
+    expect(document.coordination).toBeUndefined();
+    expect(document.documentNumber).toMatch(/^CG-/);
+    expect(document.visibleToAll).toBe(true);
+    expect(document.state).toBe('revision');
+
+    const { rows: persistedRows } = await query(`
+      SELECT area_id, coordination_id, visible_to_all, state
+      FROM documents
+      WHERE id = $1
+    `, [document.id]);
+    expect(persistedRows[0]).toEqual(expect.objectContaining({
+      area_id: GENERAL_COORDINATION_AREA_ID,
+      coordination_id: null,
+      visible_to_all: true,
+      state: 'revision',
+    }));
+
+    await expectStatus(await leaderApi.get(`/api/documents/${document.id}`), 200);
+    expect((await consultantApi.get(`/api/documents/${document.id}`)).status()).toBe(404);
+
+    const reviewerInbox = await reviewerApi.get('/api/workflow');
+    await expectStatus(reviewerInbox, 200);
+    const reviewItem = (await reviewerInbox.json())
+      .find(item => Number(item.docId) === Number(document.id));
+    expect(reviewItem).toBeTruthy();
+    expect(reviewItem.canMarkApproved).toBe(true);
+    expect(Number(reviewItem.doc.area)).toBe(GENERAL_COORDINATION_AREA_ID);
+
+    const reviewResponse = await reviewerApi.post(
+      `/api/workflow/${reviewItem.id}/transition`,
+      { data: { action: 'review', comments: 'Documento general revisado' } },
+    );
+    await expectStatus(reviewResponse, 200);
+    expect((await reviewResponse.json()).status).toBe('approved_for_publication');
+    expect((await consultantApi.get(`/api/documents/${document.id}`)).status()).toBe(404);
+
+    const approverInbox = await approverApi.get('/api/workflow');
+    await expectStatus(approverInbox, 200);
+    const approvalItem = (await approverInbox.json())
+      .find(item => Number(item.docId) === Number(document.id));
+    expect(approvalItem).toBeTruthy();
+    expect(approvalItem.canPublish).toBe(true);
+
+    const publishResponse = await approverApi.post(
+      `/api/workflow/${approvalItem.id}/transition`,
+      { data: { action: 'publish', comments: 'Publicacion institucional autorizada' } },
+    );
+    await expectStatus(publishResponse, 200);
+    expect((await publishResponse.json()).status).toBe('published');
+
+    const publicDetail = await consultantApi.get(`/api/documents/${document.id}`);
+    await expectStatus(publicDetail, 200);
+    expect((await publicDetail.json()).state).toBe('publicado');
+    const generalLibrary = await consultantApi.get(
+      `/api/documents?area=${GENERAL_COORDINATION_AREA_ID}`,
+    );
+    await expectStatus(generalLibrary, 200);
+    expect((await generalLibrary.json()).data).toEqual(expect.arrayContaining([
+      expect.objectContaining({ id: document.id, visibleToAll: true }),
+    ]));
   });
 
   test('crea documento y archivo de forma atómica en PostgreSQL y Cloud Storage', async () => {
@@ -1565,7 +1718,10 @@ test.describe.serial('Acervo Operaciones - suite integral', () => {
     await expectStatus(leaderResponse, 200);
     const leaderAnalytics = await leaderResponse.json();
     expect(leaderAnalytics.canIdentifyUsers).toBe(true);
-    expect(leaderAnalytics.usageByArea.every(item => Number(item.id) === Number(areaId))).toBe(true);
+    expect(leaderAnalytics.usageByArea.some(item => Number(item.id) === Number(areaId))).toBe(true);
+    expect(leaderAnalytics.usageByArea.some(
+      item => Number(item.id) === GENERAL_COORDINATION_AREA_ID,
+    )).toBe(true);
 
     const auditorResponse = await auditorApi.get('/api/reports/analytics?period=all');
     await expectStatus(auditorResponse, 200);
@@ -1766,6 +1922,27 @@ test.describe.serial('Acervo Operaciones - suite integral', () => {
     }
     await page.getByRole('tab', { name: 'Mapa de áreas' }).click();
     await expect(page.getByText('Repositorio central')).toBeVisible();
+    const generalAreaNode = page.locator('.area-map-node.macro-node');
+    await expect(generalAreaNode).toBeVisible();
+    await expect(generalAreaNode).toContainText(/Coordinaci[oó]n General/);
+    await expect(generalAreaNode).toContainText('Alcance institucional');
+    await expect(generalAreaNode).toHaveAttribute('data-hierarchy-level', '1');
+    await expect(generalAreaNode.locator('img')).toHaveAttribute('src', /general-coordination/);
+    const coordinationNodes = page.locator('.area-map-coordination-grid .area-map-node');
+    await expect(coordinationNodes).toHaveCount(8);
+    await expect(coordinationNodes.first()).toHaveAttribute('data-hierarchy-level', '2');
+    const generalNodeBox = await generalAreaNode.boundingBox();
+    const firstCoordinationBox = await coordinationNodes.first().boundingBox();
+    expect(generalNodeBox).toBeTruthy();
+    expect(firstCoordinationBox).toBeTruthy();
+    expect(generalNodeBox.y + generalNodeBox.height).toBeLessThan(firstCoordinationBox.y);
+    await generalAreaNode.hover();
+    const generalHoverCard = page.locator('.area-map-hover-card');
+    await expect(generalHoverCard).toBeVisible();
+    await expect(generalHoverCard).toContainText('Nivel institucional');
+    await expect(generalHoverCard.getByRole('button', { name: 'Abrir documentación general' })).toBeEnabled();
+    await page.mouse.move(0, 0);
+    await expect(generalHoverCard).toHaveCount(0);
     const operationAreaNode = page.locator('.area-map-node').filter({ hasText: 'COA' }).first();
     await operationAreaNode.scrollIntoViewIfNeeded();
     await operationAreaNode.click();
@@ -1788,6 +1965,13 @@ test.describe.serial('Acervo Operaciones - suite integral', () => {
     await expect(page.getByTestId('document-hover-preview')).toContainText(`${runId}-ANS-ACERVO`);
     await page.goto('/gestion/cargar');
     await expect(page.getByRole('heading', { name: 'Cargar nuevo documento' })).toBeVisible();
+    const uploadAreaField = page.locator('.form-row').filter({ hasText: 'Área responsable' });
+    await uploadAreaField.locator('.custom-select-trigger').click();
+    await page.getByRole('option', { name: /Coordinaci[oó]n General/ }).click();
+    await expect(page.locator('.general-document-note')).toContainText('Documento de Coordinación General');
+    const institutionalVisibility = page.locator('.permission-toggle input[type="checkbox"]');
+    await expect(institutionalVisibility).toBeChecked();
+    await expect(institutionalVisibility).toBeDisabled();
     await page.goto('/gestion/usuarios');
     await expect(page.getByRole('heading', { name: 'Administración de usuarios y roles' })).toBeVisible();
     await page.goto('/reportes');

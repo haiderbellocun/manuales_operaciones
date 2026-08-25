@@ -22,6 +22,7 @@ export function mapDocument(
     version: row.version,
     state: row.state,
     owner: row.owner_id,
+    creatorUserId: row.creator_user_id ? Number(row.creator_user_id) : null,
     vigencia: row.vigencia || '—',
     views: row.views,
     downloads: row.downloads || 0,
@@ -36,6 +37,7 @@ export function mapDocument(
     created: fmtDate(row.created),
     updated: fmtDate(row.updated),
     publishedAt: row.published_at || null,
+    visibleToAll: row.visible_to_all === true,
     infographic: infographic ? {
       available: true,
       originalName: infographic.original_name,
