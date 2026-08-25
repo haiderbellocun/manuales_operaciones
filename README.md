@@ -1,321 +1,321 @@
-# Acervo Operaciones
+<div align="center">
 
-Sistema institucional de gestión documental para manuales, procedimientos, formatos, ANS y documentos operativos del área de Operaciones.
+# 🏛️ Acervo Operaciones
+### Centro Inteligente de Gestión y Conocimiento Documental Institucional
 
-La aplicación centraliza consulta, carga, versionamiento, trazabilidad, aprobaciones, notificaciones y control de acceso por rol, área y coordinación.
+[![React](https://img.shields.io/badge/React-18.3-61DAFB?style=for-the-badge&logo=react&logoColor=black)](https://reactjs.org/)
+[![Vite](https://img.shields.io/badge/Vite-6.0-646CFF?style=for-the-badge&logo=vite&logoColor=white)](https://vitejs.dev/)
+[![Node.js](https://img.shields.io/badge/Node.js-22.x-339933?style=for-the-badge&logo=nodedotjs&logoColor=white)](https://nodejs.org/)
+[![Express](https://img.shields.io/badge/Express-4.x-000000?style=for-the-badge&logo=express&logoColor=white)](https://expressjs.com/)
+[![PostgreSQL](https://img.shields.io/badge/PostgreSQL-15+-4169E1?style=for-the-badge&logo=postgresql&logoColor=white)](https://www.postgresql.org/)
+[![Google Cloud](https://img.shields.io/badge/Google_Cloud-Storage_&_Run-4285F4?style=for-the-badge&logo=googlecloud&logoColor=white)](https://cloud.google.com/)
+[![Playwright](https://img.shields.io/badge/Playwright-E2E-2EAD33?style=for-the-badge&logo=playwright&logoColor=white)](https://playwright.dev/)
+[![Design](https://img.shields.io/badge/Design-Apple_Bento_Grid-0071E3?style=for-the-badge&logo=apple&logoColor=white)](https://github.com/hubeiqiao/apple-bento-grid)
+[![License](https://img.shields.io/badge/License-MIT-0F5132?style=for-the-badge)](LICENSE)
 
-## Tecnologías
+<p align="center">
+  <b>Plataforma unificada para la centralización, consulta, versionamiento, aprobación y trazabilidad de manuales, procedimientos, formatos, ANS y documentos operativos de la Corporación Unificada Nacional de Educación Superior (CUN).</b>
+</p>
 
-| Capa | Tecnología |
-|---|---|
-| Frontend | React 18, Vite 6, React Router |
-| Backend | Node.js ESM, Express |
-| Base de datos | PostgreSQL |
-| Archivos | Google Cloud Storage |
-| Autenticación | Google Identity Services + JWT en cookie HTTP-only |
-| Notificaciones | Internas en BD + SMTP |
-| Pruebas | Playwright E2E |
+[✨ Características](#-características-principales) •
+[🍏 Diseño Bento](#-diseño-apple-bento-grid) •
+[🚀 Inicio Rápido](#-inicio-rápido) •
+[📐 Arquitectura](#-arquitectura-del-sistema) •
+[🔐 Roles & Permisos](#-roles-y-matriz-de-acceso) •
+[🧪 Pruebas](#-pruebas-e2e) •
+[☁️ Despliegue](#%EF%B8%8F-despliegue-en-producción)
 
-## Funcionalidades principales
+---
 
-- Login con cuenta institucional de Google.
-- Foto de perfil tomada desde el perfil de Google del usuario.
-- Inicio interactivo “Mapa vivo de Acervo” con ruta documental, mapa de áreas, responsabilidades por rol y recorrido guiado.
-- Biblioteca documental con filtros por área, coordinación, tipo, estado y búsqueda.
-- Consulta compartida en Operación Académica: los usuarios asignados a una escuela pueden ver los documentos de todas sus subcoordinaciones.
-- Escritura segmentada por escuela y documentos generales de Operación Académica, disponibles para todas las subcoordinaciones.
-- Carga obligatoria de archivo al crear documentos.
-- Almacenamiento de documentos en Google Cloud Storage.
-- Creación atómica de documento + archivo: si el archivo no sube, el documento no se crea.
-- Control de versiones de documentos.
-- Descarga controlada por permisos.
-- Flujo de revisión, aprobación y publicación.
-- Solicitudes de actualización documental.
-- Favoritos, vistas, actividad reciente y reportes.
-- Gestión de usuarios, roles, áreas y coordinaciones.
-- Notificaciones internas y envío por correo cuando SMTP está configurado.
+</div>
 
-## Estructura del proyecto
+## 🌟 Características Principales
 
-```text
-manuales_operaciones/
-src/                         # Frontend React
-  components/                # Componentes UI
-  context/                   # Contextos de autenticación y datos
-  services/                  # Cliente API y utilidades
-  views/                     # Vistas principales
-server/                      # API Express
-  sql/schema.sql             # Esquema base PostgreSQL
-  src/
-    db/                      # Pool, migraciones, repositorios y mappers
-    middleware/              # Autenticación y permisos
-    routes/                  # Rutas REST
-    services/                # Google Identity y correo
-    store/                   # Integración con Cloud Storage
-tests/e2e/                   # Suite Playwright
-playwright.config.js         # Configuración de pruebas E2E
-DEPLOY_GCP.md                # Guía de despliegue en GCP
-package.json
+<table>
+  <tr>
+    <td width="50%">
+      <h3>🍏 Experiencia Apple Bento Grid</h3>
+      <p>Interfaz moderna inspirada en el sistema modular de Apple, con tipografía display <b>Sora</b>, tarjetas asimétricas interactivas, micro-sombras limpias y adaptabilidad responsiva completa.</p>
+    </td>
+    <td width="50%">
+      <h3>🗺️ Mapa Vivo Interactivo</h3>
+      <p>Navegador visual de 3 capas para explorar el ciclo de vida documental, la jerarquía de áreas/escuelas de la CUN y las responsabilidades asignadas a cada rol.</p>
+    </td>
+  </tr>
+  <tr>
+    <td width="50%">
+      <h3>☁️ Carga Atómica en Cloud Storage</h3>
+      <p>Integración transaccional con <b>Google Cloud Storage</b>: el registro en base de datos y la subida del binario ocurren en una operación atómica indivisible con control estricto de versiones.</p>
+    </td>
+    <td width="50%">
+      <h3>🔒 Control de Acceso RBAC Granular</h3>
+      <p>Autenticación mediante <b>Google Identity Services (CUN OAuth)</b> con cookies HTTP-only JWT y políticas de consulta/escritura segmentadas por área, escuela y rol.</p>
+    </td>
+  </tr>
+  <tr>
+    <td width="50%">
+      <h3>🔄 Flujo de Trabajo y Aprobaciones</h3>
+      <p>Trazabilidad de ciclo completo con 5 etapas: <i>Borrador ➔ En Revisión ➔ Aprobado ➔ Publicado ➔ Actualización</i> con firmas auditables y registro histórico.</p>
+    </td>
+    <td width="50%">
+      <h3>📊 Analítica & Infografías Visuales</h3>
+      <p>Métricas de uso, consultas, descargas, documentos más populares y soporte para adjuntar infografías gráficas de resumen visual para cada manual o procedimiento.</p>
+    </td>
+  </tr>
+</table>
+
+---
+
+## 🍏 Diseño Apple Bento Grid
+
+La plataforma implementa los principios de diseño de **Apple Bento Grid**:
+
+```
+┌─────────────────────────────────────────────────────────────┬───────────────────────────┐
+│  BENTO HERO CARD (Span 2)                                   │  PROFILE STATUS CARD      │
+│  • Saludo personalizado en Sora Display                      │  • Avatar & Rol activo    │
+│  • Buscador universal con forma de píldora (Pill Search)    │  • Permisos vigentes      │
+│  • Filtros rápidos: Biblioteca, Métricas, Ciclo y Áreas     │  • Recorrido guiado       │
+├──────────────────────────┬──────────────────────────────────┴───────────────────────────┤
+│  ATAJOS RÁPIDOS          │  MAPA INTERACTIVO DE PROCESOS / ÁREAS                        │
+│  • Biblioteca Documental │  • Ruta de Consulta (5 estaciones)                           │
+│  • Gestión & Carga       │  • Ruta de Gestión (5 estaciones)                            │
+│  • Analítica de Uso      │  • Panel lateral de especificaciones en tiempo real          │
+└──────────────────────────┴──────────────────────────────────────────────────────────────┘
 ```
 
-## Requisitos
+---
 
-- Node.js 18 o superior. En desarrollo se ha probado con Node 22.
-- npm.
-- PostgreSQL local o Cloud SQL.
-- Un bucket de Google Cloud Storage.
-- Credenciales de Google Cloud para desarrollo local.
-- OAuth Client ID de Google Identity Services.
-- Chrome instalado para ejecutar la suite E2E local.
+## 📐 Arquitectura del Sistema
 
-## Instalación local
+```mermaid
+flowchart TD
+    subgraph Frontend["💻 Frontend (React 18 + Vite 6)"]
+        UI[Apple Bento Grid UI]
+        Router[React Router SPA]
+        AuthCtx[Auth Context & State]
+    end
 
-1. Instalar dependencias del frontend:
+    subgraph Backend["⚙️ Backend API (Node.js ESM + Express)"]
+        AuthMid[JWT Auth Middleware]
+        DocRouter[Document & Workflow Engine]
+        AnalyticsEngine[Analytics & Metrics Engine]
+        StorageSvc[Cloud Storage Service]
+        MailSvc[Notification & SMTP Service]
+    end
+
+    subgraph Storage["☁️ Servicios de Persistencia"]
+        GCS[(Google Cloud Storage)]
+        PG[(PostgreSQL 15+ / Cloud SQL)]
+    end
+
+    UI --> Router
+    Router --> AuthCtx
+    AuthCtx -->|REST API + HTTPS| AuthMid
+    AuthMid --> DocRouter
+    AuthMid --> AnalyticsEngine
+    DocRouter -->|Binarios & Versiones| StorageSvc
+    DocRouter -->|Metadatos & Permisos| PG
+    StorageSvc -->|Subida Atómica| GCS
+    AnalyticsEngine -->|Trazabilidad| PG
+    DocRouter -->|Alertas| MailSvc
+```
+
+---
+
+## 🚀 Inicio Rápido
+
+### 1. Prerrequisitos
+- **Node.js**: v18.0.0 o superior (recomendado v22.x LTS)
+- **npm**: v9.0.0 o superior
+- **PostgreSQL**: v14.0 o superior (local o Cloud SQL)
+- **Cuenta Google Cloud**: Con bucket de Cloud Storage y credenciales OAuth
+
+---
+
+### 2. Clonar el repositorio e instalar dependencias
 
 ```bash
+# Clonar el proyecto
+git clone https://github.com/haiderbellocun/manuales_operaciones.git
+cd manuales_operaciones
+
+# Instalar dependencias del Frontend
 npm install
-```
 
-2. Instalar dependencias del backend:
-
-```bash
+# Instalar dependencias del Backend API
 npm install --prefix server
 ```
 
-3. Crear los archivos de entorno:
+---
+
+### 3. Configuración de Variables de Entorno
+
+Crear los archivos de entorno a partir de las plantillas de ejemplo:
 
 ```bash
 cp .env.example .env
 cp server/.env.example server/.env
 ```
 
-4. Configurar PostgreSQL y crear la base de datos indicada en `server/.env`.
-
-Ejemplo local:
-
-```env
-DATABASE_URL=postgresql://postgres:root@localhost:5432/manuales-operaciones
-```
-
-5. Configurar Google Cloud Storage en `server/.env`:
-
-```env
-GCS_BUCKET=tu-bucket-documentos
-GOOGLE_APPLICATION_CREDENTIALS=./secrets/acervo-storage-sa.json
-```
-
-La cuenta de servicio debe tener permisos para crear, leer y eliminar objetos en el bucket.
-
-Los objetos nuevos se organizan por el ID estable del documento. Crear una nueva versión no
-cambia esta carpeta; únicamente agrega un objeto identificado por nombre, versión y fecha UTC:
-
-```text
-documents/{documentId}/{nombre}_v{version}_{fecha}.pdf
-documents/{documentId}/infographics/{nombre}_v{version}_{fecha}.png
-```
-
-Las rutas históricas almacenadas en la base de datos continúan siendo compatibles.
-
-6. Configurar Google OAuth:
-
-Frontend `.env`:
-
+#### Frontend (`.env`)
 ```env
 VITE_API_URL=/api
 VITE_GOOGLE_CLIENT_ID=tu-client-id.apps.googleusercontent.com
 ```
 
-Backend `server/.env`:
-
+#### Backend (`server/.env`)
 ```env
+PORT=3000
+APP_URL=http://localhost:5173
+CORS_ORIGIN=http://localhost:5173
+JWT_SECRET=tu-clave-secreta-jwt-super-segura-y-larga
+
+# Base de datos PostgreSQL
+DATABASE_URL=postgresql://postgres:password@localhost:5432/manuales-operaciones
+
+# Google Cloud Storage
+GCS_BUCKET=tu-bucket-documentos-cun
+GOOGLE_APPLICATION_CREDENTIALS=./secrets/acervo-storage-sa.json
+
+# Google Identity Services OAuth
 GOOGLE_OAUTH_CLIENT_ID=tu-client-id.apps.googleusercontent.com
 GOOGLE_ALLOWED_DOMAINS=cun.edu.co
 GOOGLE_DEFAULT_ROLE_ID=7
+
+# Notificaciones por Correo (Opcional en desarrollo)
+SMTP_HOST=smtp.gmail.com
+SMTP_PORT=587
+SMTP_SECURE=false
+SMTP_USER=notificaciones@cun.edu.co
+SMTP_PASS=tu-app-password
+SMTP_FROM="Acervo Operaciones CUN <notificaciones@cun.edu.co>"
 ```
 
-7. Ejecutar migración de base de datos:
+---
+
+### 4. Inicializar la Base de Datos
+
+Ejecuta el script de migración para estructurar tablas, catálogos y datos semilla:
 
 ```bash
 npm run db:migrate --prefix server
 ```
 
-8. Levantar frontend y backend:
+---
+
+### 5. Iniciar la Aplicación en Desarrollo
+
+Inicia tanto el servidor frontend como la API backend simultáneamente:
 
 ```bash
 npm run dev:all
 ```
 
-URLs locales:
+* **Frontend:** [http://localhost:5173](http://localhost:5173)
+* **Backend API:** [http://localhost:3000/api](http://localhost:3000/api)
+* **Health Check:** [http://localhost:3000/api/health](http://localhost:3000/api/health)
 
-- Frontend: `http://localhost:5173`
-- API: `http://localhost:3000/api`
-- Health check: `http://localhost:3000/api/health`
+---
 
-## Variables de entorno
+## 📁 Estructura del Proyecto
 
-### Frontend `.env`
+```text
+manuales_operaciones/
+├── 📂 docs/                    # Especificaciones funcionales y arquitectura
+├── 📂 server/                  # Backend API (Node.js ESM + Express)
+│   ├── 📂 sql/                 # Scripts SQL, esquemas y migraciones versionadas
+│   │   ├── 📂 migrations/      # Migraciones incrementales de esquema
+│   │   └── schema.sql          # Esquema principal DDL de PostgreSQL
+│   └── 📂 src/
+│       ├── 📂 config/          # Constantes y mapeo de áreas
+│       ├── 📂 db/              # Conexión Pool, migraciones y repositorios
+│       ├── 📂 middleware/      # Seguridad JWT y validadores RBAC
+│       ├── 📂 routes/          # Endpoints REST (auth, docs, analytics, etc.)
+│       ├── 📂 services/        # Google Identity, mailer y auditoría
+│       └── 📂 store/           # Conector atómico con Google Cloud Storage
+├── 📂 src/                     # Frontend SPA (React 18 + Vite)
+│   ├── 📂 assets/              # Iconografía, imágenes y mascotas por coordinación
+│   ├── 📂 components/          # Tarjetas Bento, badges, modales y visualizadores
+│   ├── 📂 context/             # AuthContext, DocsContext, CatalogContext
+│   ├── 📂 services/            # Cliente HTTP Axios y gestor de descargas
+│   ├── 📂 utils/               # Formateadores, paleta de colores y validaciones
+│   ├── 📂 views/               # Vistas (Dashboard, Library, Gestion, Analytics, etc.)
+│   ├── App.jsx                 # Enrutamiento principal y layouts
+│   ├── main.jsx                # Punto de entrada de la aplicación
+│   └── styles.css              # Sistema de diseño Apple Bento Grid y tokens CSS
+├── 📂 tests/                   # Suite de pruebas E2E con Playwright
+├── DEPLOY_GCP.md               # Guía completa de despliegue en Google Cloud Platform
+├── package.json                # Dependencias y scripts globales
+└── vite.config.js              # Configuración de compilación y Proxy de desarrollo
+```
 
-| Variable | Descripción |
-|---|---|
-| `VITE_API_URL` | URL base de la API. En local normalmente `/api`. |
-| `VITE_GOOGLE_CLIENT_ID` | Client ID de Google Identity Services. |
+---
 
-### Backend `server/.env`
+## 🔐 Roles y Matriz de Acceso
 
-| Variable | Descripción |
-|---|---|
-| `PORT` | Puerto de la API. Por defecto `3000`. |
-| `JWT_SECRET` | Secreto para firmar sesiones JWT. Debe ser largo y privado. |
-| `CORS_ORIGIN` | Origen permitido para el frontend. |
-| `APP_URL` | URL pública/local de la aplicación. |
-| `DATABASE_URL` | Cadena de conexión PostgreSQL local o remota. |
-| `CLOUD_SQL_CONNECTION_NAME` | Conexión Cloud SQL para producción en GCP. |
-| `DB_USER`, `DB_PASSWORD`, `DB_NAME` | Credenciales alternativas para Cloud SQL. |
-| `GCS_BUCKET` | Bucket donde se guardan los documentos. Obligatorio. |
-| `GOOGLE_APPLICATION_CREDENTIALS` | Ruta al JSON de cuenta de servicio en local. |
-| `GOOGLE_OAUTH_CLIENT_ID` | Client ID usado por backend para validar Google. |
-| `GOOGLE_ALLOWED_DOMAINS` | Dominios permitidos para login. |
-| `GOOGLE_DEFAULT_ROLE_ID` | Rol asignado por defecto a usuarios creados por Google Login. |
-| `SMTP_HOST`, `SMTP_PORT`, `SMTP_SECURE` | Configuración SMTP. |
-| `SMTP_USER`, `SMTP_PASS`, `SMTP_FROM` | Credenciales y remitente de correo. |
+| Rol | Nivel de Alcance | Consultar | Cargar / Editar | Revisar / Aprobar | Publicar | Analítica Global |
+|---|---|:---:|:---:|:---:|:---:|:---:|
+| **Administrador General** | Global Institucional | ✅ | ✅ | ✅ | ✅ | ✅ |
+| **Coordinador Operación Académica** | Todas las Escuelas | ✅ | ✅ | ✅ | ✅ | ✅ |
+| **Líder de Área** | Área asignada | ✅ | ✅ | ✅ | ✅ | 📊 Área |
+| **Editor Documental** | Área / Escuela asignada | ✅ | ✅ | ❌ | ❌ | ❌ |
+| **Revisor** | Área asignada | ✅ | ❌ | ✅ (Revisión) | ❌ | ❌ |
+| **Aprobador** | Área asignada | ✅ | ❌ | ✅ (Aprobación) | ✅ | ❌ |
+| **Usuario Consultor** | Documentos publicados | ✅ | ❌ | ❌ | ❌ | ❌ |
+| **Auditor / Lector Institucional** | Consulta sin descarga | ✅ (Solo ver) | ❌ | ❌ | ❌ | ✅ |
 
-No subas `.env`, `server/.env`, `sa.json` ni llaves de servicio al repositorio. Ya están ignorados por Git.
+---
 
-## Scripts
+## 🛠️ Scripts Disponibles
 
 | Comando | Descripción |
 |---|---|
-| `npm run dev` | Inicia el frontend con Vite. |
-| `npm run dev:server` | Inicia el backend desde `server/`. |
-| `npm run dev:all` | Inicia frontend y backend en paralelo. |
-| `npm run build` | Compila el frontend para producción. |
-| `npm run preview` | Sirve el build de Vite para revisión local. |
-| `npm run server:start` | Inicia el backend en modo start. |
-| `npm run test:e2e` | Ejecuta la suite Playwright E2E. |
-| `npm run db:migrate --prefix server` | Ejecuta migraciones y datos base del backend. |
+| `npm run dev` | Inicia el frontend con Vite (`localhost:5173`). |
+| `npm run dev:server` | Inicia el backend API con nodemon (`localhost:3000`). |
+| `npm run dev:all` | Inicia frontend y backend concurrentemente. |
+| `npm run build` | Compila el frontend optimizado para producción en `dist/`. |
+| `npm run preview` | Previsualiza localmente el build de producción. |
+| `npm run db:migrate --prefix server` | Ejecuta las migraciones de base de datos PostgreSQL. |
+| `npm run test:e2e` | Ejecuta la suite de pruebas End-to-End con Playwright. |
 
-## Base de datos
+---
 
-El esquema principal está en:
+## 🧪 Pruebas E2E
 
-```text
-server/sql/schema.sql
-```
-
-Las migraciones incrementales que dejan trazabilidad de cambios en bases ya
-existentes se conservan en:
-
-```text
-server/sql/migrations/
-```
-
-La migración de métricas y analítica documental corresponde a:
-
-```text
-server/sql/migrations/20260804_001_document_usage_analytics.sql
-```
-
-La asociación de una infografía gráfica por documento corresponde a:
-
-```text
-server/sql/migrations/20260804_002_document_infographics.sql
-```
-
-El rol institucional de consulta global de métricas corresponde a:
-
-```text
-server/sql/migrations/20260810_004_global_analytics_role.sql
-```
-
-La migración se ejecuta desde:
+El proyecto cuenta con una suite automatizada de pruebas con **Playwright** que valida:
+* Sesión y flujo OAuth con dominios restringidos.
+* Carga atómica obligatoria de binarios hacia Cloud Storage.
+* Flujo de transición de estados: *Borrador ➔ Revisión ➔ Aprobación ➔ Publicación*.
+* Restricciones de descarga por rol y alcance de escuelas.
 
 ```bash
-npm run db:migrate --prefix server
-```
-
-La base incluye catálogos mínimos para operar:
-
-- Áreas.
-- Coordinaciones.
-- Tipos documentales.
-- Roles y permisos.
-
-Los usuarios se crean desde Google Login o desde la administración de usuarios. Los documentos se crean desde el flujo documental de la aplicación.
-
-## Roles
-
-| Rol | Alcance general |
-|---|---|
-| Administrador general | Control total de plataforma, usuarios, documentos y flujo. |
-| Coordinador de Operación Académica | Gestiona todas las escuelas y puede crear documentos generales para toda Operación Académica. |
-| Líder de área | Gestión y aprobación documental de su área. |
-| Editor documental | Creación y edición documental. |
-| Revisor | Revisión y observaciones. |
-| Aprobador | Aprobación y publicación. |
-| Usuario consultor | Consulta y descarga de documentos publicados. |
-| Auditor / lector institucional | Consulta y trazabilidad sin descarga. |
-
-En Operación Académica, un usuario asignado a una escuela conserva la creación y edición únicamente sobre esa escuela, pero puede consultar los documentos de las demás. Los documentos generales pueden ser creados por el coordinador de Operación Académica o un administrador y se muestran dentro de todas las escuelas.
-
-## Pruebas E2E
-
-La suite Playwright levanta servicios locales aislados:
-
-- Frontend: `http://127.0.0.1:5174`
-- Backend: `http://127.0.0.1:3100`
-
-Ejecutar:
-
-```bash
+# Ejecutar todas las pruebas E2E
 npm run test:e2e
+
+# Ejecutar con interfaz interactiva
+npx playwright test --ui
 ```
 
-La suite valida:
+---
 
-- Health check, sesión y catálogos.
-- Sesiones inválidas, usuarios inactivos y CORS.
-- Reglas de permisos por rol.
-- Reglas de coordinación.
-- Carga obligatoria de archivo.
-- Creación atómica en PostgreSQL + Cloud Storage.
-- Consulta, descarga, favoritos, vistas y edición.
-- Solicitudes de actualización.
-- Flujo de revisión, aprobación y publicación.
-- Versiones documentales.
-- Módulos, actividad, reportes y notificaciones.
-- Navegación principal en Chrome.
+## ☁️ Despliegue en Producción
 
-Notas:
+El proyecto está diseñado para desplegarse de manera nativa en **Google Cloud Platform (GCP)**:
 
-- Usa la base de datos y el bucket configurados en `server/.env`.
-- Crea datos temporales con prefijo `E2E-*`.
-- Limpia documentos, usuarios, personas y archivos temporales al finalizar.
-- El SMTP se reemplaza por una configuración local de prueba para evitar envíos reales.
+1. **API y Frontend:** [Google Cloud Run](https://cloud.google.com/run) (Contenedor Dockerizado).
+2. **Base de Datos:** [Google Cloud SQL](https://cloud.google.com/sql) (PostgreSQL administrado).
+3. **Archivos e Infografías:** [Google Cloud Storage](https://cloud.google.com/storage) (Bucket seguro).
+4. **Secretos:** [Google Secret Manager](https://cloud.google.com/secret-manager).
 
-## Build
+> 📖 Para ver el paso a paso detallado de despliegue, consulta la guía [DEPLOY_GCP.md](DEPLOY_GCP.md).
 
-```bash
-npm run build
-```
+---
 
-El build genera archivos en `dist/`. Si Vite advierte que algún chunk supera 500 kB, no bloquea la compilación; es una oportunidad de optimización futura con code splitting.
+## 📄 Licencia
 
-## Despliegue
+Este proyecto está bajo la Licencia **MIT**. Consulta el archivo [LICENSE](LICENSE) para más información.
 
-La guía de despliegue en Google Cloud está en:
-
-```text
-DEPLOY_GCP.md
-```
-
-La arquitectura objetivo usa:
-
-- Cloud Run para servir API y frontend compilado.
-- Cloud SQL for PostgreSQL.
-- Cloud Storage para documentos.
-- Secret Manager para credenciales.
-- GitHub Actions para construir y desplegar.
-
-## Licencia
-
-Este proyecto está distribuido bajo licencia MIT. Ver `LICENSE`.
+<div align="center">
+  <sub>Desarrollado con ❤️ para la <b>Corporación Unificada Nacional de Educación Superior (CUN)</b></sub>
+</div>
